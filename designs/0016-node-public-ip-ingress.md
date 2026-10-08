@@ -6,20 +6,25 @@
 
 **Related issue:** [Azure/karpenter-provider-azure#656](https://github.com/Azure/karpenter-provider-azure/issues/656)
 
+**Related design discussion:** [Azure/karpenter-provider-azure#1976](https://github.com/Azure/karpenter-provider-azure/pull/1976)
+
 ## Overview
 
 Customers using Node Auto Provisioning (NAP) may need Internet clients to reach workloads exposed through `hostPort` on dynamically provisioned nodes. A node-level public IP provides a directly addressable endpoint. Customers may also need addresses allocated from a public IP prefix that they own, for predictable address ranges and allow-listing.
 
-This design proposes opt-in node public IP configuration on the current `v1beta1` `AKSNodeClass`, consistent across VM-based and AKS Machine API-based provisioning. Users explicitly select the public address families; a dual-stack cluster does not implicitly receive public IPv6. In VM modes, the provider creates one public IP resource per requested family and associates it with the node NIC. In Machine API modes, the provider requests the capability through the AKS Machine resource and AKS owns the underlying public IP lifecycle. In both cases, supplied prefixes remain customer-owned.
+This design proposes opt-in node public IP configuration on the current `v1beta1` `AKSNodeClass`, exclusively for the AKS Machine API provisioning path: `aksmachineapi` and `aksmachineapiheaderbatch`. These modes share Machine behavior and differ only in create dispatch. Users explicitly select the public address families; a dual-stack cluster does not implicitly receive public IPv6. The provider requests the capability through the AKS Machine resource, and the AKS Resource Provider (RP) owns the associated per-node public IP lifecycle. Supplied prefixes remain customer-owned references.
 
-The design is conditional on validating the AKS Resource Provider (RP) contract for Machine resources, including dual-stack capability on the target AKS NAP release. The pinned Azure SDK contains `EnableNodePublicIP` and `NodePublicIPPrefixID` fields, but SDK serialization, conventional AKS node-pool documentation, and a planned NAP dual-stack rollout do not establish that the AKS RP accepts or honors these properties. Do not expose a family or provisioning mode as supported until a supported AKS environment proves its create, read, and delete behavior.
+AKS RP contract validation is a release gate for the feature. The pinned Azure SDK contains `EnableNodePublicIP` and `NodePublicIPPrefixID` fields, but SDK serialization, conventional AKS node-pool documentation, and a planned NAP dual-stack rollout do not establish that the AKS RP accepts or honors these properties for Machines. Do not release or claim support until a supported AKS environment proves the required create, read, and delete behavior, including the requested address families and prefix mapping. There is no VM-based fallback or narrower mode-specific release scope.
+
+The VM-based provisioning modes, `aksscriptless` and `bootstrappingclient`, are unsupported. If `nodePublicIP.enabled` is true in either mode, provisioning must fail clearly before any Azure provisioning side effects; it must not silently ignore the setting, fall back to private addressing, or partially provision a node. Do not promise admission rejection unless the admission layer can reliably determine the active provisioning mode.
 
 ### Goals
 
 - Permit users to opt in to public IPv4 addressing, and explicitly request public IPv6 alongside IPv4 where the target deployment supports it.
 - Optionally allocate each requested family from its matching customer-supplied public IP prefix.
 - Preserve behavior for existing NodeClasses and nodes when the new fields are omitted.
-- Support both VM provisioning modes and both Machine API create dispatch strategies, subject to verified AKS RP support.
+- Support both AKS Machine API create dispatch strategies, subject to verified AKS RP support.
+- Reject enabled configuration in the unsupported VM-based modes before Azure provisioning side effects.
 - Replace nodes when their effective public IP configuration changes, using normal NodeClass hash/drift behavior.
 - Define ownership, cleanup, authorization, prefix compatibility, placement, error, and end-to-end ingress expectations explicitly.
 
@@ -31,26 +36,29 @@ The design is conditional on validating the AKS Resource Provider (RP) contract 
 - Adding public IPs to existing nodes in place; configuration changes take effect through node replacement.
 - Providing a new NodeClaim status field or a stable workload endpoint/discovery service.
 - Supporting arbitrary inbound traffic, load balancer configuration, or per-workload public IP allocation.
-- Enabling this feature in AKS Machine API mode before the AKS RP contract is confirmed.
+- Supporting public IPs in VM-based provisioning modes or providing a VM fallback.
+- Releasing any part of this feature before the AKS RP contract is confirmed.
 - IPv6-only public addressing unless separately designed and validated.
 
 ## Current Problem
 
-The current NodeClass API has no setting for node public IPs. The direct VM path creates NICs without a public IP association and has no public IP client or cleanup path. The Machine API template has SDK model fields corresponding to node public IP enablement and prefix ID, but they are commented out and their server-side behavior is unverified. Current VM and Machine conversion paths also do not provide a public node address to consumers.
+The current NodeClass API has no setting for node public IPs. The Machine API template has SDK model fields corresponding to node public IP enablement and prefix ID, but they are commented out and their server-side behavior is unverified. Current Machine conversion does not provide a new public node address contract to consumers.
 
 An address alone is not sufficient for Internet ingress. Traffic must also be routed to the node and permitted by the effective NSG/firewall policy; the hostPort datapath must then forward traffic to the selected pod. This feature configures node addressing only and requires a live-cluster test that exercises an actual inbound connection.
 
 ## Operating Model
 
-| Concern | VM-based modes (`aksscriptless`, `bootstrappingclient`) | AKS Machine API modes (`aksmachineapi`, `aksmachineapiheaderbatch`) |
-|---|---|---|
-| Public IP creation | Provider creates one Azure Public IP resource per requested family, referencing that family's optional customer prefix, then associates it with the NIC. | Provider requests each explicitly selected family through Machine properties; AKS RP creates and manages the underlying resources if the verified contract supports it. |
-| Prefix ownership | Customer-owned; provider only references each matching family prefix. | Customer-owned; AKS RP must accept and honor each matching family reference. |
-| Per-node address lifecycle | Provider deletes each provider-owned Public IP after NIC detachment and recovers orphaned resources. | AKS RP owns creation and deletion with the Machine. |
-| Batch behavior | Not applicable. | Both dispatch strategies use the same Machine template. Family requests and prefix mappings are shared template data, not per-machine header fields. |
-| Address reporting | No new provider-level status contract in this design. | No new provider-level status contract in this design; confirm whether Machine GET/LIST returns useful public address data. |
+| Concern | AKS Machine API modes (`aksmachineapi`, `aksmachineapiheaderbatch`) |
+|---|---|
+| Public IP creation | Provider requests each explicitly selected family through Machine properties; AKS RP creates and manages the associated per-node resources if the verified contract supports it. |
+| Prefix ownership | Customer-owned; the provider and AKS RP treat each matching customer prefix as a reference. |
+| Per-node address lifecycle | AKS RP owns creation and deletion with the Machine. Provider deletion deletes the Machine, not its RP-managed Public IP resources. |
+| Batch behavior | Both dispatch strategies use the same Machine template. Family requests and prefix mappings are shared template data, not per-machine header fields. |
+| Address reporting | No new provider-level status contract in this design; confirm whether Machine GET/LIST returns useful public address data. |
 
 Omitting the configuration means disabled. Do not allocate a public IP or change existing NIC/Machine behavior when it is absent. Enabling public IPs increases resource use and potential Internet exposure, so it must be an explicit opt-in.
+
+The setting is unsupported in `aksscriptless` and `bootstrappingclient`. When enabled in either mode, reject the provisioning request before any Azure resource create/update call. This is a provisioning-time requirement, not a promise of admission-time validation: admission may reject only if it can reliably determine the active mode.
 
 ## Proposed API
 
@@ -97,7 +105,7 @@ Before finalizing field names and validation, confirm the actual AKS API vocabul
 
 - Add the new field only to `v1beta1`; `v1alpha2` is deprecated and unserved.
 - Preserve omitted-field behavior exactly: old NodeClasses continue to create private nodes without public IP allocation.
-- Define API defaulting and helper methods so nil and false have the same effective behavior in admission, VM construction, Machine construction, hashing, and tests.
+- Define API defaulting and helper methods so nil and false have the same effective behavior in admission, Machine construction, hashing, and tests. Keep the unsupported-mode check tied to the actual runtime provisioning mode.
 - Include the effective configuration, requested address families, and family-to-prefix mapping in the NodeClass spec hash. Changing enablement, a requested family, or its prefix should mark existing nodes drifted and allow replacement through normal Karpenter disruption behavior.
 - Test hashes for absent versus explicit false to avoid needless drift on upgrade. Evaluate whether the hash-version annotation requires a bump; only bump it if the hash algorithm/compatibility semantics change, not merely because a new optional field was added.
 - Generate deepcopy code, CRDs, and chart CRD copies using the repository's `make verify` workflow; do not hand-edit generated artifacts.
@@ -115,7 +123,7 @@ Expose an opt-in `nodePublicIP` block with `enabled`, explicit `addressFamilies`
 
 - Public IP configuration is part of the node's provisioned shape and naturally participates in NodeClass hashing and drift.
 - Requested address families and their matching prefixes are explicit, reviewable, and scoped to the NodeClass that uses them.
-- The same user-facing setting can feed both VM and Machine API provisioning.
+- The setting is visible on the NodeClass whose Machine shape it configures.
 
 **Cons**
 
@@ -140,19 +148,7 @@ Use an opt-in NodeClass field. Do not add a global default or infer enablement o
 
 ### Decision 2: Who owns each public IP?
 
-#### Option A: Provider-owned per-node IP resources in every mode
-
-The provider would allocate and attach the Public IP regardless of provisioning mode.
-
-This gives a uniform resource lifecycle but conflicts with Machine API ownership: the AKS RP controls the underlying NIC and may not allow the provider to attach or manage its IP resources. It also duplicates responsibilities and permissions.
-
-#### Option B: Provisioning-mode-specific ownership
-
-The provider creates/deletes a per-node Public IP only for VM modes. For Machine API modes, AKS creates/deletes the address in response to the Machine configuration.
-
-#### Conclusion: Option B
-
-Use the owner of the NIC/VM lifecycle in each mode. The customer-supplied prefix is never owned or deleted by either provider path. Do not add a provider cleanup routine for Machine-owned IP resources.
+The AKS RP owns creation and deletion of the per-node public IP resources associated with a Machine. The provider requests the feature through Machine properties and deletes the Machine through its normal lifecycle; it must not independently create, modify, or delete RP-managed Public IP resources. Customer-supplied prefixes remain customer-owned references and must never be created, modified, resized, or deleted by the provider.
 
 ### Decision 3: Should the provider open inbound ports?
 
@@ -180,27 +176,17 @@ Verify request acceptance, actual public IP allocation and prefix use, GET/LIST 
 
 #### Conclusion: Option B
 
-Treat SDK representation as necessary but insufficient. If the RP contract is absent or unavailable, ship only after a product decision to block the entire feature or explicitly document a narrower supported mode; do not silently no-op in Machine API mode.
+Treat SDK representation as necessary but insufficient. The verified AKS RP contract is a release gate for the entire feature; if validation is absent, incomplete, or unavailable, do not release the feature. There is no VM fallback or narrower provisioning-mode release. Do not silently no-op in either supported Machine API mode.
 
 ## Provisioning and Lifecycle Design
 
-### VM-based provisioning
-
-1. Construct a node's public IP resource only when `nodePublicIP.enabled` is true, for each explicitly requested family. Use a unique resource name and stable ownership metadata sufficient to associate it with the NodeClaim/VM for recovery. Do not place supplied prefix IDs or other customer identifiers in logs or events.
-2. Map each requested family to its matching prefix reference. Each public IP must be attached to a distinct NIC IP configuration of the same address family. For IPv6, create and validate a secondary IPv6 IP configuration, including `PrivateIPAddressVersion`, an IPv6-enabled subnet, primary/secondary placement, applicable IPv6 backend pools, and node bootstrap/CNI address handling; do not attach it to the existing IPv4 primary configuration. If the VM path cannot support these requirements end to end, initially scope VM support to IPv4. Do not rely on prefix collection ordering. Confirm the required Public IP SKU, allocation method, address family, zone behavior, and API version in a live Azure test before finalizing implementation.
-3. Preserve the existing private-only path without an extra Azure call when disabled.
-4. If either family allocation succeeds but another requested family or NIC/VM creation fails, do not report provisioning success. Delete all provider-owned per-node IP resources already created using a bounded, cancellation-aware cleanup context. Preserve the primary provisioning error and report cleanup failure with enough non-sensitive context for retry/recovery.
-5. On deletion, detach/delete the NIC before deleting the provider-owned IP. Treat not-found as success and make retries idempotent.
-6. Extend VM/NIC read, list, and orphan-garbage-collection paths to discover provider-owned IP resources for each family even after a partial create or process restart. Never create, resize, modify, or delete a customer prefix. Reconcile ownership before deleting an IP; do not infer ownership from a matching name alone.
-7. Handle Azure eventual consistency, throttling, retryable errors, and cancellation using existing client patterns. A successful create response does not guarantee the IP is immediately readable.
-
 ### AKS Machine API provisioning
 
-Set Machine network properties only when enabled, including the requested address families and the matching prefix reference for each family. The currently pinned SDK model exposes a singular prefix property, but its serialization and conventional AKS node-pool documentation do not prove that NAP Machine API supports dual-stack public addressing or family-specific prefixes. Verify the target AKS NAP capability and the exact API vocabulary, mapping, ordering, and wire representation against the deployed API version before finalizing the API. Never map multiple prefixes by list ordering or silently drop a requested family.
+Set Machine network properties only when enabled, including the requested address families and the matching prefix reference for each family. The currently pinned SDK model exposes a singular prefix property, but its serialization and conventional AKS node-pool documentation do not prove that NAP Machine API supports dual-stack public addressing or family-specific prefixes. Verify the target AKS RP capability and the exact API vocabulary, mapping, ordering, and wire representation against the deployed API version before finalizing the API. Never map multiple prefixes by list ordering or silently drop a requested family. Machine-only scope has no VM fallback.
 
 Machine GET/LIST/status conversion should be examined for the authoritative address representation. Do not assume a public address is present immediately after create or that a generic `IPAddresses` entry distinguishes public from private. The first version does not add an address status API. If AKS does not return enough information to verify or observe the address, document the customer-facing discovery path and verify the resource through Azure during E2E tests.
 
-The AKS RP owns the machine-side IP resource lifecycle. Provider deletion must continue to delete the Machine and must not independently delete an RP-managed Public IP. A request for two families is not successful unless both are provisioned. Validate cleanup after normal deletion, Machine create failure, and partial/batch failure; specifically verify that the AKS RP cleans up an allocation for one family if allocation of the other family fails.
+The AKS RP owns creation and deletion of Machine-associated per-node public IP resources. Provider deletion must continue to delete the Machine and must not independently delete an RP-managed Public IP. A request for two families is not successful unless both are provisioned. Validate cleanup after normal deletion, Machine create failure, and partial/batch failure; specifically verify that the AKS RP cleans up an allocation for one family if allocation of the other family fails. The provider treats customer prefixes only as references and never creates, modifies, resizes, or deletes them.
 
 ### Header batching
 
@@ -237,13 +223,11 @@ For prefix rotation, authorize the new prefix before creating replacement nodes 
 
 ### Identity and capacity
 
-Identify separately which identity reads prefix metadata and which identity allocates an address for each deployment and provisioning path. Do not infer the AKS RP principal from the identity that submits a Machine request:
+Identify separately which identity reads prefix metadata and which identity submits a Machine request for each deployment model. Do not infer the AKS RP principal from the identity that submits the request:
 
 | Deployment and path | Identity contract to verify |
 |---|---|
-| NAP, VM-based modes | Identify the NAP/provider identity that reads prefix metadata and the principal that allocates each address. |
 | NAP, Machine API modes (both create dispatch strategies) | Identify the identity that reads prefix metadata for compatibility checks, the Machine request identity, and the AKS RP principal that allocates each address. |
-| Self-hosted, VM-based modes | Identify the configured self-hosted identity that reads prefix metadata and allocates each address. |
 | Self-hosted, Machine API modes (both create dispatch strategies) | Identify the self-hosted identity that reads prefix metadata and submits the request, plus the AKS RP principal that allocates each address. |
 
 Establish least-privilege permissions and scope for each verified operation; do not broaden role assignments without evidence. If the allocation principal cannot be established or authorized, the affected path is not ready for release.
@@ -252,14 +236,13 @@ Account for finite address capacity, regional public IP quota, all consumers sha
 
 ## Implementation Map
 
-1. **Contract validation:** Verify target AKS NAP dual-stack availability at implementation and release time, plus the Machine RP API version, accepted address-family and family-to-prefix wire contract, identity, prefix constraints, returned addresses, zone behavior, and cleanup. Do not infer NAP support from SDK serialization or conventional node-pool documentation. Confirm direct VM Public IP SKU/API requirements and actual hostPort ingress behavior.
+1. **Contract validation:** Verify target AKS NAP dual-stack availability at implementation and release time, plus the Machine RP API version, accepted address-family and family-to-prefix wire contract, identity, prefix constraints, returned addresses, zone behavior, and cleanup. Do not infer NAP support from SDK serialization or conventional node-pool documentation. This verification is a release gate, not a basis for a VM fallback or split release.
 2. **API and drift:** Add the `v1beta1` field, defaulting, CEL validation for local invariants, deepcopy/code generation, schema/chart CRDs, helper methods, and hash/drift tests. Preserve nil/false compatibility and include explicit requested families and family-to-prefix mapping in the effective configuration.
-3. **VM path:** Add the Public IP client/wiring for both VM modes, per-family create-and-attach behavior, partial-failure cleanup, read/list/GC recovery, quota/error classification, and required narrowly scoped authorization documentation.
-4. **Machine path:** Enable only verified SDK fields in the shared template; extend read/list/status interpretation only if needed for lifecycle correctness. Confirm family mapping, batch template grouping, asynchronous polling, partial-failure cleanup by the AKS RP, and that the settings are not incorrectly modeled as per-machine headers.
-5. **Operations and docs:** Document cost, address allocation, prefix ownership/constraints, zone and topology behavior, API-server authorized-range prerequisites and rotation ordering, replacement headroom, discovery, per-mode identity requirements, and the fact that NSG/firewall ingress rules remain customer-managed.
-6. **End-to-end validation:** Exercise externally initiated IPv4 and IPv6 hostPort traffic independently on real AKS/Azure resources, including customer-owned prefixes and API-server connectivity. Validate both VM modes, both Machine create dispatch strategies, and NAP and self-hosted identities. Register any new `test/suites/` directory in `.github/workflows/e2e-matrix.yaml`.
+3. **Machine path:** Enable only verified SDK fields in the shared template; extend read/list/status interpretation only if needed for lifecycle correctness. Confirm family mapping, batch template grouping, asynchronous polling, partial-failure cleanup by the AKS RP, and that the settings are not incorrectly modeled as per-machine headers. Reject enabled configuration in VM modes before any Azure provisioning side effects.
+4. **Operations and docs:** Document cost, address allocation, prefix ownership/constraints, zone and topology behavior, API-server authorized-range prerequisites and rotation ordering, replacement headroom, discovery, NAP and self-hosted identity requirements, and the fact that NSG/firewall ingress rules remain customer-managed.
+5. **End-to-end validation:** Exercise externally initiated IPv4 and IPv6 hostPort traffic independently on real AKS/Azure resources, including customer-owned prefixes and API-server connectivity. Validate both Machine create dispatch strategies and both NAP and self-hosted deployment models. Register any new `test/suites/` directory in `.github/workflows/e2e-matrix.yaml`.
 
-The feature should not be marked complete for all modes until the matching VM and Machine paths are proven. If Machine RP support is not available, explicitly split the release scope and make unsupported mode behavior fail clearly rather than silently ignoring configuration.
+The feature must not be released until the AKS RP contract is proven for the intended Machine API support. In `aksscriptless` and `bootstrappingclient`, enabled configuration must fail clearly before Azure provisioning side effects rather than being ignored or falling back to private addressing.
 
 ## Testing
 
@@ -271,22 +254,9 @@ The feature should not be marked complete for all modes until the matching VM an
 - Verify family-to-prefix mapping contributes to hashing and drift independent of prefix-list order, and that family changes or mapping changes trigger replacement.
 - Cover existing NodeClasses created before the new field and ensure no default-induced node replacement.
 
-### VM unit and acceptance coverage
+### Unsupported VM-mode regression coverage
 
-Extend the established VM and NIC tests for both `aksscriptless` and `bootstrappingclient`:
-
-- Disabled path creates no Public IP and preserves current NIC shape.
-- Enabled path creates one IP per requested family, uses that family's prefix reference when configured, and associates each address with the correct NIC configuration.
-- IPv4-only opt-in creates no IPv6 public address on a dual-stack cluster; an explicit IPv4+IPv6 request maps each family to its own prefix.
-- A prefix omitted for a requested family allocates that family's address from the normal regional pool, subject to verified Azure/AKS behavior.
-- Failures at IP create, NIC create/update, VM create, and later read/delete preserve the primary error and clean up already-created resources.
-- If one requested family succeeds and another fails, provisioning fails and every provider-owned allocation already created is cleaned up.
-- Cancellation during create/poll is honored; cleanup is bounded and safe.
-- Delete and orphan-GC handle IP-not-found, NIC-not-found, transient read-after-create, and repeated reconciliation.
-- Verify customer prefixes are never deleted and unrelated IP resources are not selected by GC.
-- Cover public IP quota/API errors and ensure they surface as actionable provisioning failures.
-- Verify prefix family, SKU, region, subscription, cross-resource-group authorization, single-zone placement, and incompatible dual-stack prefix-pair rejection.
-- Ensure tests use the repository's existing fake clients and extend the established `_test.go` suites rather than creating parallel tests.
+Add regression coverage for `aksscriptless` and `bootstrappingclient` proving that enabled configuration fails clearly before any Azure resource create/update operation or other provisioning side effect. The setting must not be silently ignored, fall back to private addressing, or partially provision a node. Do not require admission rejection unless admission can reliably determine the active mode.
 
 ### Machine API unit and acceptance coverage
 
@@ -295,9 +265,10 @@ Extend existing Machine template/create/read/list/delete tests for both `aksmach
 - Nil/false omits the Machine property; requested families and family-mapped prefix references serialize only to the confirmed wire contract.
 - GET/LIST round-trip behavior and missing/null network fields do not panic.
 - Two different prefix configurations do not group into one batch; identical configurations remain batch-compatible.
-- Cover per-machine polling, batch partial failure, retry, cancellation, Machine deletion, and RP-owned cleanup.
+- Cover per-machine polling, batch partial failure, retry, cancellation, Machine deletion, and RP-owned per-node public IP cleanup.
 - Force one-family allocation failure after the other family succeeds; verify provisioning is not reported successful and AKS RP cleanup removes the partial allocation in both create dispatch strategies.
 - Do not treat SDK serialization tests as evidence of RP support; require an AKS-backed contract/E2E test.
+- Extend the established package test suites and use their existing fakes and conventions rather than creating parallel tests.
 
 ### E2E and deployment-model coverage
 
@@ -305,11 +276,11 @@ Exercise an externally initiated connection from outside the cluster to a worklo
 
 Cover, where the test infrastructure supports them:
 
-- VM modes and Machine API modes (including both Machine create dispatch strategies).
+- Both Machine API create dispatch strategies.
 - NAP and self-hosted deployment models, with each model's actual identity and role assignments.
 - IPv4-only cluster with IPv4 public addressing; dual-stack cluster with IPv4-only public addressing; and dual-stack cluster with explicitly requested IPv4+IPv6 public addressing. Verify IPv4 and IPv6 ingress independently and verify IPv4-only opt-in does not allocate IPv6. IPv6-only public addressing is not a supported case for this design.
 - On the target AKS NAP RP, verify IPv4-only requests on dual-stack nodes do not allocate IPv6, and explicit dual-stack requests allocate both families with the correct prefix mapping.
-- No-prefix and customer-prefix allocation; verify prefix remains unchanged after node deletion while per-node addresses are removed.
+- No-prefix and customer-prefix allocation; verify the customer prefix remains unchanged after Machine deletion and AKS RP cleanup removes the per-node addresses.
 - Prefix address family, SKU, region, subscription, and authorization checks, including denied cross-subscription references and authorized cross-resource-group references.
 - API-server authorized IP ranges: node registration/connectivity, customer-managed coverage for required prefixes, and rotation ordering that authorizes the new prefix before replacement while retaining old authorization through old-node termination.
 - Prefix placement matrix: zone-redundant prefix across supported placements; single-zone prefix restricted to compatible NodePool and pod topology; no-zone region; empty/unknown zone metadata; conflicting topology; and dual-stack prefix pairs with incompatible zones. Verify replacement and consolidation preserve the same restrictions.
@@ -327,7 +298,11 @@ No. It assigns an address only. The customer's route and NSG/firewall policy mus
 
 ### Does Karpenter own or delete the public IP prefix?
 
-No. The prefix is customer-owned and must outlive the NodeClass configuration that references it. VM mode creates and deletes per-node Public IP resources; Machine API mode relies on AKS RP ownership.
+No. The prefix is customer-owned and must outlive the NodeClass configuration that references it. The AKS RP creates and deletes the per-node Public IP resources with the Machine; the provider deletes the Machine only.
+
+### Does this feature support VM-based provisioning?
+
+No. `aksscriptless` and `bootstrappingclient` are unsupported. If the setting is enabled in either mode, provisioning must fail clearly before any Azure provisioning side effects; it must not be ignored or fall back to private addressing. Admission rejection is not promised unless the active mode can be reliably determined there.
 
 ### Will existing nodes change when this feature is introduced?
 
@@ -343,7 +318,7 @@ No. Public address families are explicit. IPv4-only public addressing can be req
 
 ### Will users get the public address in NodeClaim status?
 
-Not in this design. Karpenter's current NodeClaim flow does not provide a general external-address contract. Users can use the configured prefix range or query the Azure-managed node resource. Revisit address reporting only with a clear, mode-independent source of truth.
+Not in this design. Karpenter's current NodeClaim flow does not provide a general external-address contract. Users can use the configured prefix range or an AKS/Azure-supported discovery path. Verify the Machine GET/LIST behavior before documenting a specific address source.
 
 ## Production Readiness
 
@@ -353,14 +328,14 @@ Not in this design. Karpenter's current NodeClaim flow does not provide a genera
 - [ ] Public IP SKU, allocation behavior, each address family, prefix family mapping, regional/subscription/authorization constraints, and zone semantics are documented and tested.
 - [ ] Zone-redundant/single-zone/no-zone matrix, conflicting NodePool/pod topology, replacement/consolidation restrictions, and incompatible dual-stack prefix pairs are tested.
 - [ ] API-server authorized-range prerequisites, customer-managed coverage, node registration/connectivity, and safe prefix rotation ordering are verified.
-- [ ] Prefix read/allocation identities and least-privilege scope are verified for NAP and self-hosted VM and Machine API paths.
+- [ ] Prefix-read identities and the Machine request/RP allocation identities and least-privilege scope are verified for NAP and self-hosted deployments.
 - [ ] Capacity accounts for shared consumers, regional quota, concurrency, and old/new replacement overlap; exhaustion is actionable, bounded, and never falls back outside the supplied prefix.
-- [ ] Both provisioning families preserve disabled defaults and have complete failure cleanup/orphan recovery.
-- [ ] Partial dual-stack failure does not report success; VM-owned allocations are cleaned up and AKS RP cleanup is verified for Machine API modes.
+- [ ] Disabled defaults preserve existing behavior; enabled configuration in both VM modes fails before any Azure provisioning side effects.
+- [ ] Partial dual-stack failure does not report success; AKS RP cleanup is verified for per-node resources after Machine and batch failures.
 - [ ] Required identity permissions are least-privilege and verified separately for NAP and self-hosted.
 - [ ] Public IP quota and Azure error behavior are actionable and do not create unbounded retry loops.
 - [ ] No broad inbound NSG/firewall rule is introduced; documentation states customer ingress responsibilities.
-- [ ] Customer prefix is never modified/deleted, and provider-owned per-node resources are safely cleaned up.
+- [ ] Customer prefixes are never created, modified, resized, or deleted by the provider; the provider does not independently delete RP-managed per-node Public IP resources.
 - [ ] Real inbound hostPort test passes from outside Azure/cluster network under explicit customer-authorized ingress rules.
 - [ ] NodeClass hash, drift, batch grouping, and existing-object upgrade behavior are covered.
 
@@ -371,10 +346,8 @@ The implementation map and current-state observations in this proposal were inve
 - [`AGENTS.md`](https://github.com/Azure/karpenter-provider-azure/blob/8878fa43373fbad8974b432fc63fa9b3af921604/AGENTS.md) — API lifecycle, generated files, provisioning modes, and testing conventions.
 - [`pkg/apis/v1beta1/aksnodeclass.go`](https://github.com/Azure/karpenter-provider-azure/blob/8878fa43373fbad8974b432fc63fa9b3af921604/pkg/apis/v1beta1/aksnodeclass.go) and [`pkg/apis/crds/karpenter.azure.com_aksnodeclasses.yaml`](https://github.com/Azure/karpenter-provider-azure/blob/8878fa43373fbad8974b432fc63fa9b3af921604/pkg/apis/crds/karpenter.azure.com_aksnodeclasses.yaml) — current NodeClass API, defaults, hash, and generated schema.
 - [`pkg/cloudprovider/drift.go`](https://github.com/Azure/karpenter-provider-azure/blob/8878fa43373fbad8974b432fc63fa9b3af921604/pkg/cloudprovider/drift.go) — static drift behavior.
-- [`pkg/providers/instance/vminstance.go`](https://github.com/Azure/karpenter-provider-azure/blob/8878fa43373fbad8974b432fc63fa9b3af921604/pkg/providers/instance/vminstance.go) — VM create/read/delete lifecycle.
 - [`pkg/providers/instance/aksmachineinstance.go`](https://github.com/Azure/karpenter-provider-azure/blob/8878fa43373fbad8974b432fc63fa9b3af921604/pkg/providers/instance/aksmachineinstance.go) and [`pkg/providers/instance/aksmachineinstancehelpers.go`](https://github.com/Azure/karpenter-provider-azure/blob/8878fa43373fbad8974b432fc63fa9b3af921604/pkg/providers/instance/aksmachineinstancehelpers.go) — Machine template, create/read/delete, and instance conversion.
 - [`pkg/providers/azclient/aksmachinesheaderbatch/`](https://github.com/Azure/karpenter-provider-azure/tree/8878fa43373fbad8974b432fc63fa9b3af921604/pkg/providers/azclient/aksmachinesheaderbatch) — shared-template batching and per-machine header behavior.
-- [`pkg/providers/azclient/`](https://github.com/Azure/karpenter-provider-azure/tree/8878fa43373fbad8974b432fc63fa9b3af921604/pkg/providers/azclient) and [`charts/karpenter/`](https://github.com/Azure/karpenter-provider-azure/tree/8878fa43373fbad8974b432fc63fa9b3af921604/charts/karpenter) — Azure client and deployment/role configuration.
 - [`designs/0010-aks-machines-batch-creation.md`](https://github.com/Azure/karpenter-provider-azure/blob/8878fa43373fbad8974b432fc63fa9b3af921604/designs/0010-aks-machines-batch-creation.md) and [`designs/0014-node-image-and-k8s-version-controls.md`](https://github.com/Azure/karpenter-provider-azure/blob/8878fa43373fbad8974b432fc63fa9b3af921604/designs/0014-node-image-and-k8s-version-controls.md) — precedent for batch semantics and NodeClass API/drift design.
 
 The Machine model evidence is the repository's pinned `armcontainerservice` SDK dependency at that commit. It proves only that the client can represent/serialize the fields; it is not an AKS RP support guarantee.
