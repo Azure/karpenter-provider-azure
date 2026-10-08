@@ -120,6 +120,10 @@ spec:
                 description: |-
                   imageFamily is the image family that instances use.
                   AzureContainerLinux requires an AKS Machine API provision mode with shared image gallery (SIG) access.
+                  Windows node support for the Windows2022 and Windows2025 image families is in preview and
+                  isn't meant for production. Support is best effort, and changes to APIs or behavior may result
+                  in unstable clusters or downtime. For details, see
+                  https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
@@ -791,14 +795,12 @@ spec:
                       secureBoot:
                         description: |-
                           secureBoot specifies whether Secure Boot should be enabled for provisioned nodes.
-                          Defaults to true for AzureContainerLinux and false for other image families.
-                          AzureContainerLinux does not allow explicitly disabling Secure Boot.
+                          AzureContainerLinux requires this field to be explicitly set to true.
                         type: boolean
                       vtpm:
                         description: |-
                           vtpm specifies whether virtual TPM should be enabled for provisioned nodes.
-                          Defaults to true for AzureContainerLinux and false for other image families.
-                          AzureContainerLinux does not allow explicitly disabling vTPM.
+                          AzureContainerLinux requires this field to be explicitly set to true.
                         type: boolean
                     type: object
                 type: object
@@ -897,11 +899,12 @@ spec:
             - message: localDNS is not supported for Windows image families
               rule: '!has(self.localDNS) || self.localDNS.mode == ''Disabled'' ||
                 !has(self.imageFamily) || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
-            - message: AzureContainerLinux requires Secure Boot and vTPM
+            - message: AzureContainerLinux requires security.trustedLaunch.vtpm and
+                security.trustedLaunch.secureBoot to be explicitly set to true
               rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
-                || !has(self.security) || !has(self.security.trustedLaunch) || ((!has(self.security.trustedLaunch.vtpm)
-                || self.security.trustedLaunch.vtpm) && (!has(self.security.trustedLaunch.secureBoot)
-                || self.security.trustedLaunch.secureBoot))'
+                || (has(self.security) && has(self.security.trustedLaunch) && has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm && has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot)'
             - message: AzureContainerLinux requires an OS disk of at least 60 GB
               rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
                 || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60'
@@ -1280,6 +1283,10 @@ spec:
                 description: |-
                   imageFamily is the image family that instances use.
                   AzureContainerLinux requires an AKS Machine API provision mode with shared image gallery (SIG) access.
+                  Windows node support for the Windows2022 and Windows2025 image families is in preview and
+                  isn't meant for production. Support is best effort, and changes to APIs or behavior may result
+                  in unstable clusters or downtime. For details, see
+                  https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
@@ -1951,14 +1958,12 @@ spec:
                       secureBoot:
                         description: |-
                           secureBoot specifies whether Secure Boot should be enabled for provisioned nodes.
-                          Defaults to true for AzureContainerLinux and false for other image families.
-                          AzureContainerLinux does not allow explicitly disabling Secure Boot.
+                          AzureContainerLinux requires this field to be explicitly set to true.
                         type: boolean
                       vtpm:
                         description: |-
                           vtpm specifies whether virtual TPM should be enabled for provisioned nodes.
-                          Defaults to true for AzureContainerLinux and false for other image families.
-                          AzureContainerLinux does not allow explicitly disabling vTPM.
+                          AzureContainerLinux requires this field to be explicitly set to true.
                         type: boolean
                     type: object
                 type: object
@@ -2057,11 +2062,12 @@ spec:
             - message: localDNS is not supported for Windows image families
               rule: '!has(self.localDNS) || self.localDNS.mode == ''Disabled'' ||
                 !has(self.imageFamily) || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
-            - message: AzureContainerLinux requires Secure Boot and vTPM
+            - message: AzureContainerLinux requires security.trustedLaunch.vtpm and
+                security.trustedLaunch.secureBoot to be explicitly set to true
               rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
-                || !has(self.security) || !has(self.security.trustedLaunch) || ((!has(self.security.trustedLaunch.vtpm)
-                || self.security.trustedLaunch.vtpm) && (!has(self.security.trustedLaunch.secureBoot)
-                || self.security.trustedLaunch.secureBoot))'
+                || (has(self.security) && has(self.security.trustedLaunch) && has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm && has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot)'
             - message: AzureContainerLinux requires an OS disk of at least 60 GB
               rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
                 || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60'

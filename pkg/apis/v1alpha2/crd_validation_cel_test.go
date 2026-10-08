@@ -824,7 +824,7 @@ var _ = Describe("CEL/Validation", func() {
 	})
 
 	Context("AzureContainerLinux", func() {
-		DescribeTable("should validate security defaults",
+		DescribeTable("should require explicit security on create and update",
 			func(security *v1alpha2.Security, valid bool) {
 				nodeClass := &v1alpha2.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -838,14 +838,18 @@ var _ = Describe("CEL/Validation", func() {
 					Expect(nodeClass.IsVTPMEnabled()).To(BeTrue())
 					Expect(nodeClass.IsSecureBootEnabled()).To(BeTrue())
 				} else {
-					Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("AzureContainerLinux requires Secure Boot and vTPM")))
+					Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("to be explicitly set to true")))
+					nodeClass.Spec.Security = &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+					nodeClass.Spec.Security = security
+					Expect(env.Client.Update(ctx, nodeClass)).To(MatchError(ContainSubstring("to be explicitly set to true")))
 				}
 			},
-			Entry("omitted security", nil, true),
-			Entry("empty security", &v1alpha2.Security{}, true),
-			Entry("empty Trusted Launch", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{}}, true),
-			Entry("only vTPM enabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true)}}, true),
-			Entry("only Secure Boot enabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{SecureBoot: lo.ToPtr(true)}}, true),
+			Entry("omitted security", nil, false),
+			Entry("empty security", &v1alpha2.Security{}, false),
+			Entry("empty Trusted Launch", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{}}, false),
+			Entry("only vTPM enabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true)}}, false),
+			Entry("only Secure Boot enabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{SecureBoot: lo.ToPtr(true)}}, false),
 			Entry("both enabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, true),
 			Entry("vTPM disabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(false)}}, false),
 			Entry("Secure Boot disabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{SecureBoot: lo.ToPtr(false)}}, false),
@@ -853,7 +857,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("Secure Boot enabled but vTPM disabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(true)}}, false),
 		)
 
-		DescribeTable("should support FIPS with implicit or explicit Trusted Launch", func(explicit bool) {
+		DescribeTable("should require explicit Trusted Launch with FIPS", func(explicit bool) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
@@ -864,13 +868,20 @@ var _ = Describe("CEL/Validation", func() {
 			if explicit {
 				nodeClass.Spec.Security = &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
 			}
-			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
-		}, Entry("implicit", false), Entry("explicit", true))
+			if explicit {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("to be explicitly set to true")))
+			}
+		}, Entry("implicit rejected", false), Entry("explicit accepted", true))
 
 		DescribeTable("should require at least a 60 GB OS disk", func(size *int32, valid bool) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
-				Spec:       v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr(v1alpha2.AzureContainerLinuxImageFamily), OSDiskSizeGB: size},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1alpha2.AzureContainerLinuxImageFamily), OSDiskSizeGB: size,
+					Security: &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
+				},
 			}
 			if valid {
 				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
@@ -886,6 +897,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1alpha2.AKSNodeClassSpec{
 					ImageFamily:     lo.ToPtr(v1alpha2.AzureContainerLinuxImageFamily),
 					WorkloadRuntime: lo.ToPtr(v1alpha2.WorkloadRuntimeKataVMIsolation),
+					Security:        &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("workloadRuntime KataVmIsolation requires imageFamily AzureLinux")))

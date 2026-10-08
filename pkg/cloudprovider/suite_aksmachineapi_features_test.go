@@ -54,8 +54,9 @@ var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
-				UseSIG:        lo.ToPtr(true),
+				ProvisionMode:    lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
+				UseSIG:           lo.ToPtr(true),
+				NetworkDataplane: lo.ToPtr(consts.NetworkDataplaneAzure),
 			})
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -128,12 +129,20 @@ var _ = Describe("CloudProvider", func() {
 		// Mostly ported from VM test: "ImageReference" and "ImageProvider + Image Family"
 		// Note: AKS Machine API does not support Community Image Gallery (CIG)
 		Context("Create - ImageReference and ImageProvider + Image Family", func() {
-			DescribeTable("should provision AzureContainerLinux with automatic Trusted Launch",
+			DescribeTable("should provision AzureContainerLinux with explicit Trusted Launch",
 				func(provisionMode string, fipsMode *v1beta1.FIPSMode, definition string) {
 					testOptions.ProvisionMode = provisionMode
+					// Dispatch mode is captured when the provider is constructed, not read on each create.
+					azureEnv.Reset(ctx)
+					azureEnv = test.NewEnvironment(ctx, env)
+					cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+					cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+					coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
+					statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, testOptions.NetworkPolicy, testOptions.NetworkPlugin,
+						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
 					nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
 					nodeClass.Spec.FIPSMode = fipsMode
-					nodeClass.Spec.Security = nil
+					nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
 					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 						Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{"Standard_D2_v5"},
 					})

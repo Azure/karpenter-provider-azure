@@ -231,7 +231,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 			func(fipsMode *v1beta1.FIPSMode, amd64Definition, arm64Definition string) {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
 				nodeClass.Spec.FIPSMode = fipsMode
-				nodeClass.Spec.Security = nil
+				nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
 
 				images, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())

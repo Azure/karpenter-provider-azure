@@ -815,10 +815,10 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("Windows2025 when FIPSMode is explicitly FIPS should succeed", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeFIPS, false, true),
 			Entry("Windows2025 when TrustedLaunch is enabled should succeed", v1beta1.Windows2025ImageFamily, nil, true, true),
 			Entry("Windows2025 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeFIPS, true, true),
-			Entry("AzureContainerLinux should succeed", v1beta1.AzureContainerLinuxImageFamily, nil, false, true),
-			Entry("AzureContainerLinux with FIPS should succeed", v1beta1.AzureContainerLinuxImageFamily, &v1beta1.FIPSModeFIPS, false, true),
-			Entry("AzureContainerLinux with explicit TrustedLaunch should succeed", v1beta1.AzureContainerLinuxImageFamily, nil, true, true),
-			Entry("AzureContainerLinux with FIPS and explicit TrustedLaunch should succeed", v1beta1.AzureContainerLinuxImageFamily, &v1beta1.FIPSModeFIPS, true, true),
+			Entry("AzureContainerLinux without security should fail", v1beta1.AzureContainerLinuxImageFamily, nil, false, false),
+			Entry("AzureContainerLinux with FIPS but without security should fail", v1beta1.AzureContainerLinuxImageFamily, &v1beta1.FIPSModeFIPS, false, false),
+			Entry("AzureContainerLinux with only vTPM should fail", v1beta1.AzureContainerLinuxImageFamily, nil, true, false),
+			Entry("AzureContainerLinux with FIPS and only vTPM should fail", v1beta1.AzureContainerLinuxImageFamily, &v1beta1.FIPSModeFIPS, true, false),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly Disabled should succeed", "", &v1beta1.FIPSModeDisabled, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1beta1.FIPSModeFIPS, false, true),
@@ -826,7 +826,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", "", &v1beta1.FIPSModeFIPS, true, true),
 		)
 
-		DescribeTable("should validate AzureContainerLinux security defaults",
+		DescribeTable("should require explicit AzureContainerLinux security on create and update",
 			func(security *v1beta1.Security, valid bool) {
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -840,14 +840,18 @@ var _ = Describe("CEL/Validation", func() {
 					Expect(nodeClass.IsVTPMEnabled()).To(BeTrue())
 					Expect(nodeClass.IsSecureBootEnabled()).To(BeTrue())
 				} else {
-					Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("AzureContainerLinux requires Secure Boot and vTPM")))
+					Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("to be explicitly set to true")))
+					nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+					nodeClass.Spec.Security = security
+					Expect(env.Client.Update(ctx, nodeClass)).To(MatchError(ContainSubstring("to be explicitly set to true")))
 				}
 			},
-			Entry("omitted security", nil, true),
-			Entry("empty security", &v1beta1.Security{}, true),
-			Entry("empty Trusted Launch", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{}}, true),
-			Entry("only vTPM enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}}, true),
-			Entry("only Secure Boot enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}}, true),
+			Entry("omitted security", nil, false),
+			Entry("empty security", &v1beta1.Security{}, false),
+			Entry("empty Trusted Launch", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{}}, false),
+			Entry("only vTPM enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}}, false),
+			Entry("only Secure Boot enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}}, false),
 			Entry("both enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, true),
 			Entry("vTPM disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false)}}, false),
 			Entry("Secure Boot disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(false)}}, false),
@@ -861,6 +865,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					ImageFamily:  lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
 					OSDiskSizeGB: size,
+					Security:     &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
 				},
 			}
 			if valid {
@@ -875,12 +880,25 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("default", nil, true),
 		)
 
+		It("should accept AzureContainerLinux FIPS with explicit Secure Boot and vTPM", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
+					FIPSMode:    &v1beta1.FIPSModeFIPS,
+					Security:    &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
 		It("should reject Kata with AzureContainerLinux", func() {
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					ImageFamily:     lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
 					WorkloadRuntime: lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation),
+					Security:        &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("workloadRuntime KataVmIsolation requires imageFamily AzureLinux")))

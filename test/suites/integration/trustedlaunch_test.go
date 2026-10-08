@@ -31,12 +31,12 @@ import (
 )
 
 var _ = Describe("Trusted Launch", func() {
-	It("should automatically enable vTPM and Secure Boot for AzureContainerLinux", func() {
+	It("should provision AzureContainerLinux with explicit vTPM and Secure Boot", func() {
 		if !env.IsAKSMachineAPIMode() || env.InClusterController {
 			Skip("AzureContainerLinux requires Machine API provisioning with managed SIG access")
 		}
 		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
-		nodeClass.Spec.Security = nil
+		nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
 
 		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(nodeClass, nodePool, deployment)

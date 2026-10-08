@@ -97,7 +97,7 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // +kubebuilder:validation:XValidation:message="linuxOSConfig is not supported for Windows image families",rule="!has(self.linuxOSConfig) || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
 // +kubebuilder:validation:XValidation:message="artifactStreaming is not supported for Windows image families",rule="!has(self.artifactStreaming) || !has(self.artifactStreaming.enabled) || self.artifactStreaming.enabled == false || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
 // +kubebuilder:validation:XValidation:message="localDNS is not supported for Windows image families",rule="!has(self.localDNS) || self.localDNS.mode == 'Disabled' || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
-// +kubebuilder:validation:XValidation:message="AzureContainerLinux requires Secure Boot and vTPM",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || !has(self.security) || !has(self.security.trustedLaunch) || ((!has(self.security.trustedLaunch.vtpm) || self.security.trustedLaunch.vtpm) && (!has(self.security.trustedLaunch.secureBoot) || self.security.trustedLaunch.secureBoot))"
+// +kubebuilder:validation:XValidation:message="AzureContainerLinux requires security.trustedLaunch.vtpm and security.trustedLaunch.secureBoot to be explicitly set to true",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || (has(self.security) && has(self.security.trustedLaunch) && has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm && has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)"
 // +kubebuilder:validation:XValidation:message="AzureContainerLinux requires an OS disk of at least 60 GB",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation requires imageFamily AzureLinux",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (has(self.imageFamily) && self.imageFamily == 'AzureLinux') : true"
@@ -130,6 +130,10 @@ type AKSNodeClassSpec struct {
 	ImageID *string `json:"-"`
 	// imageFamily is the image family that instances use.
 	// AzureContainerLinux requires an AKS Machine API provision mode with shared image gallery (SIG) access.
+	// Windows node support for the Windows2022 and Windows2025 image families is in preview and
+	// isn't meant for production. Support is best effort, and changes to APIs or behavior may result
+	// in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
 	// +default="Ubuntu"
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux,Windows2022,Windows2025,AzureContainerLinux}
 	// +optional
@@ -224,13 +228,11 @@ type Versions struct {
 // TrustedLaunch configures Trusted Launch security features for provisioned nodes.
 type TrustedLaunch struct {
 	// vtpm specifies whether virtual TPM should be enabled for provisioned nodes.
-	// Defaults to true for AzureContainerLinux and false for other image families.
-	// AzureContainerLinux does not allow explicitly disabling vTPM.
+	// AzureContainerLinux requires this field to be explicitly set to true.
 	// +optional
 	VTPM *bool `json:"vtpm,omitempty"`
 	// secureBoot specifies whether Secure Boot should be enabled for provisioned nodes.
-	// Defaults to true for AzureContainerLinux and false for other image families.
-	// AzureContainerLinux does not allow explicitly disabling Secure Boot.
+	// AzureContainerLinux requires this field to be explicitly set to true.
 	// +optional
 	SecureBoot *bool `json:"secureBoot,omitempty"`
 }
@@ -846,14 +848,14 @@ func (in *AKSNodeClass) IsVTPMEnabled() bool {
 	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.VTPM != nil {
 		return *in.Spec.Security.TrustedLaunch.VTPM
 	}
-	return lo.FromPtr(in.Spec.ImageFamily) == AzureContainerLinuxImageFamily
+	return false
 }
 
 func (in *AKSNodeClass) IsSecureBootEnabled() bool {
 	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.SecureBoot != nil {
 		return *in.Spec.Security.TrustedLaunch.SecureBoot
 	}
-	return lo.FromPtr(in.Spec.ImageFamily) == AzureContainerLinuxImageFamily
+	return false
 }
 
 // IsTrustedLaunchEnabled returns whether any Trusted Launch-backed setting is enabled.

@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -191,7 +192,13 @@ func (p *DefaultProvider) List(
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
 		// so that modifications to the ordering of the data don't affect the original
-		return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
+		types := item.([]*cloudprovider.InstanceType)
+		if len(types) > 0 {
+			return slices.Clone(types), nil
+		}
+
+		// Ensure we never return nil
+		return []*cloudprovider.InstanceType{}, nil
 	}
 
 	result := p.buildInstanceTypes(ctx, instanceTypeParams)
@@ -340,7 +347,8 @@ func capacityReservationZones(params *instanceTypeParameters) map[string]sets.Se
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
 func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], capacityReservationGroupID string) cloudprovider.Offerings {
-	offerings := []*cloudprovider.Offering{}
+	offerings := make([]*cloudprovider.Offering, 0, 2*len(offeringZones))
+
 	// Availability is tracked separately per group, so a shortage of unreserved capacity
 	// does not suppress the reserved offering that exists to survive exactly that.
 	capacityReserved := capacityReservationGroupID != ""
