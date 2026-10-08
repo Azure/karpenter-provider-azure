@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/oss/go/microsoft/golang:1.26-bookworm@sha256:8365869fedcec3bd332a8c5704ec55152fb397ded5cfc9e57ade54f998add366
+FROM mcr.microsoft.com/oss/go/microsoft/golang:1.27-bookworm@sha256:93e27cb4199b32131586232fc4c490559b71784d62824ec09abf483438994f4f
 
 # [Optional] Uncomment this section to install additional OS packages.
 # graphviz for pprof

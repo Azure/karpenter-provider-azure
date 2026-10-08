@@ -81,7 +81,9 @@ dnsConfig: {}
 #  options:
 #    - name: ndots
 #      value: "1"
-# -- Node selectors to schedule the pod to nodes with labels.
+# -- Node selectors to schedule the pod to nodes with labels. Note: the controller is a
+# Linux-only component, so `kubernetes.io/os: linux` is always enforced by the chart (even
+# if overridden here) to keep it off Windows nodes in hybrid clusters.
 nodeSelector:
   kubernetes.io/os: linux
 # -- Affinity rules for scheduling the pod. If an explicit label selector is not provided for pod affinity or pod anti-affinity one will be created from the pod selector labels.
@@ -215,6 +217,11 @@ settings:
   # -- Feature Gate configuration values. Feature Gates will follow the same graduation process and requirements as feature gates
   # in Kubernetes. More information here https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#feature-gates-for-alpha-or-beta-features
   featureGates:
+    # -- capacityBuffer is ALPHA and is disabled by default.
+    # Setting this to true enables provisioning and lifecycle management for CapacityBuffer resources.
+    # On upgrades, install the release-matched CapacityBuffer CRD first; Helm does not install CRDs on upgrade.
+    # See docs/capacity-buffer.md for the standalone CRD chart and main-chart upgrade paths.
+    capacityBuffer: false
     # -- reservedCapacity is BETA and is disabled until Azure provider support is implemented.
     # Setting this to true only enables the core feature gate; Azure reserved capacity provisioning is not implemented yet.
     reservedCapacity: false

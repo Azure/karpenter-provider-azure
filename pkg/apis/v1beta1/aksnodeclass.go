@@ -18,6 +18,7 @@ package v1beta1
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
@@ -55,6 +56,20 @@ type ArtifactStreaming struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+// CapacityReservationConfiguration configures the Capacity Reservation Group
+// that instances provisioned by this NodeClass target.
+type CapacityReservationConfiguration struct {
+	// groupID is the ARM resource ID of the Capacity Reservation Group.
+	// The group must be in the same subscription and region as the cluster, and
+	// must be of the Targeted reservation type. When set, every instance from
+	// this NodeClass targets the reservation group. Azure may allocate instances beyond the
+	// reserved quantity, in which case the excess is ordinary On-Demand capacity
+	// that is not covered by the capacity reservation SLA.
+	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$`
+	// +required
+	GroupID *string `json:"groupID,omitempty"`
+}
+
 // IsEnabled returns whether artifact streaming should be enabled for the given architecture.
 // ARM64 does not support artifact streaming and always returns false.
 //
@@ -75,7 +90,13 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2404') : true"
-// +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu and Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204') : true"
+// +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu, Ubuntu2204, and Windows2025",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204' || self.imageFamily == 'Windows2025') : true"
+// +kubebuilder:validation:XValidation:message="FIPS is not supported for Windows2022",rule="!has(self.fipsMode) || self.fipsMode != 'FIPS' || !has(self.imageFamily) || self.imageFamily != 'Windows2022'"
+// +kubebuilder:validation:XValidation:message="fipsMode must be FIPS or omitted for Windows2025",rule="!has(self.imageFamily) || self.imageFamily != 'Windows2025' || !has(self.fipsMode) || self.fipsMode == 'FIPS'"
+// +kubebuilder:validation:XValidation:message="TrustedLaunch is not supported for Windows2022",rule="!has(self.imageFamily) || self.imageFamily != 'Windows2022' || !has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))"
+// +kubebuilder:validation:XValidation:message="linuxOSConfig is not supported for Windows image families",rule="!has(self.linuxOSConfig) || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
+// +kubebuilder:validation:XValidation:message="artifactStreaming is not supported for Windows image families",rule="!has(self.artifactStreaming) || !has(self.artifactStreaming.enabled) || self.artifactStreaming.enabled == false || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
+// +kubebuilder:validation:XValidation:message="localDNS is not supported for Windows image families",rule="!has(self.localDNS) || self.localDNS.mode == 'Disabled' || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation requires imageFamily AzureLinux",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (has(self.imageFamily) && self.imageFamily == 'AzureLinux') : true"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with fipsMode FIPS",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.fipsMode) || self.fipsMode != 'FIPS') : true"
@@ -86,6 +107,10 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
+	// capacityReservation configures the Capacity Reservation Group that instances
+	// provisioned by this NodeClass target.
+	// +optional
+	CapacityReservation *CapacityReservationConfiguration `json:"capacityReservation,omitempty"`
 	// osDiskType is the type of disk to use for the OS.
 	// If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
 	// of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
@@ -102,10 +127,18 @@ type AKSNodeClassSpec struct {
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
 	// imageFamily is the image family that instances use.
+	// Windows node support for the Windows2022 and Windows2025 image families is in preview and
+	// isn't meant for production. Support is best effort, and changes to APIs or behavior may result
+	// in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
 	// +default="Ubuntu"
-	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
+	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux,Windows2022,Windows2025}
 	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
+	// versions controls the Kubernetes and node image versions for the NodeClass.
+	// If omitted, both versions follow their automatic defaults.
+	// +optional
+	Versions *Versions `json:"versions,omitempty" hash:"ignore"` // Version changes are handled through resolved status and intentionally excluded from the NodeClass hash.
 	// fipsMode controls FIPS compliance for the provisioned nodes
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional
@@ -168,6 +201,25 @@ type AKSNodeClassSpec struct {
 	// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
 	// +optional
 	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
+}
+
+// Versions controls the Kubernetes and node image versions used by the NodeClass.
+// If omitted, nodes follow the observed control plane version and automatic latest node image selection.
+// +kubebuilder:validation:XValidation:message="kubernetesVersion must be set when nodeImageVersion is set",rule="!has(self.nodeImageVersion) || has(self.kubernetesVersion)"
+type Versions struct {
+	// kubernetesVersion is the Kubernetes version to use for nodes provisioned for the NodeClass.
+	// If omitted, the observed control plane version is used.
+	// +kubebuilder:validation:Pattern=`^[0-9]+\.[0-9]+\.[0-9]+$`
+	// +optional
+	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
+	// nodeImageVersion is the node image ID suffix to use for the NodeClass.
+	// It must match the suffix of a currently resolved image in status.images,
+	// status.observedVersions.latestImageVersion, or a nodeImageVersion in status.observedVersions.recentlyUsedVersions.
+	// When set, kubernetesVersion must also be set. A recently used image version must be paired
+	// with its recorded Kubernetes version.
+	// If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
+	// +optional
+	NodeImageVersion *string `json:"nodeImageVersion,omitempty"`
 }
 
 // TrustedLaunch configures Trusted Launch security features for provisioned nodes.
@@ -743,7 +795,10 @@ type AKSNodeClass struct {
 const AKSNodeClassHashVersion = "v3"
 
 func (in *AKSNodeClass) Hash() string {
-	spec := in.Spec
+	spec := in.Spec.DeepCopy()
+	if spec.CapacityReservation != nil {
+		spec.CapacityReservation.GroupID = lo.ToPtr(strings.ToLower(lo.FromPtr(spec.CapacityReservation.GroupID)))
+	}
 	// workloadRuntime OCIContainer is the default and means "no additional runtime", so it must hash
 	// identically to the field being absent. Otherwise the server-side default landing on existing
 	// AKSNodeClasses would change their hash and drift every node, and explicitly writing the default
@@ -775,6 +830,15 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 	return false
 }
 
+// GetCapacityReservationGroupID returns the configured Capacity Reservation
+// Group ARM resource ID, or an empty string when none is configured.
+func (in *AKSNodeClass) GetCapacityReservationGroupID() string {
+	if in.Spec.CapacityReservation == nil {
+		return ""
+	}
+	return lo.FromPtr(in.Spec.CapacityReservation.GroupID)
+}
+
 func (in *AKSNodeClass) IsVTPMEnabled() bool {
 	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.VTPM != nil {
 		return *in.Spec.Security.TrustedLaunch.VTPM
@@ -792,6 +856,13 @@ func (in *AKSNodeClass) IsSecureBootEnabled() bool {
 // IsTrustedLaunchEnabled returns whether any Trusted Launch-backed setting is enabled.
 func (in *AKSNodeClass) IsTrustedLaunchEnabled() bool {
 	return in.IsVTPMEnabled() || in.IsSecureBootEnabled()
+}
+
+// IsFIPSEnabled returns the effective FIPS setting. Windows2025 requires FIPS in AKS,
+// so it is enabled even when fipsMode is omitted from the NodeClass.
+func (in *AKSNodeClass) IsFIPSEnabled() bool {
+	return lo.FromPtr(in.Spec.ImageFamily) == Windows2025ImageFamily ||
+		lo.FromPtr(in.Spec.FIPSMode) == FIPSModeFIPS
 }
 
 // IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class.

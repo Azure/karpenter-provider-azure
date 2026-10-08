@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -43,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpapis "sigs.k8s.io/karpenter/pkg/apis"
+	autoscalingv1beta1 "sigs.k8s.io/karpenter/pkg/apis/autoscaling/v1beta1"
 
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -104,6 +107,12 @@ type Operator struct {
 	LoadBalancerProvider      *loadbalancer.Provider
 	QuotaProvider             *quota.DefaultProvider
 	AZClient                  *azclient.AZClient
+
+	// SubscriptionID and Location identify the Azure scope this operator manages.
+	SubscriptionID string
+	Location       string
+	// Cloud is the resolved Azure cloud, which not every feature is available in.
+	Cloud cloud.Configuration
 }
 
 func kubeDNSIP(ctx context.Context, kubernetesInterface kubernetes.Interface) (net.IP, error) {
@@ -181,9 +190,11 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	)
 
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(
+		azConfig.Location,
 		operator.KubernetesInterface,
 		cache.New(azurecache.KubernetesVersionTTL,
 			azurecache.DefaultCleanupInterval),
+		azClient.ManagedClustersClient(),
 	)
 	imageProvider := imagefamily.NewProvider(
 		azClient.ImageVersionsClient,
@@ -302,6 +313,9 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		LoadBalancerProvider:         loadBalancerProvider,
 		QuotaProvider:                quotaProvider,
 		AZClient:                     azClient,
+		SubscriptionID:               azConfig.SubscriptionID,
+		Location:                     azConfig.Location,
+		Cloud:                        env.Cloud,
 	}
 }
 
@@ -362,7 +376,7 @@ func getVnetGUID(ctx context.Context, creds azcore.TokenCredential, cfg *auth.Co
 
 // WaitForCRDs waits for the required CRDs to be available with a timeout
 func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config, log logr.Logger) error {
-	requiredGVKs := getRequiredGVKs()
+	requiredGVKs := getRequiredGVKs(ctx)
 	client, err := rest.HTTPClientFor(config)
 	if err != nil {
 		return fmt.Errorf("creating kubernetes client, %w", err)
@@ -431,9 +445,13 @@ func getCredential(env *auth.Environment) (azcore.TokenCredential, error) {
 	return auth.NewTokenWrapper(cred), nil
 }
 
-func getRequiredGVKs() []schema.GroupVersionKind {
+func getRequiredGVKs(ctx context.Context) []schema.GroupVersionKind {
 	// controller-runtime internal, ignore them as we don't watch them
 	internalTypes := []string{"WatchEvent", "UpdateOptions", "DeleteOptions", "ListOptions", "CreateOptions", "PatchOptions", "GetOptions"}
+	requiredGroups := []string{karpapis.Group, v1beta1.Group}
+	if coreoptions.FromContext(ctx).FeatureGates.CapacityBuffer {
+		requiredGroups = append(requiredGroups, autoscalingv1beta1.Group)
+	}
 	requiredGVKs := lo.Filter(lo.Keys(scheme.Scheme.AllKnownTypes()), func(gvk schema.GroupVersionKind, _ int) bool {
 		if lo.Contains(internalTypes, gvk.Kind) {
 			return false
@@ -444,7 +462,7 @@ func getRequiredGVKs() []schema.GroupVersionKind {
 			return false
 		}
 
-		return gvk.Group == karpapis.Group || gvk.Group == v1beta1.Group
+		return lo.Contains(requiredGroups, gvk.Group)
 	})
 	return requiredGVKs
 }

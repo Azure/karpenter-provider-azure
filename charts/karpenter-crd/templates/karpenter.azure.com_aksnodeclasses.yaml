@@ -71,6 +71,24 @@ spec:
                       If not specified, defaults to false.
                     type: boolean
                 type: object
+              capacityReservation:
+                description: |-
+                  capacityReservation configures the Capacity Reservation Group that instances
+                  provisioned by this NodeClass target.
+                properties:
+                  groupID:
+                    description: |-
+                      groupID is the ARM resource ID of the Capacity Reservation Group.
+                      The group must be in the same subscription and region as the cluster, and
+                      must be of the Targeted reservation type. When set, every instance from
+                      this NodeClass targets the reservation group. Azure may allocate instances beyond the
+                      reserved quantity, in which case the excess is ordinary On-Demand capacity
+                      that is not covered by the capacity reservation SLA.
+                    pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$
+                    type: string
+                required:
+                - groupID
+                type: object
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
@@ -99,12 +117,19 @@ spec:
                 type: object
               imageFamily:
                 default: Ubuntu
-                description: imageFamily is the image family that instances use.
+                description: |-
+                  imageFamily is the image family that instances use.
+                  Windows node support for the Windows2022 and Windows2025 image families is in preview and
+                  isn't meant for production. Support is best effort, and changes to APIs or behavior may result
+                  in unstable clusters or downtime. For details, see
+                  https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
                 - Ubuntu2404
                 - AzureLinux
+                - Windows2022
+                - Windows2025
                 type: string
               kubelet:
                 description: |-
@@ -789,6 +814,31 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              versions:
+                description: |-
+                  versions controls the Kubernetes and node image versions for the NodeClass.
+                  If omitted, both versions follow their automatic defaults.
+                properties:
+                  kubernetesVersion:
+                    description: |-
+                      kubernetesVersion is the Kubernetes version to use for nodes provisioned for the NodeClass.
+                      If omitted, the observed control plane version is used.
+                    pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+                    type: string
+                  nodeImageVersion:
+                    description: |-
+                      nodeImageVersion is the node image ID suffix to use for the NodeClass.
+                      It must match the suffix of a currently resolved image in status.images,
+                      status.observedVersions.latestImageVersion, or a nodeImageVersion in status.observedVersions.recentlyUsedVersions.
+                      When set, kubernetesVersion must also be set. A recently used image version must be paired
+                      with its recorded Kubernetes version.
+                      If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: kubernetesVersion must be set when nodeImageVersion is
+                    set
+                  rule: '!has(self.nodeImageVersion) || has(self.kubernetesVersion)'
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -815,14 +865,35 @@ spec:
             - message: FIPS is not yet supported for Ubuntu2404
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2404'') : true'
-            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
-                and Ubuntu2204
+            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu,
+                Ubuntu2204, and Windows2025
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
                 && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
-                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204'')
-                : true'
+                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''
+                || self.imageFamily == ''Windows2025'') : true'
+            - message: FIPS is not supported for Windows2022
+              rule: '!has(self.fipsMode) || self.fipsMode != ''FIPS'' || !has(self.imageFamily)
+                || self.imageFamily != ''Windows2022'''
+            - message: fipsMode must be FIPS or omitted for Windows2025
+              rule: '!has(self.imageFamily) || self.imageFamily != ''Windows2025''
+                || !has(self.fipsMode) || self.fipsMode == ''FIPS'''
+            - message: TrustedLaunch is not supported for Windows2022
+              rule: '!has(self.imageFamily) || self.imageFamily != ''Windows2022''
+                || !has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot))'
+            - message: linuxOSConfig is not supported for Windows image families
+              rule: '!has(self.linuxOSConfig) || !has(self.imageFamily) || !(self.imageFamily
+                in [''Windows2022'',''Windows2025''])'
+            - message: artifactStreaming is not supported for Windows image families
+              rule: '!has(self.artifactStreaming) || !has(self.artifactStreaming.enabled)
+                || self.artifactStreaming.enabled == false || !has(self.imageFamily)
+                || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
+            - message: localDNS is not supported for Windows image families
+              rule: '!has(self.localDNS) || self.localDNS.mode == ''Disabled'' ||
+                !has(self.imageFamily) || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
@@ -844,6 +915,86 @@ spec:
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:
+              capacityReservationGroup:
+                description: |-
+                  capacityReservationGroup is the resolved shape of the capacity reservation
+                  group named by spec.capacityReservation.groupID. It is unset when no group is
+                  configured.
+                properties:
+                  capacityReservations:
+                    description: capacityReservations are the resolved member reservations
+                      of the group.
+                    items:
+                      description: |-
+                        CapacityReservation is a resolved member reservation of the configured
+                        Capacity Reservation Group. Each member reserves one VM size in one
+                        placement, which is what makes it eligible to back an offering.
+                      properties:
+                        id:
+                          description: id is the ARM resource ID of the capacity reservation.
+                          minLength: 1
+                          type: string
+                        name:
+                          description: name is the name of the capacity reservation
+                            within its group.
+                          minLength: 1
+                          type: string
+                        provisioningState:
+                          description: |-
+                            provisioningState is the ARM provisioning state of the capacity reservation.
+                            Only a reservation explicitly reported as Succeeded backs offerings. Members that
+                            cannot back offerings are still listed here, so that a NodePool authored against one
+                            shows why it stopped placing.
+                          type: string
+                        quantity:
+                          description: |-
+                            quantity is the number of instances reserved. Zero is valid: a zero-quantity
+                            reservation can be associated and intentionally overallocated. Unset means ARM
+                            reported no quantity, which is not the same as a reservation of zero.
+                          format: int64
+                          type: integer
+                        vmSize:
+                          description: vmSize is the VM size reserved by this capacity
+                            reservation.
+                          minLength: 1
+                          type: string
+                        zones:
+                          description: |-
+                            zones are the ARM availability zones of this capacity reservation. Empty for
+                            a regional reservation.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - id
+                      - name
+                      - vmSize
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  id:
+                    description: id is the ARM resource ID of the capacity reservation
+                      group.
+                    minLength: 1
+                    type: string
+                  location:
+                    description: location is the Azure region of the capacity reservation
+                      group.
+                    minLength: 1
+                    type: string
+                  zones:
+                    description: |-
+                      zones are the ARM availability zones of the group. An empty list means the
+                      group is regional, and consuming instances must omit zones.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                required:
+                - id
+                - location
+                type: object
               conditions:
                 description: conditions contains signals for health and readiness
                 items:
@@ -972,6 +1123,48 @@ spec:
                 - Enabled
                 - Disabled
                 type: string
+              observedVersions:
+                description: |-
+                  observedVersions contains observed version metadata and previously effective
+                  Kubernetes and node image version pairs.
+                properties:
+                  currentControlPlaneKubernetesVersion:
+                    description: |-
+                      currentControlPlaneKubernetesVersion is the current Kubernetes version of the control plane.
+                      It can differ from status.kubernetesVersion when spec.versions.kubernetesVersion is pinned.
+                    type: string
+                  latestImageVersion:
+                    description: latestImageVersion is the latest node image version
+                      resolved from the gallery.
+                    type: string
+                  recentlyUsedVersions:
+                    description: recentlyUsedVersions contains previously effective
+                      node image versions.
+                    items:
+                      description: RecentlyUsedVersion contains a previously effective
+                        node image version and the Kubernetes version it was paired
+                        with.
+                      properties:
+                        kubernetesVersion:
+                          description: kubernetesVersion is the Kubernetes version
+                            paired with the image version.
+                          type: string
+                        nodeImageVersion:
+                          description: nodeImageVersion is the version suffix from
+                            the node image ID.
+                          type: string
+                        timeUsed:
+                          description: timeUsed is when this image version was last
+                            effective.
+                          format: date-time
+                          type: string
+                      required:
+                      - kubernetesVersion
+                      - nodeImageVersion
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
             type: object
         type: object
     served: false
@@ -1027,6 +1220,24 @@ spec:
                       If not specified, defaults to false.
                     type: boolean
                 type: object
+              capacityReservation:
+                description: |-
+                  capacityReservation configures the Capacity Reservation Group that instances
+                  provisioned by this NodeClass target.
+                properties:
+                  groupID:
+                    description: |-
+                      groupID is the ARM resource ID of the Capacity Reservation Group.
+                      The group must be in the same subscription and region as the cluster, and
+                      must be of the Targeted reservation type. When set, every instance from
+                      this NodeClass targets the reservation group. Azure may allocate instances beyond the
+                      reserved quantity, in which case the excess is ordinary On-Demand capacity
+                      that is not covered by the capacity reservation SLA.
+                    pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$
+                    type: string
+                required:
+                - groupID
+                type: object
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
@@ -1055,12 +1266,19 @@ spec:
                 type: object
               imageFamily:
                 default: Ubuntu
-                description: imageFamily is the image family that instances use.
+                description: |-
+                  imageFamily is the image family that instances use.
+                  Windows node support for the Windows2022 and Windows2025 image families is in preview and
+                  isn't meant for production. Support is best effort, and changes to APIs or behavior may result
+                  in unstable clusters or downtime. For details, see
+                  https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
                 - Ubuntu2404
                 - AzureLinux
+                - Windows2022
+                - Windows2025
                 type: string
               kubelet:
                 description: |-
@@ -1745,6 +1963,31 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              versions:
+                description: |-
+                  versions controls the Kubernetes and node image versions for the NodeClass.
+                  If omitted, both versions follow their automatic defaults.
+                properties:
+                  kubernetesVersion:
+                    description: |-
+                      kubernetesVersion is the Kubernetes version to use for nodes provisioned for the NodeClass.
+                      If omitted, the observed control plane version is used.
+                    pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+                    type: string
+                  nodeImageVersion:
+                    description: |-
+                      nodeImageVersion is the node image ID suffix to use for the NodeClass.
+                      It must match the suffix of a currently resolved image in status.images,
+                      status.observedVersions.latestImageVersion, or a nodeImageVersion in status.observedVersions.recentlyUsedVersions.
+                      When set, kubernetesVersion must also be set. A recently used image version must be paired
+                      with its recorded Kubernetes version.
+                      If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: kubernetesVersion must be set when nodeImageVersion is
+                    set
+                  rule: '!has(self.nodeImageVersion) || has(self.kubernetesVersion)'
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -1771,14 +2014,35 @@ spec:
             - message: FIPS is not yet supported for Ubuntu2404
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2404'') : true'
-            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
-                and Ubuntu2204
+            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu,
+                Ubuntu2204, and Windows2025
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
                 && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
-                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204'')
-                : true'
+                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''
+                || self.imageFamily == ''Windows2025'') : true'
+            - message: FIPS is not supported for Windows2022
+              rule: '!has(self.fipsMode) || self.fipsMode != ''FIPS'' || !has(self.imageFamily)
+                || self.imageFamily != ''Windows2022'''
+            - message: fipsMode must be FIPS or omitted for Windows2025
+              rule: '!has(self.imageFamily) || self.imageFamily != ''Windows2025''
+                || !has(self.fipsMode) || self.fipsMode == ''FIPS'''
+            - message: TrustedLaunch is not supported for Windows2022
+              rule: '!has(self.imageFamily) || self.imageFamily != ''Windows2022''
+                || !has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot))'
+            - message: linuxOSConfig is not supported for Windows image families
+              rule: '!has(self.linuxOSConfig) || !has(self.imageFamily) || !(self.imageFamily
+                in [''Windows2022'',''Windows2025''])'
+            - message: artifactStreaming is not supported for Windows image families
+              rule: '!has(self.artifactStreaming) || !has(self.artifactStreaming.enabled)
+                || self.artifactStreaming.enabled == false || !has(self.imageFamily)
+                || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
+            - message: localDNS is not supported for Windows image families
+              rule: '!has(self.localDNS) || self.localDNS.mode == ''Disabled'' ||
+                !has(self.imageFamily) || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
@@ -1800,6 +2064,86 @@ spec:
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:
+              capacityReservationGroup:
+                description: |-
+                  capacityReservationGroup is the resolved shape of the capacity reservation
+                  group named by spec.capacityReservation.groupID. It is unset when no group is
+                  configured.
+                properties:
+                  capacityReservations:
+                    description: capacityReservations are the resolved member reservations
+                      of the group.
+                    items:
+                      description: |-
+                        CapacityReservation is a resolved member reservation of the configured
+                        Capacity Reservation Group. Each member reserves one VM size in one
+                        placement, which is what makes it eligible to back an offering.
+                      properties:
+                        id:
+                          description: id is the ARM resource ID of the capacity reservation.
+                          minLength: 1
+                          type: string
+                        name:
+                          description: name is the name of the capacity reservation
+                            within its group.
+                          minLength: 1
+                          type: string
+                        provisioningState:
+                          description: |-
+                            provisioningState is the ARM provisioning state of the capacity reservation.
+                            Only a reservation explicitly reported as Succeeded backs offerings. Members that
+                            cannot back offerings are still listed here, so that a NodePool authored against one
+                            shows why it stopped placing.
+                          type: string
+                        quantity:
+                          description: |-
+                            quantity is the number of instances reserved. Zero is valid: a zero-quantity
+                            reservation can be associated and intentionally overallocated. Unset means ARM
+                            reported no quantity, which is not the same as a reservation of zero.
+                          format: int64
+                          type: integer
+                        vmSize:
+                          description: vmSize is the VM size reserved by this capacity
+                            reservation.
+                          minLength: 1
+                          type: string
+                        zones:
+                          description: |-
+                            zones are the ARM availability zones of this capacity reservation. Empty for
+                            a regional reservation.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - id
+                      - name
+                      - vmSize
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  id:
+                    description: id is the ARM resource ID of the capacity reservation
+                      group.
+                    minLength: 1
+                    type: string
+                  location:
+                    description: location is the Azure region of the capacity reservation
+                      group.
+                    minLength: 1
+                    type: string
+                  zones:
+                    description: |-
+                      zones are the ARM availability zones of the group. An empty list means the
+                      group is regional, and consuming instances must omit zones.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                required:
+                - id
+                - location
+                type: object
               conditions:
                 description: conditions contains signals for health and readiness
                 items:
@@ -1928,6 +2272,48 @@ spec:
                 - Enabled
                 - Disabled
                 type: string
+              observedVersions:
+                description: |-
+                  observedVersions contains observed version metadata and previously effective
+                  Kubernetes and node image version pairs.
+                properties:
+                  currentControlPlaneKubernetesVersion:
+                    description: |-
+                      currentControlPlaneKubernetesVersion is the current Kubernetes version of the control plane.
+                      It can differ from status.kubernetesVersion when spec.versions.kubernetesVersion is pinned.
+                    type: string
+                  latestImageVersion:
+                    description: latestImageVersion is the latest node image version
+                      resolved from the gallery.
+                    type: string
+                  recentlyUsedVersions:
+                    description: recentlyUsedVersions contains previously effective
+                      node image versions.
+                    items:
+                      description: RecentlyUsedVersion contains a previously effective
+                        node image version and the Kubernetes version it was paired
+                        with.
+                      properties:
+                        kubernetesVersion:
+                          description: kubernetesVersion is the Kubernetes version
+                            paired with the image version.
+                          type: string
+                        nodeImageVersion:
+                          description: nodeImageVersion is the version suffix from
+                            the node image ID.
+                          type: string
+                        timeUsed:
+                          description: timeUsed is when this image version was last
+                            effective.
+                          format: date-time
+                          type: string
+                      required:
+                      - kubernetesVersion
+                      - nodeImageVersion
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
             type: object
         type: object
     served: true

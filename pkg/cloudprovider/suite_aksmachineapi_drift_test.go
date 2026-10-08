@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
@@ -48,8 +49,9 @@ var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
-				UseSIG:        lo.ToPtr(true),
+				ProvisionMode:    lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
+				UseSIG:           lo.ToPtr(true),
+				NetworkDataplane: lo.ToPtr(consts.NetworkDataplaneAzure),
 			})
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -57,15 +59,16 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
+			statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
+				azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
-			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client))
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
+			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -279,6 +282,76 @@ var _ = Describe("CloudProvider", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(K8sVersionDrift))
 				})
+			})
+
+		})
+
+		Context("Windows Drift", func() {
+			// provisionWindowsNodeClaim drives a Windows2022 machine through the normal
+			// provisioning path and returns its NodeClaim wired up the way the drift checks expect.
+			provisionWindowsNodeClaim := func() *karpv1.NodeClaim {
+				GinkgoHelper()
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelOSStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{string(v1.Windows)},
+					},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_D2_v3"},
+					},
+				)
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					NodeSelector: map[string]string{v1.LabelOSStable: string(v1.Windows)},
+				})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				if nodeClass.Status.KubernetesVersion != nil {
+					node.Status.NodeInfo.KubeletVersion = "v" + *nodeClass.Status.KubernetesVersion
+				}
+				node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "61f71907-753f-4802-a901-47361c3664f2"
+				ExpectApplied(ctx, env.Client, node)
+
+				nodeClaims, err := cloudProvider.List(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeClaims).To(HaveLen(1))
+				windowsNodeClaim := nodeClaims[0]
+				windowsNodeClaim.Status.NodeName = node.Name
+				windowsNodeClaim.Spec.NodeClassRef = &karpv1.NodeClassReference{
+					Group: object.GVK(nodeClass).Group,
+					Kind:  object.GVK(nodeClass).Kind,
+					Name:  nodeClass.Name,
+				}
+				return windowsNodeClaim
+			}
+
+			It("should not drift a newly created Windows2022 machine", func() {
+				windowsNodeClaim := provisionWindowsNodeClaim()
+
+				drifted, err := cloudProvider.IsDrifted(ctx, windowsNodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			// Windows machines pin their node image at create time, so a newer Windows image on the
+			// NodeClass has to drift the node just as it does for Linux. Before pinning, the RP
+			// resolved the image itself and this drift signal did not exist for Windows.
+			It("should trigger image drift when the Windows image version changes", func() {
+				windowsNodeClaim := provisionWindowsNodeClaim()
+
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				test.ApplySIGImagesWithVersion(nodeClass, "20348.9999.260901")
+				ExpectApplied(ctx, env.Client, nodeClass)
+
+				drifted, err := cloudProvider.IsDrifted(ctx, windowsNodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(ImageDrift))
 			})
 		})
 	})

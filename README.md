@@ -21,6 +21,7 @@ Table of contents:
   - [Create NodePool](#create-nodepool)
   - [Scale up deployment](#scale-up-deployment)
   - [Scale down deployment](#scale-down-deployment)
+  - [Maintain spare capacity](#maintain-spare-capacity)
   - [Delete Karpenter nodes manually](#delete-karpenter-nodes-manually)
 - [Cleanup (self-hosted)](#cleanup-self-hosted)
   - [Delete the cluster](#delete-the-cluster)
@@ -103,7 +104,7 @@ creates replacement nodes in response to an advisory.
 ## Known limitations
 
 The following AKS features are not supported:
-* Windows nodes.
+* Windows nodes require the AKS Machine API provision mode. This mode is used by Node Auto Provisioning and can also be used with self-hosted Karpenter; the scriptless and bootstrapping-client provision modes do not support Windows. Windows2025 requires Kubernetes 1.32 or newer and AKS Windows2025 availability for the subscription and region.
 * Kubenet and Calico.
 * IPv6 clusters.
 * [Service Principal](https://learn.microsoft.com/azure/aks/kubernetes-service-principal) based clusters. A system-assigned or user-assigned managed identity must be used.
@@ -377,6 +378,10 @@ Now, delete the deployment. After a short amount of time, Karpenter should termi
 kubectl delete deployment inflate
 kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
+
+### Maintain spare capacity
+
+The alpha CapacityBuffer feature can maintain schedulable headroom for workload spikes. It is disabled by default for self-hosted installations and has explicit cost, ownership, and workload-shape limits. See the [CapacityBuffer guide](docs/capacity-buffer.md) and [bounded example](examples/v1/capacity-buffer.yaml).
 
 ### Delete Karpenter nodes manually
 

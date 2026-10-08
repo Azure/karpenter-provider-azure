@@ -19,6 +19,7 @@ package status_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -29,6 +30,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -66,7 +68,7 @@ var _ = Describe("Validation Reconciler", func() {
 	var emptyDiskEncryptionSetID *arm.ResourceID
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		ctx = options.ToContext(context.Background(), test.Options())
 		fakeDesAPI = &fake.DiskEncryptionSetsAPI{}
 
 		reconciler = status.NewValidationReconciler(fakeDesAPI, emptyDiskEncryptionSetID)
@@ -113,6 +115,110 @@ var _ = Describe("Validation Reconciler", func() {
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
 		})
+	})
+
+	Context("Windows network dataplane validation", func() {
+		DescribeTable("should fail validation for Windows image families on Cilium",
+			func(imageFamily string) {
+				ctx = options.ToContext(ctx, &options.Options{NetworkDataplane: consts.NetworkDataplaneCilium})
+				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(status.WindowsUnsupportedNetworkDataplane))
+				Expect(condition.Message).To(Equal(fmt.Sprintf("imageFamily %q is not supported with network-dataplane %q", imageFamily, consts.NetworkDataplaneCilium)))
+			},
+			Entry("Windows2022", v1beta1.Windows2022ImageFamily),
+			Entry("Windows2025", v1beta1.Windows2025ImageFamily),
+		)
+
+		It("should pass validation for Windows on the Azure dataplane", func() {
+			ctx = options.ToContext(ctx, &options.Options{
+				NetworkDataplane: consts.NetworkDataplaneAzure,
+				ProvisionMode:    consts.ProvisionModeAKSMachineAPI,
+			})
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+
+		It("should pass validation for Linux on Cilium", func() {
+			ctx = options.ToContext(ctx, &options.Options{NetworkDataplane: consts.NetworkDataplaneCilium})
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+	})
+
+	Context("Windows provision mode validation", func() {
+		DescribeTable("should fail validation outside AKS Machine API provision modes",
+			func(imageFamily, provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{
+					NetworkDataplane: consts.NetworkDataplaneAzure,
+					ProvisionMode:    provisionMode,
+				})
+				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(status.WindowsUnsupportedProvisionMode))
+				Expect(condition.Message).To(Equal(fmt.Sprintf("imageFamily %q is not supported with provision-mode %q; Windows requires an AKS Machine API provision mode", imageFamily, provisionMode)))
+			},
+			Entry("Windows2022 on aksscriptless", v1beta1.Windows2022ImageFamily, consts.ProvisionModeAKSScriptless),
+			Entry("Windows2022 on bootstrappingclient", v1beta1.Windows2022ImageFamily, consts.ProvisionModeBootstrappingClient),
+			Entry("Windows2025 on aksscriptless", v1beta1.Windows2025ImageFamily, consts.ProvisionModeAKSScriptless),
+			Entry("Windows2025 on bootstrappingclient", v1beta1.Windows2025ImageFamily, consts.ProvisionModeBootstrappingClient),
+		)
+
+		DescribeTable("should pass validation in AKS Machine API provision modes",
+			func(imageFamily, provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{
+					NetworkDataplane: consts.NetworkDataplaneAzure,
+					ProvisionMode:    provisionMode,
+				})
+				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+			},
+			Entry("Windows2022 on aksmachineapi", v1beta1.Windows2022ImageFamily, consts.ProvisionModeAKSMachineAPI),
+			Entry("Windows2022 on aksmachineapiheaderbatch", v1beta1.Windows2022ImageFamily, consts.ProvisionModeAKSMachineAPIHeaderBatch),
+			Entry("Windows2025 on aksmachineapi", v1beta1.Windows2025ImageFamily, consts.ProvisionModeAKSMachineAPI),
+			Entry("Windows2025 on aksmachineapiheaderbatch", v1beta1.Windows2025ImageFamily, consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
+
+		DescribeTable("should not restrict Linux provision modes",
+			func(provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{
+					NetworkDataplane: consts.NetworkDataplaneAzure,
+					ProvisionMode:    provisionMode,
+				})
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+			},
+			Entry("aksscriptless", consts.ProvisionModeAKSScriptless),
+			Entry("bootstrappingclient", consts.ProvisionModeBootstrappingClient),
+		)
 	})
 
 	Context("Kata Pod Sandboxing (workloadRuntime) validation", func() {
@@ -174,6 +280,45 @@ var _ = Describe("Validation Reconciler", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
 			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+	})
+
+	Context("cluster-level FIPS validation", func() {
+		BeforeEach(func() {
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{EnableFIPS: lo.ToPtr(true)}))
+		})
+
+		It("should reject a NodeClass with unset FIPS mode", func() {
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.FIPSRequired))
+			Expect(condition.Message).To(Equal("AKSNodeClass spec.fipsMode must be set to FIPS because FIPS is enabled at the cluster level"))
+		})
+
+		It("should reject a NodeClass with FIPS explicitly disabled", func() {
+			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeDisabled)
+
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.FIPSRequired))
+		})
+
+		It("should accept a NodeClass with FIPS enabled", func() {
+			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(condition.IsTrue()).To(BeTrue())
 		})
 	})
 

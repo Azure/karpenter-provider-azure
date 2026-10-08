@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
@@ -42,6 +43,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -52,8 +54,9 @@ var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
-				UseSIG:        lo.ToPtr(true),
+				ProvisionMode:    lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
+				UseSIG:           lo.ToPtr(true),
+				NetworkDataplane: lo.ToPtr(consts.NetworkDataplaneAzure),
 			})
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -61,15 +64,16 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
+			statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
+				azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
-			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client))
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
+			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -82,6 +86,46 @@ var _ = Describe("CloudProvider", func() {
 			azureEnv.Reset(ctx)
 			azureEnvNonZonal.Reset(ctx)
 		})
+
+		runCapacityBufferTests(func(expectedCalls int) {
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(expectedCalls))
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+		})
+
+		It("should pass the capacity reservation group through the Machine template", func() {
+			groupID := "/subscriptions/subscriptionID/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"
+			nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{
+				GroupID: lo.ToPtr(groupID),
+			}
+			nodeClass.Status.CapacityReservationGroup = &v1beta1.CapacityReservationGroup{
+				ID:       groupID,
+				Location: fake.Region,
+				Zones:    []string{"1"},
+				CapacityReservations: []v1beta1.CapacityReservation{{
+					ID:                groupID + "/capacityReservations/standard-d2-v3",
+					Name:              "standard-d2-v3",
+					VMSize:            "Standard_D2_v3",
+					Zones:             []string{"1"},
+					ProvisioningState: lo.ToPtr(v1beta1.CapacityReservationProvisioningStateSucceeded),
+				}},
+			}
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).To(HaveLen(1))
+
+			promise, err := azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(promise.Wait()).To(Succeed())
+
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			profile := createInput.AKSMachine.Properties.CapacityReservation
+			Expect(profile).ToNot(BeNil())
+			Expect(profile.CapacityReservationGroup).ToNot(BeNil())
+			Expect(lo.FromPtr(profile.CapacityReservationGroup.ID)).To(Equal(groupID))
+		})
+
 		// Mostly ported from VM test: "ImageReference" and "ImageProvider + Image Family"
 		// Note: AKS Machine API does not support Community Image Gallery (CIG)
 		Context("Create - ImageReference and ImageProvider + Image Family", func() {
@@ -234,6 +278,59 @@ var _ = Describe("CloudProvider", func() {
 			})
 		})
 
+		Context("Create - Windows", func() {
+			DescribeTable("should create a Windows AKS Machine with OS-specific configuration",
+				func(imageFamily string, expectedOSSKU armcontainerservice.OSSKU, expectedFIPS bool, expectedImageDefinition string) {
+					if imageFamily == v1beta1.Windows2025ImageFamily &&
+						!imagefamily.SupportsWindows2025(lo.FromPtr(nodeClass.Status.KubernetesVersion)) {
+						Skip("Windows2025 requires Kubernetes 1.32.0 or newer")
+					}
+
+					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelOSStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{string(v1.Windows)},
+					})
+
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+					pod := coretest.UnschedulablePod(coretest.PodOptions{
+						NodeSelector: map[string]string{v1.LabelOSStable: string(v1.Windows)},
+					})
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					node := ExpectScheduled(ctx, env.Client, pod)
+
+					Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+					aksMachine := createInput.AKSMachine
+					Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())
+					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSType)).To(Equal(armcontainerservice.OSTypeWindows))
+					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(expectedOSSKU))
+					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.EnableFIPS)).To(Equal(expectedFIPS))
+					Expect(aksMachine.Properties.OperatingSystem.LinuxProfile).To(BeNil())
+					Expect(aksMachine.Properties.LocalDNSProfile).To(BeNil())
+					Expect(aksMachine.Properties.Kubernetes.ArtifactStreamingProfile).To(BeNil())
+
+					// Windows nodes pin their image at create time, exactly like Linux. The image
+					// definition also carries the Hyper-V generation, which is what selects Gen2
+					// now that no separate create header is sent.
+					Expect(aksMachine.Properties.NodeImageVersion).ToNot(BeNil())
+					Expect(lo.FromPtr(aksMachine.Properties.NodeImageVersion)).To(HavePrefix("AKSWindows-"))
+					Expect(lo.FromPtr(aksMachine.Properties.NodeImageVersion)).To(ContainSubstring(expectedImageDefinition))
+
+					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelOSStable, string(v1.Windows)))
+					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelArchStable, karpv1.ArchitectureAmd64))
+					Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelOSSKU, v1beta1.GetOSSKUFromImageFamily(imageFamily)))
+					if expectedFIPS {
+						Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelFIPSEnabled, "true"))
+					}
+				},
+				Entry("Windows2022", v1beta1.Windows2022ImageFamily, armcontainerservice.OSSKUWindows2022, false, "2022-containerd"),
+				Entry("Windows2025", v1beta1.Windows2025ImageFamily, armcontainerservice.OSSKUWindows2025, true, "2025"),
+			)
+		})
+
 		// Ported from VM test: "GPU Workloads + Nodes"
 		Context("Create - GPU Workloads + Nodes", func() {
 			// Ported from VM test: "should schedule non-GPU pod onto the cheapest non-GPU capable node"
@@ -323,7 +420,7 @@ var _ = Describe("CloudProvider", func() {
 				test.ApplyDefaultStatus(nodeClass, env, aksTestOptions.UseSIG)
 				aksCloudProvider := New(aksAzureEnv.InstanceTypesProvider, aksAzureEnv.VMInstanceProvider, aksAzureEnv.AKSMachineProvider, recorder, env.Client, aksAzureEnv.ImageProvider, aksAzureEnv.InstanceTypeStore)
 				aksCluster := state.NewCluster(fakeClock, env.Client, aksCloudProvider)
-				aksProv := provisioning.NewProvisioner(env.Client, recorder, aksCloudProvider, aksCluster, fakeClock, deviceallocation.NewController(env.Client))
+				aksProv := provisioning.NewProvisioner(env.Client, recorder, aksCloudProvider, aksCluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
 
 				ExpectApplied(aksCtx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()

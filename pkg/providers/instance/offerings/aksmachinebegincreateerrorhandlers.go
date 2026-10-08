@@ -81,10 +81,12 @@ func NewAKSMachineBeginCreateErrorHandler(unavailableOfferings *cache.Unavailabl
 	}
 }
 
-func (h *AKSMachineBeginCreateErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, he *HandlableError) error {
+// Handle records the failure against capacityReservationGroupID, or against unreserved
+// capacity when it is empty, so the two never mask each other.
+func (h *AKSMachineBeginCreateErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, capacityReservationGroupID string, he *HandlableError) error {
 	for _, handler := range h.handlerEntries {
 		if handler.match(he) {
-			return handler.handle(ctx, h.unavailableOfferings, sku, instanceType, zone, capacityType, he.Code, he.Message)
+			return handler.handle(ctx, h.unavailableOfferings.ForCapacityReservationGroup(capacityReservationGroupID), sku, instanceType, zone, capacityType, he.Code, he.Message)
 		}
 	}
 	return nil
@@ -96,7 +98,7 @@ func (h *AKSMachineBeginCreateErrorHandler) Handle(ctx context.Context, sku *ske
 // spot-only due to capacity — here the error is a hard subscription restriction.
 func handleSKUNotAvailableForSubscriptionError(
 	ctx context.Context,
-	unavailableOfferings *cache.UnavailableOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
