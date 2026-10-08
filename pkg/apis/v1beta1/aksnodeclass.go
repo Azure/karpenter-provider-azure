@@ -837,6 +837,14 @@ func (in *AKSNodeClass) Hash() string {
 	if lo.FromPtr(spec.WorkloadRuntime) == WorkloadRuntimeOCIContainer {
 		spec.WorkloadRuntime = nil
 	}
+	// An omitted NVIDIA configuration and explicit Unmanaged are equivalent:
+	// both produce a driver-only machine request. Normalize the empty/default
+	// wrapper so expressing the default does not drift otherwise unchanged nodes.
+	if spec.GPU != nil && (spec.GPU.Nvidia == nil ||
+		spec.GPU.Nvidia.ManagementMode == nil ||
+		lo.FromPtr(spec.GPU.Nvidia.ManagementMode) == ManagementModeUnmanaged) {
+		spec.GPU.Nvidia = nil
+	}
 	return fmt.Sprint(lo.Must(hashstructure.Hash(spec, hashstructure.FormatV2, &hashstructure.HashOptions{
 		SlicesAsSets:    true,
 		IgnoreZeroValue: true,
