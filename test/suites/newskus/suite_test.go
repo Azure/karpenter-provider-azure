@@ -196,7 +196,7 @@ func buildFamilyTestCases(entries []instancetype.SKUEntry) []*FamilyTestCase {
 	keys := lo.Keys(groups)
 	sort.Strings(keys)
 
-	var cases []*FamilyTestCase
+	cases := make([]*FamilyTestCase, 0, len(keys))
 	for _, key := range keys {
 		skus := groups[key]
 		rep := newskus.PickRepresentativeSize(skus)
