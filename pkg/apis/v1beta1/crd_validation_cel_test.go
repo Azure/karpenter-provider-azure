@@ -806,6 +806,15 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1beta1.AzureLinuxImageFamily, &v1beta1.FIPSModeFIPS, false, true),
 			Entry("generic AzureLinux when TrustedLaunch is enabled should succeed", v1beta1.AzureLinuxImageFamily, nil, true, true),
 			Entry("generic AzureLinux when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should fail", v1beta1.AzureLinuxImageFamily, &v1beta1.FIPSModeFIPS, true, false),
+			Entry("Windows2022 when FIPSMode is explicitly Disabled should succeed", v1beta1.Windows2022ImageFamily, &v1beta1.FIPSModeDisabled, false, true),
+			Entry("Windows2022 when FIPSMode is not explicitly set should succeed", v1beta1.Windows2022ImageFamily, nil, false, true),
+			Entry("Windows2022 when FIPSMode is explicitly FIPS should fail", v1beta1.Windows2022ImageFamily, &v1beta1.FIPSModeFIPS, false, false),
+			Entry("Windows2022 when TrustedLaunch is enabled should fail", v1beta1.Windows2022ImageFamily, nil, true, false),
+			Entry("Windows2025 when FIPSMode is explicitly Disabled should fail", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeDisabled, false, false),
+			Entry("Windows2025 when FIPSMode is not explicitly set should succeed", v1beta1.Windows2025ImageFamily, nil, false, true),
+			Entry("Windows2025 when FIPSMode is explicitly FIPS should succeed", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeFIPS, false, true),
+			Entry("Windows2025 when TrustedLaunch is enabled should succeed", v1beta1.Windows2025ImageFamily, nil, true, true),
+			Entry("Windows2025 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeFIPS, true, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly Disabled should succeed", "", &v1beta1.FIPSModeDisabled, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1beta1.FIPSModeFIPS, false, true),
@@ -891,6 +900,55 @@ var _ = Describe("CEL/Validation", func() {
 		)
 	})
 
+	Context("Windows unsupported profiles", func() {
+		It("should reject artifact streaming for Windows", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:       lo.ToPtr(v1beta1.Windows2022ImageFamily),
+					ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		It("should allow disabled artifact streaming for Windows", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:       lo.ToPtr(v1beta1.Windows2022ImageFamily),
+					ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		DescribeTable("should validate LocalDNS mode for Windows",
+			func(mode v1beta1.LocalDNSMode, expected bool) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						ImageFamily: lo.ToPtr(v1beta1.Windows2022ImageFamily),
+						LocalDNS: &v1beta1.LocalDNS{
+							Mode:             mode,
+							VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+							KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+						},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				if expected {
+					Expect(err).To(Succeed())
+				} else {
+					Expect(err).ToNot(Succeed())
+				}
+			},
+			Entry("Disabled is accepted", v1beta1.LocalDNSModeDisabled, true),
+			Entry("Preferred is rejected", v1beta1.LocalDNSModePreferred, false),
+			Entry("Required is rejected", v1beta1.LocalDNSModeRequired, false),
+		)
+	})
+
 	Context("GPU", func() {
 		It("should accept gpu.mode set to Driver", func() {
 			gpuMode := v1beta1.GPUModeDriver
@@ -943,6 +1001,84 @@ var _ = Describe("CEL/Validation", func() {
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu.nvidia.managementMode set to Managed (default Driver mode)", func() {
+			managed := v1beta1.ManagementModeManaged
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu.nvidia.managementMode set to Unmanaged", func() {
+			unmanaged := v1beta1.ManagementModeUnmanaged
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &unmanaged},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu.nvidia.managementMode=Managed with mode explicitly Driver", func() {
+			managed := v1beta1.ManagementModeManaged
+			driverMode := v1beta1.GPUModeDriver
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode:   &driverMode,
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject gpu.nvidia.managementMode=Managed when mode is None", func() {
+			managed := v1beta1.ManagementModeManaged
+			noneMode := v1beta1.GPUModeNone
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode:   &noneMode,
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept gpu.nvidia.managementMode=Unmanaged with mode None", func() {
+			unmanaged := v1beta1.ManagementModeUnmanaged
+			noneMode := v1beta1.GPUModeNone
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode:   &noneMode,
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &unmanaged},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject invalid gpu.nvidia.managementMode value", func() {
+			invalid := v1beta1.ManagementMode("Invalid")
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &invalid},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 		})
 	})
 
@@ -1219,6 +1355,60 @@ var _ = Describe("CEL/Validation", func() {
 				"accelerator": "test",
 			}
 			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+	})
+
+	Context("Taints", func() {
+		It("should allow the kubernetes.azure.com/scalesetpriority taint", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: v1beta1.AKSLabelScaleSetPriority, Value: "spot", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject kubernetes.azure.com/scalesetpriority taint with non-spot value", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: v1beta1.AKSLabelScaleSetPriority, Value: "regular", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should allow the kubernetes.azure.com/scalesetpriority startup taint", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{Key: v1beta1.AKSLabelScaleSetPriority, Value: "spot", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should allow taints with non-restricted domains", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "example.com/my-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject taints with restricted kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/some-other-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject startup taints with restricted kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/some-other-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
 		})
 	})
 

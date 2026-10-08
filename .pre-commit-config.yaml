@@ -3,11 +3,6 @@ repos:
   rev: v8.24.2
   hooks:
   - id: gitleaks
-- repo: https://github.com/golangci/golangci-lint
-  rev: v2.8.0
-  hooks:
-  - id: golangci-lint
-    entry: golangci-lint-custom run --new-from-rev HEAD --fix
 - repo: https://github.com/jumanjihouse/pre-commit-hooks
   rev: 3.0.0
   hooks:
@@ -22,3 +17,13 @@ repos:
   hooks:
   - id: end-of-file-fixer
   - id: trailing-whitespace
+- repo: local
+  hooks:
+  # Invoke the custom golangci-lint installed by `make toolchain`
+  - id: golangci-lint-custom
+    name: golangci-lint-custom
+    entry: bash -c 'exec "$(go env GOPATH)/bin/golangci-lint-custom" run --new-from-rev HEAD --fix'
+    language: system
+    types: [go]
+    require_serial: true
+    pass_filenames: false

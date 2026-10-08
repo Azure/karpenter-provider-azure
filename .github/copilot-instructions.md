@@ -4,7 +4,7 @@ This repository is the Azure cloud provider for [Karpenter](https://karpenter.sh
 real Azure infrastructure for AKS clusters, so defects surface as failed node provisioning,
 stranded Azure resources, or unschedulable workloads.
 
-Read [AGENTS.md](../AGENTS.md) for the architecture, provisioning modes, code layout, validation
+Read the repository-root file `AGENTS.md`. for the architecture, provisioning modes, code layout, validation
 commands, and the full pull request review guidelines. This file is the short form; `AGENTS.md` is
 the source of truth.
 

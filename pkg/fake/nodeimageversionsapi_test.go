@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 func TestFilteredNodeImagesGalleryFilter(t *testing.T) {
@@ -30,10 +31,19 @@ func TestFilteredNodeImagesGalleryFilter(t *testing.T) {
 	nodeImageVersionAPI := NodeImageVersionsAPI{}
 	nodeImageVersions, _ := nodeImageVersionAPI.List(context.TODO(), "")
 	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersions)
+	supportedGalleries := sets.New("AKSUbuntu", "AKSAzureLinux", "AKSWindows")
+	sawWindows := false
 	for _, val := range filteredNodeImages {
-		g.Expect(lo.FromPtr(val.OS)).ToNot(Equal("AKSWindows"))
-		g.Expect(lo.FromPtr(val.OS)).ToNot(Equal("AKSUbuntuEdgeZone"))
+		os := lo.FromPtr(val.OS)
+		// Only supported galleries are returned; unsupported ones (e.g. EdgeZone) are filtered out.
+		g.Expect(supportedGalleries.Has(os)).To(BeTrue(), "unexpected gallery %q in filtered images", os)
+		g.Expect(os).ToNot(Equal("AKSUbuntuEdgeZone"))
+		if os == "AKSWindows" {
+			sawWindows = true
+		}
 	}
+	// Windows is now a supported gallery and must survive filtering.
+	g.Expect(sawWindows).To(BeTrue(), "expected at least one AKSWindows image to be included")
 }
 
 // The reasoning behind the test is the following set of output

@@ -19,6 +19,7 @@ package fake
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	//nolint:staticcheck // deprecated package
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
@@ -54,7 +55,7 @@ func (s *ResourceSKUsAPI) ListComplete(_ context.Context, _, _ string) (compute.
 	}
 	resourceSkus := ResourceSkus[s.Location]
 	if len(s.AdditionalSKUs) > 0 {
-		resourceSkus = append(append([]compute.ResourceSku{}, resourceSkus...), s.AdditionalSKUs...)
+		resourceSkus = slices.Concat(resourceSkus, s.AdditionalSKUs)
 	}
 	return compute.NewResourceSkusResultIterator(
 		compute.NewResourceSkusResultPage(
