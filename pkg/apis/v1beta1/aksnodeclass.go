@@ -428,9 +428,9 @@ const (
 	// GPU driver, AKS installs and manages additional components such as the
 	// Data Center GPU Manager (DCGM) metrics exporter and the NVIDIA device plugin.
 	// Requires GPU driver installation (gpu.mode must not be None) and is only
-	// supported on NVIDIA GPU SKUs. The managed experience only applies to node
-	// pools managed by AKS Node Auto Provisioning (NAP); on self-hosted Karpenter
-	// this setting has no effect and the managed components are not installed.
+	// supported on NVIDIA GPU SKUs. The managed experience requires an AKS Machine
+	// API provision mode (aksmachineapi or aksmachineapiheaderbatch); other provision
+	// modes report a NodeClass validation failure.
 	// For details see aka.ms/aks/managed-gpu.
 	ManagementModeManaged ManagementMode = "Managed"
 	// ManagementModeUnmanaged disables the managed GPU experience. Only the GPU
@@ -448,9 +448,9 @@ type NvidiaGPU struct {
 	// the device plugin/metrics is the user's responsibility.
 	// Managed requires gpu.mode to be Driver (driver installation enabled) and is
 	// only supported on NVIDIA GPU SKUs running Linux.
-	// The managed experience only applies to node pools managed by AKS Node Auto
-	// Provisioning (NAP). On self-hosted Karpenter this setting has no effect and
-	// the managed components are not installed.
+	// The managed experience requires an AKS Machine API provision mode
+	// (aksmachineapi or aksmachineapiheaderbatch); other provision modes report a
+	// NodeClass validation failure.
 	// For more details of what is installed, see aka.ms/aks/managed-gpu.
 	// +optional
 	ManagementMode *ManagementMode `json:"managementMode,omitempty"`

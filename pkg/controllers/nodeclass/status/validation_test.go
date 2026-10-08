@@ -178,6 +178,75 @@ var _ = Describe("Validation Reconciler", func() {
 		})
 	})
 
+	Context("managed GPU provision mode validation", func() {
+		BeforeEach(func() {
+			nodeClass.Spec.GPU = &v1beta1.GPU{
+				Mode: lo.ToPtr(v1beta1.GPUModeDriver),
+				Nvidia: &v1beta1.NvidiaGPU{
+					ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged),
+				},
+			}
+		})
+
+		DescribeTable("should reject provision modes that cannot express the managed NVIDIA GPU profile",
+			func(provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(status.ManagedGPUUnsupportedProvisionMode))
+				Expect(condition.Message).To(ContainSubstring(provisionMode))
+			},
+			Entry("aksscriptless", consts.ProvisionModeAKSScriptless),
+			Entry("bootstrappingclient", consts.ProvisionModeBootstrappingClient),
+		)
+
+		DescribeTable("should accept AKS Machine API provision modes",
+			func(provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+			},
+			Entry("aksmachineapi", consts.ProvisionModeAKSMachineAPI),
+			Entry("aksmachineapiheaderbatch", consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
+
+		It("should clear the failure after the configuration is corrected", func() {
+			ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeAKSScriptless})
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsFalse()).To(BeTrue())
+
+			nodeClass.Spec.GPU.Nvidia.ManagementMode = lo.ToPtr(v1beta1.ManagementModeUnmanaged)
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+
+		DescribeTable("should not restrict configurations that do not enable managed GPU",
+			func(nvidia *v1beta1.NvidiaGPU) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeAKSScriptless})
+				nodeClass.Spec.GPU.Nvidia = nvidia
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+			},
+			Entry("omitted NVIDIA settings", nil),
+			Entry("empty NVIDIA settings", &v1beta1.NvidiaGPU{}),
+			Entry("explicit Unmanaged", &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeUnmanaged)}),
+		)
+	})
+
 	Context("cluster-level FIPS validation", func() {
 		BeforeEach(func() {
 			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{EnableFIPS: lo.ToPtr(true)}))
