@@ -18,6 +18,7 @@ package instance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -69,6 +70,7 @@ type AKSMachinePromise struct {
 	AKSMachineNodeImageVersion string
 	VMResourceID               string
 	CreationTimestamp          time.Time
+	ImageSelectionReason       string
 }
 
 func NewAKSMachinePromise(
@@ -169,6 +171,7 @@ type DefaultAKSMachineProvider struct {
 	deletingMachines           sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu         sync.RWMutex
 	machineCache               *machinecache.MachineCache
+	securityPatchLookups       chan struct{}
 }
 
 func NewAKSMachineProvider(
@@ -200,6 +203,7 @@ func NewAKSMachineProvider(
 		beginCreateErrorHandling:   offerings.NewAKSMachineBeginCreateErrorHandler(offeringsCache),
 		deletingMachines:           sets.New[string](),
 		machineCache:               machineCache,
+		securityPatchLookups:       make(chan struct{}, 4),
 	}
 
 	return provider
@@ -229,6 +233,11 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 
 	aksMachinePromise, err := p.beginCreateMachine(ctx, nodeClass, nodeClaim, instanceTypes, aksMachineName)
 	if err != nil {
+		var preserve *preserveMachineError
+		var rejected *SecurityPatchImageRejected
+		if errors.As(err, &preserve) || errors.As(err, &rejected) {
+			return nil, err
+		}
 		// Clean up if creation fails.
 		if err := p.deleteMachine(ctx, aksMachineName); err != nil {
 			if !machineUtils.IsAKSMachineOrMachinesPoolNotFound(err) {
@@ -445,6 +454,9 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClass, nodeClaim, instanceTypes, existingAKSMachine)
 	} else if !machineUtils.IsAKSMachineOrMachinesPoolNotFound(err) {
+		if options.FromContext(ctx).IsSecurityPatchChannel() {
+			return nil, &preserveMachineError{fmt.Errorf("checking existing Machine before selecting its image: %w", err)}
+		}
 		// Not fatal. Will fall back to normal creation.
 		log.FromContext(ctx).Error(err, "failed to check for existing AKS machine", "aksMachineName", aksMachineName)
 	}
@@ -469,6 +481,16 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AKS machine template from template: %w", err)
 	}
+	selectionReason := ""
+	if options.FromContext(ctx).IsSecurityPatchChannel() {
+		selected, reason, err := p.selectSecurityPatchImage(ctx, lo.FromPtr(aksMachineTemplate.Properties.NodeImageVersion), nodeClaim.Annotations[SecurityPatchFallbackAnnotation])
+		if err != nil {
+			return nil, &preserveMachineError{err}
+		}
+		aksMachineTemplate.Properties.NodeImageVersion = lo.ToPtr(selected)
+		selectionReason = reason
+		log.FromContext(ctx).Info("selected new Machine image", "aksMachineName", aksMachineName, "nodeImageVersion", selected, "selectionReason", reason)
+	}
 
 	// Call the AKS machine API with the template to create the AKS machine instance
 	if logger := log.FromContext(ctx).V(1); logger.Enabled() {
@@ -476,10 +498,18 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	}
 
 	// Branch between batch and non-batch creation paths.
-	if p.batchCreationEnabled {
-		return p.beginCreateMachineBatch(ctx, aksMachineTemplate, aksMachineName, instanceType, capacityType, zone, nodeClass.GetCapacityReservationGroupID())
+	promise, err := p.dispatchCreateMachine(ctx, aksMachineTemplate, aksMachineName, instanceType, capacityType, zone, nodeClass.GetCapacityReservationGroupID())
+	if promise != nil {
+		promise.ImageSelectionReason = selectionReason
 	}
-	return p.beginCreateMachineNonBatch(ctx, aksMachineTemplate, aksMachineName, instanceType, capacityType, zone, nodeClass.GetCapacityReservationGroupID())
+	return promise, err
+}
+
+func (p *DefaultAKSMachineProvider) dispatchCreateMachine(ctx context.Context, template *armcontainerservice.Machine, name string, instanceType *corecloudprovider.InstanceType, capacityType, zone, reservationGroupID string) (*AKSMachinePromise, error) {
+	if p.batchCreationEnabled {
+		return p.beginCreateMachineBatch(ctx, template, name, instanceType, capacityType, zone, reservationGroupID)
+	}
+	return p.beginCreateMachineNonBatch(ctx, template, name, instanceType, capacityType, zone, reservationGroupID)
 }
 
 // beginCreateMachineBatch handles the batch creation path using the AKS machines header batch API and GET-based poller.
@@ -501,9 +531,15 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 		aksMachineTemplate,
 	)
 	if err != nil {
+		if options.FromContext(ctx).IsSecurityPatchChannel() {
+			return nil, &preserveMachineError{err}
+		}
 		return nil, fmt.Errorf("failed to begin create AKS machine %q, unhandled error: %w", aksMachineName, err)
 	}
 	if handlableError != nil {
+		if rejectedSecurityPatchImage(options.FromContext(ctx).IsSecurityPatchChannel(), aksMachineTemplate, handlableError) {
+			return nil, &SecurityPatchImageRejected{Err: handlableError}
+		}
 		return nil, p.handleMachineBeginCreateError(ctx, aksMachineName, instanceType, zone, capacityType, capacityReservationGroupID, handlableError)
 	}
 
@@ -564,11 +600,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 ) (*AKSMachinePromise, error) {
 	poller, err := p.azClient.AKSMachinesClient().BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
 	if err != nil {
-		he := offerings.ErrorToHandlableError(err)
-		if he != nil {
-			return nil, p.handleMachineBeginCreateError(ctx, aksMachineName, instanceType, zone, capacityType, capacityReservationGroupID, he)
-		}
-		return nil, fmt.Errorf("failed to begin create AKS machine %q, unhandled error: %w", aksMachineName, err)
+		return nil, p.classifyCreateRequestError(ctx, aksMachineTemplate, aksMachineName, instanceType, zone, capacityType, capacityReservationGroupID, err)
 	}
 
 	// Get once after begin create to retrieve VMResourceID.
@@ -669,7 +701,7 @@ func (p *DefaultAKSMachineProvider) handleMachineBeginCreateError(ctx context.Co
 
 func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, aksMachineName string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType, existingAKSMachine *armcontainerservice.Machine) (*AKSMachinePromise, error) {
 	// Reconstruct properties from existing AKS machine instance.
-	if err := validateRetrievedAKSMachineBasicProperties(existingAKSMachine); err != nil {
+	if err := validateMachineForCreate(existingAKSMachine, options.FromContext(ctx).IsSecurityPatchChannel()); err != nil {
 		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, err)
 	}
 	if err := validateExistingAKSMachineCapacityReservation(existingAKSMachine, nodeClass); err != nil {
@@ -750,9 +782,12 @@ func validateExistingAKSMachineCapacityReservation(machine *armcontainerservice.
 func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string, capacityReservationGroupID string) (*armcontainerservice.Machine, error) {
 	gotAKSMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, false)
 	if err != nil {
+		if options.FromContext(ctx).IsSecurityPatchChannel() {
+			err = &preserveMachineError{err}
+		}
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
-	if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {
+	if err := validateMachineForCreate(gotAKSMachine, options.FromContext(ctx).IsSecurityPatchChannel()); err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
 	if lo.FromPtr(gotAKSMachine.Properties.ProvisioningState) == consts.ProvisioningStateFailed {
@@ -764,4 +799,16 @@ func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningE
 		return nil, p.handleMachineProvisioningError(ctx, "get once after begin creation", aksMachineName, instanceType, zone, capacityType, capacityReservationGroupID, gotAKSMachine.Properties.Status.ProvisioningError)
 	}
 	return gotAKSMachine, nil
+}
+
+// validateMachineForCreate preserves incomplete responses only on SecurityPatch,
+// unless the Machine is confirmed failed. Both errors stop field extraction.
+func validateMachineForCreate(machine *armcontainerservice.Machine, securityPatch bool) error {
+	if err := validateRetrievedAKSMachineBasicProperties(machine); err != nil {
+		if !securityPatch || (machine.Properties != nil && lo.FromPtr(machine.Properties.ProvisioningState) == consts.ProvisioningStateFailed) {
+			return err
+		}
+		return &preserveMachineError{err}
+	}
+	return nil
 }

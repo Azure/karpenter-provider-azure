@@ -18,6 +18,7 @@ package imagefamily
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -29,6 +30,45 @@ import (
 
 type NodeImageVersionsClient struct {
 	client *armcontainerservice.Client
+}
+
+type securityPatchCatalogKey struct{}
+
+var ErrCapturedImagesOnlyNotAcknowledged = errors.New("captured-only image discovery was not acknowledged")
+
+// WithSecurityPatchCatalog selects captured SecurityPatch images for this request only.
+func WithSecurityPatchCatalog(ctx context.Context) context.Context {
+	return context.WithValue(ctx, securityPatchCatalogKey{}, true)
+}
+
+func IsSecurityPatchCatalog(ctx context.Context) bool {
+	value, _ := ctx.Value(securityPatchCatalogKey{}).(bool)
+	return value
+}
+
+// IsSecurityPatchVersion recognizes the composite version on logical NIVs and image IDs.
+func IsSecurityPatchVersion(image string) bool {
+	parts := strings.Split(image[strings.LastIndex(image, "/")+1:], "-")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, version := range parts[len(parts)-2:] {
+		segments := strings.Split(version, ".")
+		if len(segments) != 3 {
+			return false
+		}
+		for _, segment := range segments {
+			if segment == "" {
+				return false
+			}
+			for _, digit := range segment {
+				if digit < '0' || digit > '9' {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 func NewNodeImageVersionsClient(subscriptionID string, cred azcore.TokenCredential, opts *arm.ClientOptions) (*NodeImageVersionsClient, error) {
@@ -93,8 +133,46 @@ func FilteredNodeImages(nodeImageVersions []*armcontainerservice.NodeImageVersio
 }
 
 // isNewerVersion will return if version1 is greater than version2, note the new versioning scheme is yearmm.dd.build, previously it was yy.mm.dd without the build id.
+//
+// Security-patch node images (returned when the SecurityPatchOnly header is set) use a composite
+// scheme "<baseVersion>-<securityPatchDate>", e.g. "202605.14.0-2026.06.13". For those the security
+// patch date is the primary ordering key and the base version only breaks ties, matching how the
+// service orders security VHDs. That ordering matters: a newer patch date on an older base image
+// carries newer security fixes and must win, e.g.
+//
+//	202602.19.0-2026.03.02  is newer than  202602.20.0-2026.03.01
+//
+// Standard versions contain no security patch date and are compared as before. The two schemes are
+// never compared against each other since security-patch and standard images come from separate
+// calls.
 func isNewerVersion(version1, version2 string) bool {
-	// Split by dots and compare each segment as an integer getting the largest vhd version
+	base1, patch1 := splitSecurityPatchVersion(version1)
+	base2, patch2 := splitSecurityPatchVersion(version2)
+
+	// Security patch date dominates when both versions carry one.
+	if patch1 != "" && patch2 != "" {
+		if cmp := compareVersionSegments(patch1, patch2); cmp != 0 {
+			return cmp > 0
+		}
+	}
+	return compareVersionSegments(base1, base2) > 0
+}
+
+// splitSecurityPatchVersion splits a node image version into its base version and, for security-patch
+// images, the trailing security patch date. "202605.14.0-2026.06.13" yields ("202605.14.0",
+// "2026.06.13"); "202607.09.0" yields ("202607.09.0", "").
+func splitSecurityPatchVersion(version string) (base, securityPatchDate string) {
+	if base, securityPatchDate, found := strings.Cut(version, "-"); found {
+		return base, securityPatchDate
+	}
+	return version, ""
+}
+
+// compareVersionSegments compares two dot separated numeric versions, returning >0 if version1 is
+// greater, <0 if version2 is greater and 0 if they are equal or cannot be compared. A version with
+// additional trailing segments is considered greater when all shared segments are equal, since the
+// legacy linux versions use "yy.mm.dd" whereas newer linux versions use "yymm.dd.build".
+func compareVersionSegments(version1, version2 string) int {
 	v1Segments := strings.Split(version1, ".")
 	v2Segments := strings.Split(version2, ".")
 
@@ -103,18 +181,15 @@ func isNewerVersion(version1, version2 string) bool {
 		v2Segment, err2 := strconv.Atoi(v2Segments[i])
 
 		if err1 != nil || err2 != nil {
-			return false
+			return 0
 		}
 
 		if v1Segment > v2Segment {
-			return true
+			return 1
 		} else if v1Segment < v2Segment {
-			return false
+			return -1
 		}
 	}
 
-	// If all segments are equal up to the length of the shorter version,
-	// the longer version is considered newer if it has additional segments
-	// the legacy linux versions use "yy.mm.dd" whereas new linux versions use "yymm.dd.build"
-	return len(v1Segments) > len(v2Segments)
+	return len(v1Segments) - len(v2Segments)
 }

@@ -70,6 +70,8 @@ and the separate `VM_MEMORY_OVERHEAD_PERCENT` safety margin remain unchanged.
 
 ## Known limitations
 
+For managed NAP SecurityPatch provisioning, see [image compatibility and standard-image fallback](docs/securitypatch-image-compatibility.md).
+
 The following AKS features are not supported:
 * Windows nodes require the AKS Machine API provision mode. This mode is used by Node Auto Provisioning and can also be used with self-hosted Karpenter; the scriptless and bootstrapping-client provision modes do not support Windows. Windows2025 requires Kubernetes 1.32 or newer and AKS Windows2025 availability for the subscription and region.
 * Kubenet and Calico.

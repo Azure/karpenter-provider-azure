@@ -17,6 +17,9 @@ limitations under the License.
 package cloudprovider
 
 import (
+	"context"
+	"testing"
+
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/awslabs/operatorpkg/object"
 	"github.com/blang/semver/v4"
@@ -44,6 +47,31 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 )
+
+func TestCapturedNodeDoesNotDriftWhenCatalogDisappears(t *testing.T) {
+	claim := &karpv1.NodeClaim{}
+	claim.Status.ImageID = "AKSUbuntu-2404gen2containerd-202605.27.0-2026.07.18"
+	nodeClass := &v1beta1.AKSNodeClass{}
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+	nodeClass.Status.Images = []v1beta1.NodeImage{{ID: "/images/2404gen2containerd/versions/202609.01.0"}}
+	reason, err := (&CloudProvider{}).isImageVersionDrifted(context.Background(), claim, nodeClass)
+	if err != nil || reason != "" {
+		t.Fatalf("unexpected downgrade drift: %s, %v", reason, err)
+	}
+}
+
+func TestSecurityPatchPreferenceDoesNotMigrateExistingStandardNode(t *testing.T) {
+	claim := &karpv1.NodeClaim{}
+	claim.Status.ImageID = "/images/2404gen2containerd/versions/202609.01.0"
+	nodeClass := &v1beta1.AKSNodeClass{}
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+	nodeClass.Status.Images = []v1beta1.NodeImage{{ID: claim.Status.ImageID}}
+	ctx := options.ToContext(context.Background(), &options.Options{NodeOSUpgradeChannel: "SecurityPatch"})
+	reason, err := (&CloudProvider{}).isImageVersionDrifted(ctx, claim, nodeClass)
+	if err != nil || reason != "" {
+		t.Fatalf("unexpected migration drift: %s, %v", reason, err)
+	}
+}
 
 var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
