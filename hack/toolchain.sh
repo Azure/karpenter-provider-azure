@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Keep the default version aligned with .github/actions/install-deps/action.yaml
+# and jobs.ci.env.K8S_VERSION in .github/workflows/ci.yml.
 K8S_VERSION="${K8S_VERSION:="1.34.x"}"
 KUBEBUILDER_ASSETS="/usr/local/kubebuilder/bin"
 
@@ -70,7 +72,7 @@ tools() {
     go-install controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0
     go-install cosign github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
 #   go install -tags extended github.com/gohugoio/hugo@v0.110.0
-    go-install govulncheck golang.org/x/vuln/cmd/govulncheck@v1.1.4
+    go-install govulncheck golang.org/x/vuln/cmd/govulncheck@v1.8.0
     go-install ginkgo github.com/onsi/ginkgo/v2/ginkgo@latest
     go-install actionlint github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
     go-install goveralls github.com/mattn/goveralls@v0.0.12
@@ -83,7 +85,7 @@ tools() {
         echo "Go workspace's \"bin\" directory is not in PATH. Run 'export PATH=\"\$PATH:\${GOPATH:-\$HOME/go}/bin\"'."
     fi
 
-    go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+    go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 
     # Install our custom modules in golangci-lint
     if ! should-skip "golangci-lint-custom"; then

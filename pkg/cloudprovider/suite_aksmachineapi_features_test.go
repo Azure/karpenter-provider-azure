@@ -54,8 +54,9 @@ var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
-				UseSIG:        lo.ToPtr(true),
+				ProvisionMode:    lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
+				UseSIG:           lo.ToPtr(true),
+				NetworkDataplane: lo.ToPtr(consts.NetworkDataplaneAzure),
 			})
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -277,6 +278,59 @@ var _ = Describe("CloudProvider", func() {
 			})
 		})
 
+		Context("Create - Windows", func() {
+			DescribeTable("should create a Windows AKS Machine with OS-specific configuration",
+				func(imageFamily string, expectedOSSKU armcontainerservice.OSSKU, expectedFIPS bool, expectedImageDefinition string) {
+					if imageFamily == v1beta1.Windows2025ImageFamily &&
+						!imagefamily.SupportsWindows2025(lo.FromPtr(nodeClass.Status.KubernetesVersion)) {
+						Skip("Windows2025 requires Kubernetes 1.32.0 or newer")
+					}
+
+					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelOSStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{string(v1.Windows)},
+					})
+
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+					pod := coretest.UnschedulablePod(coretest.PodOptions{
+						NodeSelector: map[string]string{v1.LabelOSStable: string(v1.Windows)},
+					})
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					node := ExpectScheduled(ctx, env.Client, pod)
+
+					Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+					aksMachine := createInput.AKSMachine
+					Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())
+					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSType)).To(Equal(armcontainerservice.OSTypeWindows))
+					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(expectedOSSKU))
+					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.EnableFIPS)).To(Equal(expectedFIPS))
+					Expect(aksMachine.Properties.OperatingSystem.LinuxProfile).To(BeNil())
+					Expect(aksMachine.Properties.LocalDNSProfile).To(BeNil())
+					Expect(aksMachine.Properties.Kubernetes.ArtifactStreamingProfile).To(BeNil())
+
+					// Windows nodes pin their image at create time, exactly like Linux. The image
+					// definition also carries the Hyper-V generation, which is what selects Gen2
+					// now that no separate create header is sent.
+					Expect(aksMachine.Properties.NodeImageVersion).ToNot(BeNil())
+					Expect(lo.FromPtr(aksMachine.Properties.NodeImageVersion)).To(HavePrefix("AKSWindows-"))
+					Expect(lo.FromPtr(aksMachine.Properties.NodeImageVersion)).To(ContainSubstring(expectedImageDefinition))
+
+					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelOSStable, string(v1.Windows)))
+					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelArchStable, karpv1.ArchitectureAmd64))
+					Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelOSSKU, v1beta1.GetOSSKUFromImageFamily(imageFamily)))
+					if expectedFIPS {
+						Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelFIPSEnabled, "true"))
+					}
+				},
+				Entry("Windows2022", v1beta1.Windows2022ImageFamily, armcontainerservice.OSSKUWindows2022, false, "2022-containerd"),
+				Entry("Windows2025", v1beta1.Windows2025ImageFamily, armcontainerservice.OSSKUWindows2025, true, "2025"),
+			)
+		})
+
 		// Ported from VM test: "GPU Workloads + Nodes"
 		Context("Create - GPU Workloads + Nodes", func() {
 			// Ported from VM test: "should schedule non-GPU pod onto the cheapest non-GPU capable node"
@@ -345,6 +399,84 @@ var _ = Describe("CloudProvider", func() {
 				Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-name", "T4"))
 				Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-manufacturer", v1beta1.ManufacturerNvidia))
 				Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-count", "1"))
+			})
+		})
+
+		// Managed NVIDIA GPU experience (gpu.nvidia.managementMode) on the AKS machine API path.
+		Context("Create - Managed NVIDIA GPU", func() {
+			scheduleGPUPod := func() {
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "managed-gpu",
+						Labels: map[string]string{"app": "managed-gpu"},
+					},
+					Image: "mcr.microsoft.com/azuredocs/samples-tf-mnist-demo:gpu",
+					ResourceRequirements: v1.ResourceRequirements{
+						Limits: v1.ResourceList{"nvidia.com/gpu": resource.MustParse("1")},
+					},
+					RestartPolicy: v1.RestartPolicy("OnFailure"),
+					Tolerations: []v1.Toleration{{
+						Key:      "sku",
+						Operator: v1.TolerationOpEqual,
+						Value:    "gpu",
+						Effect:   v1.TaintEffectNoSchedule,
+					}},
+				})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+			}
+
+			popCreatedMachine := func() armcontainerservice.Machine {
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+				Expect(aksMachine.Properties).ToNot(BeNil())
+				Expect(aksMachine.Properties.Hardware).ToNot(BeNil())
+				return aksMachine
+			}
+
+			It("should set GpuProfile.Nvidia.ManagementMode=Managed for a Managed NVIDIA GPU NodeClass", func() {
+				nodeClass.Spec.GPU = &v1beta1.GPU{
+					Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged)},
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				scheduleGPUPod()
+
+				aksMachine := popCreatedMachine()
+				Expect(utils.IsNvidiaEnabledSKU(lo.FromPtr(aksMachine.Properties.Hardware.VMSize))).To(BeTrue())
+				gpuProfile := aksMachine.Properties.Hardware.GpuProfile
+				Expect(gpuProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(gpuProfile.Driver)).To(Equal(armcontainerservice.GPUDriverInstall))
+				Expect(gpuProfile.Nvidia).ToNot(BeNil())
+				Expect(lo.FromPtr(gpuProfile.Nvidia.ManagementMode)).To(Equal(armcontainerservice.ManagementModeManaged))
+			})
+
+			It("should not set GpuProfile.Nvidia when management mode is unset (unmanaged default, non-breaking)", func() {
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				scheduleGPUPod()
+
+				aksMachine := popCreatedMachine()
+				Expect(utils.IsNvidiaEnabledSKU(lo.FromPtr(aksMachine.Properties.Hardware.VMSize))).To(BeTrue())
+				gpuProfile := aksMachine.Properties.Hardware.GpuProfile
+				Expect(gpuProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(gpuProfile.Driver)).To(Equal(armcontainerservice.GPUDriverInstall))
+				Expect(gpuProfile.Nvidia).To(BeNil())
+			})
+
+			It("should not set GpuProfile.Nvidia when management mode is explicitly Unmanaged", func() {
+				nodeClass.Spec.GPU = &v1beta1.GPU{
+					Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeUnmanaged)},
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				scheduleGPUPod()
+
+				aksMachine := popCreatedMachine()
+				gpuProfile := aksMachine.Properties.Hardware.GpuProfile
+				Expect(gpuProfile).ToNot(BeNil())
+				Expect(gpuProfile.Nvidia).To(BeNil())
 			})
 		})
 

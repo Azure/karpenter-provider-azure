@@ -208,9 +208,8 @@ func (c *VirtualMachinesAPI) BeginUpdate(_ context.Context, resourceGroupName st
 				if vm.Identity.UserAssignedIdentities == nil {
 					vm.Identity.UserAssignedIdentities = make(map[string]*armcompute.UserAssignedIdentitiesValue)
 				}
-				for id, val := range updates.Identity.UserAssignedIdentities {
-					vm.Identity.UserAssignedIdentities[id] = val
-				}
+
+				maps.Copy(vm.Identity.UserAssignedIdentities, updates.Identity.UserAssignedIdentities)
 			}
 		}
 
