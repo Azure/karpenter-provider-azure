@@ -79,6 +79,8 @@ var _ = Describe("Validation Reconciler", func() {
 			},
 			Spec: v1beta1.AKSNodeClassSpec{},
 		}
+		nodeClass.Status.KubernetesVersion = lo.ToPtr("1.36.0")
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 	})
 
 	// All LocalDNS validations are now handled declaratively by CEL and kubebuilder markers.
@@ -152,6 +154,49 @@ var _ = Describe("Validation Reconciler", func() {
 		It("should pass validation for Linux on Cilium", func() {
 			ctx = options.ToContext(ctx, &options.Options{NetworkDataplane: consts.NetworkDataplaneCilium})
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+	})
+
+	Context("Windows OS SKU Kubernetes version validation", func() {
+		BeforeEach(func() {
+			ctx = options.ToContext(ctx, &options.Options{
+				NetworkDataplane: consts.NetworkDataplaneAzure,
+				ProvisionMode:    consts.ProvisionModeAKSMachineAPI,
+			})
+		})
+
+		It("should pass validation for Windows2022 on Kubernetes 1.36", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.36.99")
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+
+		It("should fail validation for Windows2022 on Kubernetes 1.37", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.37.0")
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.Windows2022UnsupportedKubernetesVersion))
+			Expect(condition.Message).To(Equal("imageFamily \"Windows2022\" is not supported with Kubernetes version \"1.37.0\"; Windows2022 supports Kubernetes 1.36 and earlier. See https://learn.microsoft.com/azure/aks/upgrade-os-version#supported-os-versions"))
+		})
+
+		It("should not apply the Windows2022 version ceiling to Windows2025", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.37.0")
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())

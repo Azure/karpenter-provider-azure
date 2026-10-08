@@ -28,6 +28,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -59,6 +60,10 @@ const (
 	// WindowsUnsupportedProvisionMode is the condition reason set when a Windows NodeClass is
 	// configured on a cluster that does not provision through the AKS Machine API.
 	WindowsUnsupportedProvisionMode = "WindowsUnsupportedProvisionMode"
+	// Windows2022UnsupportedKubernetesVersion is the condition reason set when a Windows2022
+	// NodeClass targets a Kubernetes version newer than the OS SKU supports.
+	Windows2022UnsupportedKubernetesVersion = "Windows2022UnsupportedKubernetesVersion"
+	windows2022MaxKubernetesMinor           = 36
 )
 
 type ValidationReconciler struct {
@@ -83,7 +88,11 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 		return reconcile.Result{}, nil
 	}
 
-	if !validateWindowsCompatibility(ctx, nodeClass) {
+	windowsCompatible, err := validateWindowsCompatibility(ctx, nodeClass)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	if !windowsCompatible {
 		return reconcile.Result{}, nil
 	}
 
@@ -153,10 +162,10 @@ func validateFIPS(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
 	return true
 }
 
-func validateWindowsCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
+func validateWindowsCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (bool, error) {
 	imageFamily := lo.FromPtr(nodeClass.Spec.ImageFamily)
 	if !v1beta1.IsWindowsImageFamily(imageFamily) {
-		return true
+		return true, nil
 	}
 	providerOptions := options.FromContext(ctx)
 	if providerOptions.NetworkDataplane == consts.NetworkDataplaneCilium {
@@ -165,7 +174,7 @@ func validateWindowsCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNod
 			WindowsUnsupportedNetworkDataplane,
 			fmt.Sprintf("imageFamily %q is not supported with network-dataplane %q", imageFamily, providerOptions.NetworkDataplane),
 		)
-		return false
+		return false, nil
 	}
 	if !providerOptions.IsAKSMachineAPIMode() {
 		nodeClass.StatusConditions().SetFalse(
@@ -173,9 +182,28 @@ func validateWindowsCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNod
 			WindowsUnsupportedProvisionMode,
 			fmt.Sprintf("imageFamily %q is not supported with provision-mode %q; Windows requires an AKS Machine API provision mode", imageFamily, providerOptions.ProvisionMode),
 		)
-		return false
+		return false, nil
 	}
-	return true
+	if imageFamily != v1beta1.Windows2022ImageFamily {
+		return true, nil
+	}
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return false, fmt.Errorf("getting kubernetes version, %w", err)
+	}
+	parsedKubernetesVersion, err := semver.Parse(kubernetesVersion)
+	if err != nil {
+		return false, fmt.Errorf("parsing kubernetes version %q, %w", kubernetesVersion, err)
+	}
+	if parsedKubernetesVersion.Major == 1 && parsedKubernetesVersion.Minor <= windows2022MaxKubernetesMinor {
+		return true, nil
+	}
+	nodeClass.StatusConditions().SetFalse(
+		v1beta1.ConditionTypeValidationSucceeded,
+		Windows2022UnsupportedKubernetesVersion,
+		fmt.Sprintf("imageFamily %q is not supported with Kubernetes version %q; Windows2022 supports Kubernetes 1.36 and earlier. See https://learn.microsoft.com/azure/aks/upgrade-os-version#supported-os-versions", imageFamily, kubernetesVersion),
+	)
+	return false, nil
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {
