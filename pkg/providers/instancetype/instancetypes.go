@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -161,15 +162,17 @@ func (p *DefaultProvider) List(
 
 	// Compute fully initialized instance types hash key
 	instanceTypeParams := &instanceTypeParameters{
-		ImageFamily:                lo.FromPtr(nodeClass.Spec.ImageFamily),
-		OSDiskSizeGB:               nodeClass.Spec.OSDiskSizeGB,
-		OSDiskType:                 lo.FromPtr(nodeClass.Spec.OSDiskType),
-		MaxPods:                    utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
-		EncryptionAtHost:           nodeClass.GetEncryptionAtHost(),
-		TrustedLaunch:              nodeClass.IsTrustedLaunchEnabled(),
-		GPUMode:                    nodeClass.GetGPUMode(),
-		ArtifactStreamingEnabled:   nodeClass.IsArtifactStreamingExplicitlyEnabled(),
-		FIPSMode:                   lo.FromPtr(nodeClass.Spec.FIPSMode),
+		ImageFamily:              lo.FromPtr(nodeClass.Spec.ImageFamily),
+		OSDiskSizeGB:             nodeClass.Spec.OSDiskSizeGB,
+		OSDiskType:               lo.FromPtr(nodeClass.Spec.OSDiskType),
+		MaxPods:                  utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
+		EncryptionAtHost:         nodeClass.GetEncryptionAtHost(),
+		TrustedLaunch:            nodeClass.IsTrustedLaunchEnabled(),
+		GPUMode:                  nodeClass.GetGPUMode(),
+		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
+		// Windows2025 is effectively FIPS-on even when fipsMode is unset, so key off the
+		// effective value rather than the raw spec field.
+		FIPSMode:                   lo.Ternary(nodeClass.IsFIPSEnabled(), v1beta1.FIPSModeFIPS, v1beta1.FIPSModeDisabled),
 		LocalDNSRequired:           nodeClass.IsLocalDNSRequired(),
 		CapacityReservationGroupID: nodeClass.GetCapacityReservationGroupID(),
 		CapacityReservations:       p.capacityReservationPlacements(ctx, nodeClass),
@@ -189,7 +192,13 @@ func (p *DefaultProvider) List(
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
 		// so that modifications to the ordering of the data don't affect the original
-		return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
+		types := item.([]*cloudprovider.InstanceType)
+		if len(types) > 0 {
+			return slices.Clone(types), nil
+		}
+
+		// Ensure we never return nil
+		return []*cloudprovider.InstanceType{}, nil
 	}
 
 	result := p.buildInstanceTypes(ctx, instanceTypeParams)
@@ -338,7 +347,8 @@ func capacityReservationZones(params *instanceTypeParameters) map[string]sets.Se
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
 func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], capacityReservationGroupID string) cloudprovider.Offerings {
-	offerings := []*cloudprovider.Offering{}
+	offerings := make([]*cloudprovider.Offering, 0, 2*len(offeringZones))
+
 	// Availability is tracked separately per group, so a shortage of unreserved capacity
 	// does not suppress the reserved offering that exists to survive exactly that.
 	capacityReserved := capacityReservationGroupID != ""
@@ -439,13 +449,18 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 // isInstanceTypeSupportedByFilters consolidates all per-NodeClass instance type
 // filters into a single call to keep the List() method's cyclomatic complexity low.
 func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, architecture string, params *instanceTypeParameters) bool {
-	return p.isInstanceTypeSupportedByImageFamily(sku.GetName(), params.ImageFamily) &&
+	return isArchitectureSupportedByImageFamily(architecture, params.ImageFamily) &&
+		p.isInstanceTypeSupportedByImageFamily(sku.GetName(), params.ImageFamily) &&
 		p.isInstanceTypeSupportedByEncryptionAtHost(sku, params) &&
 		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, params) &&
 		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params) &&
 		p.isInstanceTypeSupportedByTrustedLaunch(sku, params) &&
 		p.isInstanceTypeSupportedByKata(sku, architecture, params)
+}
+
+func isArchitectureSupportedByImageFamily(architecture, imageFamily string) bool {
+	return !v1beta1.IsWindowsImageFamily(imageFamily) || getArchitecture(architecture) == karpv1.ArchitectureAmd64
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {

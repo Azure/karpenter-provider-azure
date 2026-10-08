@@ -234,6 +234,33 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			})
 		})
 
+		Context("Windows Image Families", func() {
+			It("should configure Windows2022", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.30.0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2022))
+				Expect(*enableFIPs).To(BeFalse())
+			})
+
+			It("should configure Windows2025", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.32.0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2025))
+				Expect(*enableFIPs).To(BeTrue())
+			})
+
+			It("should default EnableFIPS true for Windows2025 when fipsMode is omitted", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+				nodeClass.Spec.FIPSMode = nil
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.32.0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2025))
+				Expect(*enableFIPs).To(BeTrue())
+			})
+		})
+
 		Context("Error Cases", func() {
 			It("should return error when ImageFamily is nil", func() {
 				nodeClass.Spec.ImageFamily = nil
@@ -255,6 +282,31 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(enableFIPs).ToNot(BeNil())
 				Expect(*enableFIPs).To(BeFalse())
 			})
+		})
+
+	})
+
+	Context("configureOSType", func() {
+		It("should return Linux for Linux image families", func() {
+			for _, fam := range []string{
+				v1beta1.UbuntuImageFamily,
+				v1beta1.Ubuntu2204ImageFamily,
+				v1beta1.Ubuntu2404ImageFamily,
+				v1beta1.AzureLinuxImageFamily,
+			} {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(fam)
+				Expect(*configureOSType(nodeClass)).To(Equal(armcontainerservice.OSTypeLinux), "family %s", fam)
+			}
+		})
+
+		It("should return Windows for Windows image families", func() {
+			for _, fam := range []string{
+				v1beta1.Windows2022ImageFamily,
+				v1beta1.Windows2025ImageFamily,
+			} {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(fam)
+				Expect(*configureOSType(nodeClass)).To(Equal(armcontainerservice.OSTypeWindows), "family %s", fam)
+			}
 		})
 	})
 
@@ -1017,6 +1069,53 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			profile := configureGPUProfile(instanceType, nodeClass)
 			Expect(profile).ToNot(BeNil())
 			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverNone))
+		})
+
+		It("should not set Nvidia when managementMode is unset (unmanaged default)", func() {
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(profile.Nvidia).To(BeNil())
+		})
+
+		It("should not set Nvidia when managementMode is Unmanaged", func() {
+			unmanaged := v1beta1.ManagementModeUnmanaged
+			nodeClass.Spec.GPU = &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &unmanaged}}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(profile.Nvidia).To(BeNil())
+		})
+
+		It("should set Nvidia.ManagementMode=Managed for NVIDIA SKU with Managed mode", func() {
+			managed := v1beta1.ManagementModeManaged
+			nodeClass.Spec.GPU = &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed}}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverInstall))
+			Expect(profile.Nvidia).ToNot(BeNil())
+			Expect(*profile.Nvidia.ManagementMode).To(Equal(armcontainerservice.ManagementModeManaged))
+		})
+
+		It("should not set Nvidia for AMD GPU SKU even when Managed is requested (NVIDIA-only guard)", func() {
+			managed := v1beta1.ManagementModeManaged
+			nodeClass.Spec.GPU = &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed}}
+			instanceType.Name = "Standard_NV4ads_V710_v5"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(profile.Nvidia).To(BeNil())
+		})
+
+		It("should not set Nvidia when Managed is requested but driver install is disabled (None mode)", func() {
+			managed := v1beta1.ManagementModeManaged
+			noneMode := v1beta1.GPUModeNone
+			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: &noneMode, Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed}}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverNone))
+			Expect(profile.Nvidia).To(BeNil())
 		})
 	})
 

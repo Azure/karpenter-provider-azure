@@ -58,6 +58,8 @@ func rankOfferings(offerings corecloudprovider.Offerings) {
 	// This avoids concentrating launches in the lexically first zone when zonal
 	// offerings are otherwise equivalent. Non-cryptographic randomness is
 	// intentional here.
+	//
+	//nolint:gosec // G404: Use of weak random number generator is acceptable here for shuffling.
 	rand.Shuffle(len(offerings), func(i, j int) { offerings[i], offerings[j] = offerings[j], offerings[i] })
 	sort.SliceStable(offerings, func(i, j int) bool {
 		return compareOfferings(offerings[i], offerings[j]) < 0
