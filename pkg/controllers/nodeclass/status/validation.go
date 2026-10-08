@@ -79,15 +79,36 @@ func NewValidationReconciler(
 	}
 }
 
+//nolint:gocyclo // Keep ordered validation and condition handling together in this reconciler.
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 	if !validateFIPS(ctx, nodeClass) {
 		return reconcile.Result{}, nil
 	}
+
 	if !validateWindowsCompatibility(ctx, nodeClass) {
 		return reconcile.Result{}, nil
 	}
-	if !validateProvisionMode(ctx, nodeClass) {
+
+	// A NodeClass requesting a Kata (Pod Sandboxing) workloadRuntime can only provision on a provision
+	// mode that can express the workload runtime. Surface the gap as a validation failure so the user
+	// gets fast feedback on the NodeClass (and Karpenter core won't create doomed NodeClaims) instead of
+	// silently-pending pods and churning launch failures. The provisioning paths keep their own guards
+	// as defense-in-depth.
+	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).SupportsWorkloadRuntime() {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			KataPodSandboxingUnsupportedProvisionMode,
+			fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode),
+		)
+		return reconcile.Result{}, nil
+	}
+	if nodeClass.IsManagedGPUEnabled() && !options.FromContext(ctx).IsAKSMachineAPIMode() {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			ManagedGPUUnsupportedProvisionMode,
+			fmt.Sprintf("gpu.nvidia.managementMode %q requires an AKS Machine API provision mode; provision-mode %q is not supported", nodeClass.GetManagementMode(), options.FromContext(ctx).ProvisionMode),
+		)
 		return reconcile.Result{}, nil
 	}
 
@@ -105,6 +126,7 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 			return reconcile.Result{}, nil
 		}
 	}
+
 	// Check BYOK RBAC if DES ID is configured
 	if r.parsedDiskEncryptionSetID != nil {
 		logger.V(1).Info("validating Disk Encryption Set RBAC")
@@ -137,29 +159,6 @@ func validateFIPS(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
 			v1beta1.ConditionTypeValidationSucceeded,
 			FIPSRequired,
 			"AKSNodeClass spec.fipsMode must be set to FIPS because FIPS is enabled at the cluster level",
-		)
-		return false
-	}
-	return true
-}
-
-func validateProvisionMode(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
-	// Surface unsupported fields as validation failures so Karpenter core doesn't
-	// create NodeClaims that the selected provisioning path cannot satisfy.
-	opts := options.FromContext(ctx)
-	if nodeClass.IsKataEnabled() && !opts.SupportsWorkloadRuntime() {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeValidationSucceeded,
-			KataPodSandboxingUnsupportedProvisionMode,
-			fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), opts.ProvisionMode),
-		)
-		return false
-	}
-	if nodeClass.IsManagedGPUEnabled() && !opts.IsAKSMachineAPIMode() {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeValidationSucceeded,
-			ManagedGPUUnsupportedProvisionMode,
-			fmt.Sprintf("gpu.nvidia.managementMode %q requires an AKS Machine API provision mode; provision-mode %q is not supported", nodeClass.GetManagementMode(), opts.ProvisionMode),
 		)
 		return false
 	}
