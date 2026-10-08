@@ -43,7 +43,6 @@ const (
 	oldSIGImageVersion   = "202410.09.0"
 	newSIGImageVersion   = "202608.26.0"
 	rollbackImageVersion = "202409.03.0"
-	sigSubscriptionID    = "10945678-1234-1234-1234-123456789012"
 )
 
 func getExpectedTestCommunityImages(version string) []v1beta1.NodeImage {
@@ -184,7 +183,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				if testCase.useSIG {
 					ctx = test.Options(test.OptionsFields{
 						UseSIG:            lo.ToPtr(true),
-						SIGSubscriptionID: lo.ToPtr(sigSubscriptionID),
+						SIGSubscriptionID: lo.ToPtr("10945678-1234-1234-1234-123456789012"),
 					}).ToContext(ctx)
 					return
 				}
