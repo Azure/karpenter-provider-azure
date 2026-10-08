@@ -104,7 +104,6 @@ func ResolveOSDiskProfileFromSKU(
 				Type:   armcontainerservice.OSDiskTypeManaged,
 			}
 		}
-
 	}
 
 	// OSDiskType not provided, OSDiskSize not provided: try ephemeral with maximum size, and use that placement
@@ -114,7 +113,6 @@ func ResolveOSDiskProfileFromSKU(
 
 		// Validate against minimum size requirement.
 		if maximizedSizeGiB >= minEphemeralOSDiskSizeGiB {
-
 			// If trusted launch is enabled, reserve 1 GiB for secure boot metadata.
 			if trustedLaunch {
 				maximizedSizeGiB -= 1
@@ -128,7 +126,7 @@ func ResolveOSDiskProfileFromSKU(
 			if placement != nil {
 				return OSDiskProfile{
 					Type:      armcontainerservice.OSDiskTypeEphemeral,
-					SizeGB:    int32(maximizedSizeGiB), //nolint:gosec // G115: value is bounded to [0,2040]
+					SizeGB:    int32(maximizedSizeGiB),
 					Placement: placement,
 				}
 			}
