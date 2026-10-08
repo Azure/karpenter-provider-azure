@@ -21,6 +21,12 @@ SecurityPatch catalog can still discover abstract live-patching targets. A captu
 image may also represent a patch that does not require a reboot: these properties
 are independent.
 
+Each captured-catalog response page must acknowledge `CapturedImagesOnly: true`.
+Older endpoints may ignore the request header; without acknowledgement the controller
+keeps the standard image and reports `BackendCapabilityUnavailable`. This lets the
+controller ship before captured-image service support. Acknowledgement is not cached
+and does not pin a subsequent Machine PUT to the same backend during rollback.
+
 ## Existing nodes
 
 Enabling the preference does not initiate migration of existing standard-image
@@ -39,8 +45,8 @@ work and would not by itself provide images for initial scale-out.
   or background coverage condition is introduced.
 - New NodeClaims record `karpenter.azure.com/image-selection` as `SecurityPatch`
   or `StandardImageFallback`. `karpenter.azure.com/image-selection-reason` distinguishes
-  `NoCompatibleCapturedImage`, `CatalogUnavailable`, `ImageUnavailable` and recovery
-  of an `ExistingMachine`. Successful fallback create completions emit a
+  `NoCompatibleCapturedImage`, `CatalogUnavailable`, `BackendCapabilityUnavailable`,
+  `ImageUnavailable` and recovery of an `ExistingMachine`. Successful fallback create completions emit a
   `SecurityPatchFallback` event. Structured logs record the selected NIV and reason.
 - If the service rejects a captured version with `SecurityVHDNotFound`, the claim
   records `karpenter.azure.com/securitypatch-fallback=ImageUnavailable` and retries
@@ -98,8 +104,11 @@ in every region.
 
 ## Deployment
 
-Deploy service support for captured discovery and exact SecurityPatch Machine
-resolution before enabling the controller preference. The service must continue
+The controller and channel propagation may deploy first: unacknowledged discovery
+uses standard images. Deploy captured-only acknowledgement together with exact
+SecurityPatch Machine resolution. Verify subscription/region routing and mixed-version
+compatibility before activation; the acknowledgement is not a region-wide readiness guarantee.
+The service must continue
 accepting explicitly selected standard NIVs on SecurityPatch NAP clusters.
 No status-schema rollout is required. The controller and service must report the
 actual selected version, never substitute an image invisibly.

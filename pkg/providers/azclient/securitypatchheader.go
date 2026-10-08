@@ -18,6 +18,7 @@ package azclient
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 
@@ -35,9 +36,22 @@ var _ policy.Policy = &securityPatchOnlyPolicy{}
 type securityPatchOnlyPolicy struct{}
 
 func (p *securityPatchOnlyPolicy) Do(req *policy.Request) (*http.Response, error) {
-	if imagefamily.IsSecurityPatchCatalog(req.Raw().Context()) {
+	capturedOnly := imagefamily.IsSecurityPatchCatalog(req.Raw().Context())
+	if capturedOnly {
 		req.Raw().Header.Set(securityPatchOnlyHeader, "true")
 		req.Raw().Header.Set(capturedImagesOnlyHeader, "true")
 	}
-	return req.Next()
+	resp, err := req.Next()
+	if err != nil || !capturedOnly || resp == nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return resp, err
+	}
+	// Older endpoints can ignore the request header. Require acknowledgement on
+	// every page so the controller can ship first and safely use standard images.
+	if !strings.EqualFold(resp.Header.Get(capturedImagesOnlyHeader), "true") {
+		if resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		return nil, imagefamily.ErrCapturedImagesOnlyNotAcknowledged
+	}
+	return resp, nil
 }

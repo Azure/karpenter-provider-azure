@@ -18,6 +18,7 @@ package imagefamily
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -32,6 +33,8 @@ type NodeImageVersionsClient struct {
 }
 
 type securityPatchCatalogKey struct{}
+
+var ErrCapturedImagesOnlyNotAcknowledged = errors.New("captured-only image discovery was not acknowledged")
 
 // WithSecurityPatchCatalog selects captured SecurityPatch images for this request only.
 func WithSecurityPatchCatalog(ctx context.Context) context.Context {

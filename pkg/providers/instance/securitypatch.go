@@ -35,12 +35,13 @@ const SecurityPatchFallbackAnnotation = "karpenter.azure.com/securitypatch-fallb
 
 // Image selection values are persisted in NodeClaim annotations and surfaced in events.
 const (
-	ImageSelectionSecurityPatch                   = "SecurityPatch"
-	ImageSelectionStandardFallback                = "StandardImageFallback"
-	ImageSelectionReasonImageUnavailable          = "ImageUnavailable"
-	ImageSelectionReasonCatalogUnavailable        = "CatalogUnavailable"
-	ImageSelectionReasonNoCompatibleCapturedImage = "NoCompatibleCapturedImage"
-	ImageSelectionReasonExistingMachine           = "ExistingMachine"
+	ImageSelectionSecurityPatch                      = "SecurityPatch"
+	ImageSelectionStandardFallback                   = "StandardImageFallback"
+	ImageSelectionReasonImageUnavailable             = "ImageUnavailable"
+	ImageSelectionReasonCatalogUnavailable           = "CatalogUnavailable"
+	ImageSelectionReasonNoCompatibleCapturedImage    = "NoCompatibleCapturedImage"
+	ImageSelectionReasonExistingMachine              = "ExistingMachine"
+	ImageSelectionReasonBackendCapabilityUnavailable = "BackendCapabilityUnavailable"
 )
 
 // SecurityPatchImageRejected is emitted only for an explicit rejection by the
@@ -103,6 +104,9 @@ func (p *DefaultAKSMachineProvider) selectSecurityPatchImageWithTimeout(ctx cont
 	versions, err := p.azClient.NodeImageVersionsClient.List(imagefamily.WithSecurityPatchCatalog(lookupCtx), p.aksMachinesPoolLocation)
 	if parentErr := ctx.Err(); parentErr != nil {
 		return "", "", parentErr
+	}
+	if errors.Is(err, imagefamily.ErrCapturedImagesOnlyNotAcknowledged) {
+		return standardNIV, ImageSelectionReasonBackendCapabilityUnavailable, nil
 	}
 	if err != nil || lookupCtx.Err() != nil {
 		log.FromContext(ctx).Info("captured image discovery unavailable; preserving standard selection", "error", err, "standardNIV", standardNIV)

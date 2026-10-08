@@ -50,6 +50,7 @@ func TestCreationTimeSecurityPatchSelection(t *testing.T) {
 		{name: "empty catalog", want: standard, reason: ImageSelectionReasonNoCompatibleCapturedImage},
 		{name: "ignore standard response from old server", images: []*armcontainerservice.NodeImageVersion{image("2404gen2containerd", "202609.23.0")}, want: standard, reason: ImageSelectionReasonNoCompatibleCapturedImage},
 		{name: "failed discovery", err: errors.New("unavailable"), want: standard, reason: ImageSelectionReasonCatalogUnavailable},
+		{name: "older backend returned candidates without acknowledgement", images: []*armcontainerservice.NodeImageVersion{image("2404gen2containerd", "202609.23.0-2026.09.25")}, err: imagefamily.ErrCapturedImagesOnlyNotAcknowledged, want: standard, reason: ImageSelectionReasonBackendCapabilityUnavailable},
 		{name: "previous explicit rejection", forced: ImageSelectionReasonImageUnavailable, want: standard, reason: ImageSelectionReasonImageUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
