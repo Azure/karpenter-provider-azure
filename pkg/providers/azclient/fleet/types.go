@@ -18,6 +18,7 @@ package fleet
 
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/skewer"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
@@ -28,6 +29,7 @@ type FleetVMProvisionRequest struct {
 	NodePoolName        string
 	CapacityType        string // "spot" or "on-demand"
 	AcceptableSKUs      []string
+	ResolvedSKUs        map[string]*skewer.SKU
 	AcceptableZones     []string
 	Tags                map[string]*string
 	LaunchTemplate      *launchtemplate.Template
@@ -37,6 +39,9 @@ type FleetVMProvisionRequest struct {
 	DiskEncryptionSetID string
 	NSG                 string
 	LBBackendPools      []string
+	NetworkPlugin       string
+	NetworkPluginMode   string
+	MaxPods             int32 // Resolved by the caller using utils.GetMaxPods.
 	Location            string
 	Extensions          []*armcompute.VirtualMachineExtension
 }

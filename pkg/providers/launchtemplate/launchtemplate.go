@@ -135,6 +135,9 @@ func (p *Provider) GetTemplate(
 	}
 
 	launchTemplate.Tags = Tags(options.FromContext(ctx), nodeClass, nodeClaim)
+	if nodeClass.Spec.Security != nil {
+		launchTemplate.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
+	}
 
 	return launchTemplate, nil
 }

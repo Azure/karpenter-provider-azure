@@ -22,9 +22,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computefleet/armcomputefleet/v2"
+	"github.com/Azure/skewer"
 	"github.com/samber/lo"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
 
@@ -32,24 +35,53 @@ const (
 	vmNamePrefix       = "aks"
 	computerNamePrefix = "aks-"
 	nicConfigName      = "nic"
-	ipConfigName       = "ipconfig1"
 	sshKeyPathTemplate = "/home/%s/.ssh/authorized_keys"
 )
 
 // BuildFleetBody constructs the armcomputefleet.Fleet body from a provision request.
 // Slices (SKUs, zones) are sorted internally for deterministic JSON serialization.
-func BuildFleetBody(req *FleetVMProvisionRequest, targetCapacity int32, tags map[string]*string) *armcomputefleet.Fleet {
-	lt := req.LaunchTemplate
+func BuildFleetBody(req *FleetVMProvisionRequest, targetCapacity int32, tags map[string]*string) (*armcomputefleet.Fleet, error) {
+	if req == nil || req.LaunchTemplate == nil {
+		return nil, fmt.Errorf("building Fleet body: request and launch template are required")
+	}
+	if len(req.AcceptableSKUs) == 0 {
+		return nil, fmt.Errorf("building Fleet body: no candidate SKUs")
+	}
+	req, err := filterSKUsForEncryptionAtHost(req)
+	if err != nil {
+		return nil, fmt.Errorf("building Fleet body: %w", err)
+	}
 
 	fleet := &armcomputefleet.Fleet{
 		Location:   lo.ToPtr(req.Location),
 		Tags:       tags,
 		Zones:      buildZones(req.AcceptableZones),
 		Identity:   buildIdentity(req.NodeIdentities),
-		Properties: buildFleetProperties(req, lt, targetCapacity),
+		Properties: buildFleetProperties(req, req.LaunchTemplate, targetCapacity),
 	}
 
-	return fleet
+	return fleet, nil
+}
+
+func filterSKUsForEncryptionAtHost(req *FleetVMProvisionRequest) (*FleetVMProvisionRequest, error) {
+	if !lo.FromPtr(req.LaunchTemplate.EncryptionAtHost) {
+		return req, nil
+	}
+	supportedSKUs := lo.Filter(req.AcceptableSKUs, func(name string, _ int) bool {
+		sku := req.ResolvedSKUs[name]
+		if sku != nil && sku.IsEncryptionAtHostSupported() {
+			return true
+		}
+		log.Log.Info("excluding Fleet candidate SKU because requested encryption at host is not supported", "sku", name)
+		return false
+	})
+	if len(supportedSKUs) == 0 {
+		return nil, fmt.Errorf("no candidate SKUs support requested encryption at host")
+	}
+
+	filteredReq := *req
+	filteredReq.AcceptableSKUs = supportedSKUs
+	return &filteredReq, nil
 }
 
 // buildZones sorts and converts zone strings to ARM zone pointers. Returns nil for regional Fleet.
@@ -146,7 +178,7 @@ func buildComputeProfile(req *FleetVMProvisionRequest, lt *launchtemplate.Templa
 	baseProfile := &armcomputefleet.BaseVirtualMachineProfile{
 		OSProfile:        buildOSProfile(req, lt),
 		StorageProfile:   buildStorageProfile(lt, req.DiskEncryptionSetID),
-		NetworkProfile:   BuildFleetNetworkProfile(lt.SubnetID, req.NSG, req.LBBackendPools),
+		NetworkProfile:   BuildFleetNetworkProfile(lt.SubnetID, req.NSG, req.LBBackendPools, allSKUsSupportCapability(req, skewer.AcceleratedNetworking), req.NetworkPlugin, req.NetworkPluginMode, req.MaxPods),
 		SecurityProfile:  buildSecurityProfile(lt.EncryptionAtHost),
 		ExtensionProfile: extensionsToProfile(req.Extensions),
 	}
@@ -154,6 +186,26 @@ func buildComputeProfile(req *FleetVMProvisionRequest, lt *launchtemplate.Templa
 	return &armcomputefleet.ComputeProfile{
 		BaseVirtualMachineProfile: baseProfile,
 	}
+}
+
+// A shared Fleet profile can enable a capability only when every candidate supports it.
+func allSKUsSupportCapability(req *FleetVMProvisionRequest, capability string) bool {
+	if len(req.AcceptableSKUs) == 0 {
+		log.Log.Info("disabling Fleet capability because there are no candidate SKUs", "capability", capability)
+		return false
+	}
+	for _, name := range req.AcceptableSKUs {
+		sku := req.ResolvedSKUs[name]
+		if sku == nil {
+			log.Log.Info("disabling Fleet capability because candidate SKU data is missing", "sku", name, "capability", capability)
+			return false
+		}
+		if !sku.HasCapability(capability) {
+			log.Log.Info("disabling Fleet capability because a candidate SKU does not support it", "sku", name, "capability", capability)
+			return false
+		}
+	}
+	return true
 }
 
 // buildOSProfile constructs the Linux OS profile.
@@ -187,7 +239,7 @@ func buildOSProfile(req *FleetVMProvisionRequest, lt *launchtemplate.Template) *
 // buildStorageProfile constructs the OS disk and image reference.
 func buildStorageProfile(lt *launchtemplate.Template, diskEncryptionSetID string) *armcomputefleet.VirtualMachineScaleSetStorageProfile {
 	imageRef := &armcomputefleet.ImageReference{
-		ID: lo.ToPtr(lt.ImageID),
+		CommunityGalleryImageID: lo.ToPtr(lt.ImageID),
 	}
 
 	osDisk := &armcomputefleet.VirtualMachineScaleSetOSDisk{
@@ -208,7 +260,6 @@ func buildStorageProfile(lt *launchtemplate.Template, diskEncryptionSetID string
 	// Disk encryption set
 	if diskEncryptionSetID != "" {
 		osDisk.ManagedDisk = &armcomputefleet.VirtualMachineScaleSetManagedDiskParameters{
-			StorageAccountType: lo.ToPtr(armcomputefleet.StorageAccountTypesStandardLRS),
 			DiskEncryptionSet: &armcomputefleet.DiskEncryptionSetParameters{
 				ID: lo.ToPtr(diskEncryptionSetID),
 			},
@@ -221,21 +272,33 @@ func buildStorageProfile(lt *launchtemplate.Template, diskEncryptionSetID string
 	}
 }
 
-// BuildFleetNetworkProfile constructs the VMSS network profile with subnet, NSG, and LB backend pools.
-func BuildFleetNetworkProfile(subnetID, nsgID string, lbBackendPools []string) *armcomputefleet.VirtualMachineScaleSetNetworkProfile {
+// BuildFleetNetworkProfile constructs the VMSS network profile with subnet, NSG, and primary-only LB backend pools.
+func BuildFleetNetworkProfile(subnetID, nsgID string, lbBackendPools []string, enableAcceleratedNetworking bool, networkPlugin, networkPluginMode string, maxPods int32) *armcomputefleet.VirtualMachineScaleSetNetworkProfile {
+	ipConfigurationCount := int32(1)
+	if networkPlugin == consts.NetworkPluginAzure && networkPluginMode != consts.NetworkPluginModeOverlay {
+		// always create a primary IP, then add secondary IPs up to MaxPods.
+		ipConfigurationCount = max(1, maxPods)
+	}
+	ipConfigurations := make([]*armcomputefleet.VirtualMachineScaleSetIPConfiguration, 0, ipConfigurationCount)
+	for i := int32(0); i < ipConfigurationCount; i++ {
+		properties := &armcomputefleet.VirtualMachineScaleSetIPConfigurationProperties{
+			Primary: lo.ToPtr(i == 0),
+			Subnet:  &armcomputefleet.APIEntityReference{ID: lo.ToPtr(subnetID)},
+		}
+		if i == 0 {
+			properties.LoadBalancerBackendAddressPools = buildPoolRefs(lbBackendPools)
+		}
+		ipConfigurations = append(ipConfigurations, &armcomputefleet.VirtualMachineScaleSetIPConfiguration{
+			Name:       lo.ToPtr(fmt.Sprintf("ipconfig%d", i+1)),
+			Properties: properties,
+		})
+	}
 	nicProperties := &armcomputefleet.VirtualMachineScaleSetNetworkConfigurationProperties{
 		Primary:                     lo.ToPtr(true),
-		EnableAcceleratedNetworking: lo.ToPtr(true),
+		EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
 		EnableIPForwarding:          lo.ToPtr(false),
 		DeleteOption:                lo.ToPtr(armcomputefleet.DeleteOptionsDelete),
-		IPConfigurations: []*armcomputefleet.VirtualMachineScaleSetIPConfiguration{{
-			Name: lo.ToPtr(ipConfigName),
-			Properties: &armcomputefleet.VirtualMachineScaleSetIPConfigurationProperties{
-				Primary:                         lo.ToPtr(true),
-				Subnet:                          &armcomputefleet.APIEntityReference{ID: lo.ToPtr(subnetID)},
-				LoadBalancerBackendAddressPools: buildPoolRefs(lbBackendPools),
-			},
-		}},
+		IPConfigurations:            ipConfigurations,
 	}
 	if nsgID != "" {
 		nicProperties.NetworkSecurityGroup = &armcomputefleet.SubResource{ID: lo.ToPtr(nsgID)}
@@ -251,11 +314,11 @@ func BuildFleetNetworkProfile(subnetID, nsgID string, lbBackendPools []string) *
 
 // buildSecurityProfile returns the security profile when encryption at host is configured.
 func buildSecurityProfile(encryptionAtHost *bool) *armcomputefleet.SecurityProfile {
-	if encryptionAtHost == nil || !*encryptionAtHost {
+	if encryptionAtHost == nil {
 		return nil
 	}
 	return &armcomputefleet.SecurityProfile{
-		EncryptionAtHost: lo.ToPtr(true),
+		EncryptionAtHost: encryptionAtHost,
 	}
 }
 
