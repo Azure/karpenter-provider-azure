@@ -104,6 +104,7 @@ verify: tidy download ## Verify code. Includes dependencies, linting, formatting
 	hack/validation/kubelet.sh
 	hack/validation/labels.sh
 	hack/validation/requirements.sh
+	hack/validation/taints.sh
 	hack/mutation/kubectl_get_ux.sh
 	# Package the adjusted CRDs, then validate CapacityBuffer chart delivery
 	cp -f $(addprefix pkg/apis/crds/,$(SUPPORTED_CRDS)) charts/karpenter-crd/templates

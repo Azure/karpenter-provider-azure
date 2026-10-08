@@ -177,7 +177,7 @@ tools() {
     go-install controller-gen --version v0.19.0 sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0
     go-install cosign version v2.4.1 github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
 #   go install -tags extended github.com/gohugoio/hugo@v0.110.0
-    go-install govulncheck --version v1.1.4 golang.org/x/vuln/cmd/govulncheck@v1.1.4
+    go-install govulncheck --version v1.8.0 golang.org/x/vuln/cmd/govulncheck@v1.8.0
     go-install ginkgo version "${ginkgo_version#v}" "github.com/onsi/ginkgo/v2/ginkgo@${ginkgo_version}"
     go-install actionlint --version v1.7.7 github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
     go-install goveralls github.com/mattn/goveralls@v0.0.12
@@ -190,7 +190,7 @@ tools() {
         echo "Go workspace's \"bin\" directory is not in PATH. Run 'export PATH=\"\$PATH:\${GOPATH:-\$HOME/go}/bin\"'."
     fi
 
-    go-install golangci-lint --version 2.12.2 github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+    go-install golangci-lint --version 2.14.0 github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 
     # Install our custom modules in golangci-lint
     local custom_status=0
