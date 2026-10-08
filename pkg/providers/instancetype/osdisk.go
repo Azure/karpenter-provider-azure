@@ -50,7 +50,23 @@ type OSDiskProfile struct {
 	Placement *armcompute.DiffDiskPlacement // not used when the resolved OS disk is managed
 }
 
-// ResolveOSDiskProfileFromSKU resolves disk size, type, and placement for one SKU.
+// ResolveOSDiskProfileFromInstanceType resolves to-be-created instance's OS disk configuration based on instance type and other inputs.
+func ResolveOSDiskProfileFromInstanceType(
+	ctx context.Context,
+	provider Provider,
+	instanceTypeName string,
+	requestedOSDiskSizeGB *int32,
+	requestedOSDiskType v1beta1.OSDiskType,
+	trustedLaunch bool,
+) (OSDiskProfile, error) {
+	sku, err := provider.Get(ctx, instanceTypeName)
+	if err != nil {
+		return OSDiskProfile{}, err
+	}
+	return ResolveOSDiskProfileFromSKU(sku, requestedOSDiskSizeGB, requestedOSDiskType, trustedLaunch), nil
+}
+
+// ResolveOSDiskProfileFromSKU resolves to-be-created instance's OS disk configuration based on VM size and other inputs.
 func ResolveOSDiskProfileFromSKU(
 	sku *skewer.SKU,
 	requestedOSDiskSizeGB *int32,
@@ -124,21 +140,6 @@ func ResolveOSDiskProfileFromSKU(
 		SizeGB: defaultManagedOSDiskSizeGB(sku),
 		Type:   armcontainerservice.OSDiskTypeManaged,
 	}
-}
-
-func ResolveOSDiskProfileFromInstanceType(
-	ctx context.Context,
-	provider Provider,
-	instanceTypeName string,
-	requestedOSDiskSizeGB *int32,
-	requestedOSDiskType v1beta1.OSDiskType,
-	trustedLaunch bool,
-) (OSDiskProfile, error) {
-	sku, err := provider.Get(ctx, instanceTypeName)
-	if err != nil {
-		return OSDiskProfile{}, err
-	}
-	return ResolveOSDiskProfileFromSKU(sku, requestedOSDiskSizeGB, requestedOSDiskType, trustedLaunch), nil
 }
 
 // FindMaxEphemeralSizeGBAndPlacement returns the maximum eligible ephemeral OS disk capacity in integer decimal GB.
