@@ -223,8 +223,9 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 		return "", nil, err
 	}
 
-	if instancetype.UseEphemeralDisk(sku, nodeClass) {
-		_, placement = instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+	placement = instancetype.FindEphemeralOSDiskPlacement(sku, nodeClass)
+
+	if placement != nil {
 		return consts.StorageProfileEphemeral, placement, nil
 	}
 	return consts.StorageProfileManagedDisks, nil, nil

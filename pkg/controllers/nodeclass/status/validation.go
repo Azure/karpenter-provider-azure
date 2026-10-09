@@ -55,6 +55,9 @@ const (
 	// KataRequiresAzureLinux3 is the condition reason set when the Kubernetes version resolves
 	// imageFamily AzureLinux to Azure Linux 2, which does not publish a Kata image.
 	KataRequiresAzureLinux3 = "KataRequiresAzureLinux3"
+	// ManagedGPUUnsupportedProvisionMode is the condition reason set when a NodeClass requests
+	// the managed GPU experience but the provision mode cannot express the NVIDIA GPU profile.
+	ManagedGPUUnsupportedProvisionMode = "ManagedGPUUnsupportedProvisionMode"
 	// WindowsUnsupportedNetworkDataplane is the condition reason set when a Windows NodeClass is
 	// configured on a cluster that uses an unsupported network dataplane.
 	WindowsUnsupportedNetworkDataplane = "WindowsUnsupportedNetworkDataplane"
@@ -106,6 +109,15 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 		)
 		return reconcile.Result{}, nil
 	}
+	if nodeClass.IsManagedGPUEnabled() && !options.FromContext(ctx).IsAKSMachineAPIMode() {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			ManagedGPUUnsupportedProvisionMode,
+			fmt.Sprintf("gpu.nvidia.managementMode %q requires an AKS Machine API provision mode; provision-mode %q is not supported", nodeClass.GetManagementMode(), options.FromContext(ctx).ProvisionMode),
+		)
+		return reconcile.Result{}, nil
+	}
+
 	if nodeClass.IsKataEnabled() && lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureLinuxImageFamily {
 		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
 		if err != nil {
