@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
@@ -97,6 +98,7 @@ func Get(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
 	arch string,
+	instanceTypeRequirements scheduling.Requirements,
 ) (map[string]string, error) {
 	labels := map[string]string{}
 	opts := options.FromContext(ctx)
@@ -123,7 +125,7 @@ func Get(
 	labels[v1beta1.AKSLabelPriority] = v1beta1.PriorityRegular
 	// Add os-sku label based on imageFamily
 	labels[v1beta1.AKSLabelOSSKU] = v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))
-	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
+	if nodeClass.IsFIPSEnabled() {
 		labels[v1beta1.AKSLabelFIPSEnabled] = "true"
 	}
 	setKataNodeLabel(labels, nodeClass)
@@ -163,7 +165,11 @@ func Get(
 		labels[AKSLabelEBPFDataplane] = consts.NetworkDataplaneCilium
 	}
 
-	if nodeClass.IsLocalDNSEnabled() {
+	// LocalDNS is a per-node decision, not a per-NodeClass one: under
+	// Mode=Preferred a VM size below the LocalDNS floor runs without it while its
+	// larger siblings in the same NodePool run with it. Label what this node
+	// actually gets, so the users can see which nodes got which configuration.
+	if localdns.IsSupportedForInstanceType(nodeClass, instanceTypeRequirements) {
 		labels[AKSLocalDNSStateLabelKey] = "enabled"
 	} else {
 		labels[AKSLocalDNSStateLabelKey] = "disabled"

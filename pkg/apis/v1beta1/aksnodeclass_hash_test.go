@@ -82,6 +82,9 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", "11008649797056761238", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", "4895720480850206885", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("30m")}}}}}),
 		Entry("ArtifactStreaming.Enabled", "15355387647114481444", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
+		// This value was generated before NvidiaGPU was added and protects existing
+		// GPU NodeClasses from drifting solely because the nested field now exists.
+		Entry("GPU.Mode Driver pre-feature compatibility", "6825272224360426163", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeDriver)}}}),
 	)
 
 	DescribeTable("should change hash when static fields are updated", func(changes v1beta1.AKSNodeClass) {
@@ -108,13 +111,43 @@ var _ = Describe("Hash", func() {
 		Entry("Kubelet.EvictionSoftGracePeriod.NodeFsInodesFree", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{NodeFsInodesFree: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))}}}}),
 		Entry("Kubelet.EvictionMaxPodGracePeriod", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionMaxPodGracePeriod: lo.ToPtr(int32(60))}}}),
 		Entry("MaxPods", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
+		Entry("CapacityReservation", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg")}}}),
 		Entry("LocalDNS.Mode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}}}),
 		Entry("LocalDNS.VnetDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", QueryLogging: v1beta1.LocalDNSQueryLoggingLog}}}}}),
 		Entry("LocalDNS.KubeDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", Protocol: v1beta1.LocalDNSProtocolForceTCP}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("2h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 		Entry("ArtifactStreaming.Enabled", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
+		Entry("GPU.Nvidia.ManagementMode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged)}}}}),
 	)
+	It("should hash omitted, empty, and explicit Unmanaged NVIDIA settings equally", func() {
+		nodeClass.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeDriver)}
+		omittedHash := nodeClass.Hash()
+
+		nodeClass.Spec.GPU.Nvidia = &v1beta1.NvidiaGPU{}
+		Expect(nodeClass.Hash()).To(Equal(omittedHash))
+
+		nodeClass.Spec.GPU.Nvidia.ManagementMode = lo.ToPtr(v1beta1.ManagementModeUnmanaged)
+		Expect(nodeClass.Hash()).To(Equal(omittedHash))
+	})
+	It("should change hash when NVIDIA management mode is Managed", func() {
+		nodeClass.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeDriver)}
+		unmanagedHash := nodeClass.Hash()
+
+		nodeClass.Spec.GPU.Nvidia = &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged)}
+		Expect(nodeClass.Hash()).ToNot(Equal(unmanagedHash))
+	})
+	It("should not mutate NVIDIA settings while hashing", func() {
+		nodeClass.Spec.GPU = &v1beta1.GPU{
+			Mode:   lo.ToPtr(v1beta1.GPUModeDriver),
+			Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeUnmanaged)},
+		}
+		original := nodeClass.DeepCopy()
+
+		_ = nodeClass.Hash()
+
+		Expect(nodeClass).To(Equal(original))
+	})
 	It("should not change hash when tags are re-ordered", func() {
 		hash := nodeClass.Hash()
 		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}
@@ -137,6 +170,12 @@ var _ = Describe("Hash", func() {
 		nodeClass.Spec.Tags = map[string]string{"keyTag-3": "valueTag-3"}
 		updatedHash := nodeClass.Hash()
 		Expect(hash).To(Equal(updatedHash))
+	})
+	It("should not change hash when capacity reservation group ID casing changes", func() {
+		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg")}
+		hash := nodeClass.Hash()
+		nodeClass.Spec.CapacityReservation.GroupID = lo.ToPtr("/SUBSCRIPTIONS/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/RG/PROVIDERS/MICROSOFT.COMPUTE/CAPACITYRESERVATIONGROUPS/CRG")
+		Expect(nodeClass.Hash()).To(Equal(hash))
 	})
 	It("should expect two AKSNodeClasses with the same spec to have the same hash", func() {
 		otherNodeClass := &v1beta1.AKSNodeClass{

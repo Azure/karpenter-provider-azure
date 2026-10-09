@@ -100,7 +100,7 @@ var _ Provider = &DefaultProvider{}
 // per-response expiry cache.
 func NewProvider(client SKUMixPlacementScoresAPI, cache *cache.Cache, location string) *DefaultProvider {
 	return &DefaultProvider{
-		client:     client,
+		client:     newInstrumentedSKUMixPlacementScoresAPI(client),
 		cache:      cache,
 		location:   location,
 		defaultTTL: defaultCacheTTL,
@@ -117,12 +117,17 @@ func (p *DefaultProvider) GetRecommendations(ctx context.Context, input *Ranking
 	if err != nil {
 		return RecommendationDetails{}, fmt.Errorf("hashing SKU Mix Placement recommendation input: %w", err)
 	}
-	if result, ok := p.getCached(key); ok {
-		return result, nil
+	cachedResult, ok := p.getCached(key)
+	if ok {
+		recordCacheRequest(input, metricResultHit)
+		return cachedResult, nil
 	}
+	// Recording a miss here because first attempt failed -- subsequent hit in singleFlight still costs waiting for API response
+	recordCacheRequest(input, metricResultMiss)
 	value, err, _ := p.sfGroup.Do(key, func() (any, error) {
 		// check the cache again in case a different caller in sfGroup already fetched and cached the result
-		if result, ok := p.getCached(key); ok {
+		var result RecommendationDetails
+		if result, ok = p.getCached(key); ok {
 			return result, nil
 		}
 		return p.fetchAndCache(ctx, key, input)

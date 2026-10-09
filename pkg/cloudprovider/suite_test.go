@@ -33,15 +33,18 @@ import (
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	autoscalingv1beta1 "sigs.k8s.io/karpenter/pkg/apis/autoscaling/v1beta1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	karpv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/controllers/capacitybuffer"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
 	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
@@ -56,6 +59,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	corestatus "github.com/awslabs/operatorpkg/status"
 )
 
 var ctx context.Context
@@ -70,6 +74,7 @@ var cloudProvider *CloudProvider
 var cloudProviderNonZonal *CloudProvider
 var cluster *state.Cluster
 var clusterNonZonal *state.Cluster
+var virtualPodCache *virtualpods.Cache
 var fakeClock *clock.FakeClock
 var recorder events.Recorder
 var statusController *status.Controller
@@ -276,6 +281,60 @@ func vmNodeOverlayCapacityTestOptions() nodeOverlayCapacityTestOptions {
 	}
 }
 
+func runCapacityBufferTests(expectCreateCalls func(expectedCalls int)) {
+	Context("CapacityBuffer", func() {
+		It("should launch capacity for a PodTemplate-backed buffer", func() {
+			ctx = coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
+				FeatureGates: coretest.FeatureGates{CapacityBuffer: lo.ToPtr(true)},
+			}))
+			virtualPodCache = virtualpods.NewVirtualPodCache(env.Client)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualPodCache)
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+
+			podTemplate := &v1.PodTemplate{
+				ObjectMeta: metav1.ObjectMeta{Name: "capacity-buffer-template", Namespace: "default"},
+				Template: v1.PodTemplateSpec{
+					Spec: v1.PodSpec{
+						Containers: []v1.Container{{
+							Name:  "workload",
+							Image: "pause:latest",
+							Resources: v1.ResourceRequirements{Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("1"),
+								v1.ResourceMemory: resource.MustParse("1Gi"),
+							}},
+						}},
+						NodeSelector: map[string]string{v1.LabelOSStable: string(v1.Linux)},
+					},
+				},
+			}
+			buffer := coretest.CapacityBuffer(autoscalingv1beta1.CapacityBuffer{
+				ObjectMeta: metav1.ObjectMeta{Name: "capacity-buffer", Namespace: "default"},
+				Spec: autoscalingv1beta1.CapacityBufferSpec{
+					ProvisioningStrategy: lo.ToPtr(autoscalingv1beta1.ActiveProvisioningStrategy),
+					PodTemplateRef:       &autoscalingv1beta1.LocalObjectRef{Name: podTemplate.Name},
+					Replicas:             lo.ToPtr(int32(1)),
+				},
+			})
+			DeferCleanup(func() {
+				ExpectDeleted(ctx, env.Client, buffer, podTemplate)
+			})
+
+			ExpectApplied(ctx, env.Client, podTemplate, buffer)
+			ExpectReconcileSucceeded(ctx, capacitybuffer.NewController(env.Client, coreProvisioner, virtualPodCache), client.ObjectKeyFromObject(buffer))
+			EventuallyExpectCapacityBufferReplicas(ctx, env.Client, buffer, 1)
+
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv)
+			nodeClaims := ExpectNodeClaims(ctx, env.Client)
+			Expect(nodeClaims).To(HaveLen(1))
+			Expect(nodeClaims[0].Spec.Requirements).To(ContainElement(And(
+				HaveField("Key", v1.LabelOSStable),
+				HaveField("Values", ContainElement(string(v1.Linux))),
+			)))
+			expectCreateCalls(1)
+		})
+	})
+}
+
 var _ = Describe("CloudProvider", func() {
 	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
 	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.
@@ -294,7 +353,7 @@ var _ = Describe("CloudProvider", func() {
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
 		})
 
 		AfterEach(func() {
@@ -302,6 +361,37 @@ var _ = Describe("CloudProvider", func() {
 			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset(ctx)
+		})
+
+		runCapacityBufferTests(func(expectedCalls int) {
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(expectedCalls))
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+		})
+
+		It("should reject managed GPU before creating a VM on an unsupported provision mode", func() {
+			nodeClass.Spec.GPU = &v1beta1.GPU{
+				Mode: lo.ToPtr(v1beta1.GPUModeDriver),
+				Nvidia: &v1beta1.NvidiaGPU{
+					ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged),
+				},
+			}
+			statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
+				azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+			nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+
+			validationCondition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(validationCondition.IsFalse()).To(BeTrue())
+			Expect(validationCondition.Reason).To(Equal(status.ManagedGPUUnsupportedProvisionMode))
+			Expect(nodeClass.StatusConditions().Get(corestatus.ConditionReady).IsFalse()).To(BeTrue())
+
+			created, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(corecloudprovider.IsNodeClassNotReadyError(err)).To(BeTrue())
+			Expect(created).To(BeNil())
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
 		})
 
 		It("should list nodeclaim created by the CloudProvider", func() {
@@ -410,7 +500,7 @@ var _ = Describe("CloudProvider", func() {
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
 		})
 
 		AfterEach(func() {

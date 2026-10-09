@@ -19,6 +19,7 @@ package imagefamily
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +38,7 @@ import (
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -160,7 +162,7 @@ func (r *defaultResolver) Resolve(
 	}
 
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
-	allTaints := lo.Flatten([][]corev1.Taint{generalTaints, startupTaints})
+	allTaints := slices.Concat(generalTaints, startupTaints)
 
 	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
 	if err != nil {
@@ -194,7 +196,7 @@ func (r *defaultResolver) Resolve(
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
 			nodeClass.Spec.WorkloadRuntime,
-			nodeClass.ResolvedLocalDNSForWire(),
+			localdns.ResolveForWire(nodeClass, instanceType.Requirements),
 			nodeClass.Spec.ArtifactStreaming,
 			nodeClass.Spec.LinuxOSConfig,
 			vtpmEnabled,
@@ -206,9 +208,10 @@ func (r *defaultResolver) Resolve(
 
 		// TODO: We could potentially use the instance type to do defaulting like
 		// traditional AKS, so putting this here along with the other settings
-		StorageProfileSizeGB: lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
-		ImageID:              imageID,
-		IsWindows:            false, // TODO(Windows)
+		StorageProfileSizeGB:     lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
+		ImageID:                  imageID,
+		EnableFIPS1403Encryption: requiresFIPS1403Encryption(imageDistro),
+		IsWindows:                false, // TODO(Windows)
 	}
 
 	return template, nil
@@ -220,11 +223,29 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 		return "", nil, err
 	}
 
-	if instancetype.UseEphemeralDisk(sku, nodeClass) {
-		_, placement = instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+	placement = instancetype.FindEphemeralOSDiskPlacement(sku, nodeClass)
+
+	if placement != nil {
 		return consts.StorageProfileEphemeral, placement, nil
 	}
 	return consts.StorageProfileManagedDisks, nil, nil
+}
+
+// Ubuntu 22.04 FIPS images require Compute's FIPS 140-3 encryption for
+// guest-agent certificates and protected extension settings. This applies
+// to all currently supported variants: Gen1, Gen2, and Trusted Launch Gen2.
+// Use the resolved distro so generic Ubuntu and explicit Ubuntu2204 receive
+// the same behavior.
+//
+// Revisit this mapping when adding image families or FIPS image variants;
+// FIPS mode alone does not imply this capability is required.
+func requiresFIPS1403Encryption(distro string) bool {
+	switch distro {
+	case "aks-ubuntu-fips-containerd-22.04", "aks-ubuntu-fips-containerd-22.04-gen2", "aks-ubuntu-fips-containerd-22.04-tl-gen2":
+		return true
+	default:
+		return false
+	}
 }
 
 func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool, trustedLaunch bool, kataEnabled bool) (string, error) {
@@ -352,6 +373,10 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunc
 			return &AzureLinux3{Options: parameters}
 		}
 		return &AzureLinux{Options: parameters}
+	case v1beta1.Windows2022ImageFamily:
+		return &Windows2022{Options: parameters}
+	case v1beta1.Windows2025ImageFamily:
+		return &Windows2025{Options: parameters}
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:

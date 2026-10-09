@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
@@ -82,6 +83,10 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			corev1.LabelWindowsBuild,
 			// VM SKU with GPU we are using does not populate this; won't be tested
 			v1beta1.LabelSKUGPUName,
+			// Written onto nodes by the Elastic SAN CSI driver (Azure Container Storage), which the E2E
+			// cluster does not install, so a pod selecting on it would never become Ready here. Its
+			// normalization is covered by the acceptance tests in pkg/providers/instancetype.
+			zones.LabelAzureElasticSANCSIZone,
 		)
 
 		if !env.UsesSharedImageGallery() {
@@ -180,7 +185,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				// Deprecated Labels
 				corev1.LabelFailureDomainBetaRegion: env.Region,
 				corev1.LabelFailureDomainBetaZone:   fmt.Sprintf("%s-1", env.Region),
-				"topology.disk.csi.azure.com/zone":  fmt.Sprintf("%s-1", env.Region),
+				zones.LabelAzureDiskCSIZone:         fmt.Sprintf("%s-1", env.Region),
 				"beta.kubernetes.io/arch":           "amd64",
 				"beta.kubernetes.io/os":             "linux",
 			}

@@ -42,34 +42,10 @@ import (
 
 const (
 	MemoryAvailable        = "memory.available"
-	DefaultMemoryAvailable = "750Mi"
+	DefaultMemoryAvailable = "100Mi"
 )
 
 var (
-	// reservedMemoryTaxGi denotes the tax brackets for memory in Gi.
-	reservedMemoryTaxGi = TaxBrackets{
-		{
-			UpperBound: 4,
-			Rate:       .25,
-		},
-		{
-			UpperBound: 8,
-			Rate:       .20,
-		},
-		{
-			UpperBound: 16,
-			Rate:       .10,
-		},
-		{
-			UpperBound: 128,
-			Rate:       .06,
-		},
-		{
-			UpperBound: math.MaxFloat64,
-			Rate:       .02,
-		},
-	}
-
 	//reservedCPUTaxVCPU denotes the tax brackets for Virtual CPU cores.
 	reservedCPUTaxVCPU = TaxBrackets{
 		{
@@ -101,7 +77,7 @@ type TaxBrackets []struct {
 	Rate float64
 }
 
-// Calculate expects Memory in Gi and CPU in cores.
+// Calculate expects CPU in cores.
 func (t TaxBrackets) Calculate(amount float64) float64 {
 	var tax, lower float64
 
@@ -163,7 +139,7 @@ func computeRequirements(
 		// Well Known Upstream
 		scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, sku.GetName()),
 		scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, getArchitecture(architecture)),
-		scheduling.NewRequirement(corev1.LabelOSStable, corev1.NodeSelectorOpIn, string(corev1.Linux)),
+		scheduling.NewRequirement(corev1.LabelOSStable, corev1.NodeSelectorOpIn, v1beta1.GetOSForImageFamily(params.ImageFamily)),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, lo.Map(offerings.Available(), func(o *cloudprovider.Offering, _ int) string {
 			return o.Requirements.Get(corev1.LabelTopologyZone).Any()
 		})...),
@@ -376,7 +352,9 @@ func SystemReservedResources(totalMemoryMiB int64, networkPlugin string, enableN
 }
 
 func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNodeHardening bool, overrides map[string]string) corev1.ResourceList {
-	reservedMemoryMiB := int64(1024 * reservedMemoryTaxGi.Calculate(float64(totalMemoryMiB)/1024))
+	// AKS reserves 20 MiB per pod plus 50 MiB, capped at 25% of node memory.
+	// https://learn.microsoft.com/azure/aks/node-resource-reservations#memory-reservations
+	reservedMemoryMiB := min(20*int64(maxPods)+50, totalMemoryMiB/4)
 	reservedCPUMilli := int64(1000 * reservedCPUTaxVCPU.Calculate(float64(vcpus)))
 
 	if enableNodeHardening {

@@ -24,6 +24,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -34,6 +35,7 @@ import (
 
 const (
 	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
+	FIPSRequired                 = "FIPSRequired"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -51,6 +53,15 @@ const (
 	// KataRequiresAzureLinux3 is the condition reason set when the Kubernetes version resolves
 	// imageFamily AzureLinux to Azure Linux 2, which does not publish a Kata image.
 	KataRequiresAzureLinux3 = "KataRequiresAzureLinux3"
+	// ManagedGPUUnsupportedProvisionMode is the condition reason set when a NodeClass requests
+	// the managed GPU experience but the provision mode cannot express the NVIDIA GPU profile.
+	ManagedGPUUnsupportedProvisionMode = "ManagedGPUUnsupportedProvisionMode"
+	// WindowsUnsupportedNetworkDataplane is the condition reason set when a Windows NodeClass is
+	// configured on a cluster that uses an unsupported network dataplane.
+	WindowsUnsupportedNetworkDataplane = "WindowsUnsupportedNetworkDataplane"
+	// WindowsUnsupportedProvisionMode is the condition reason set when a Windows NodeClass is
+	// configured on a cluster that does not provision through the AKS Machine API.
+	WindowsUnsupportedProvisionMode = "WindowsUnsupportedProvisionMode"
 )
 
 type ValidationReconciler struct {
@@ -68,8 +79,16 @@ func NewValidationReconciler(
 	}
 }
 
+//nolint:gocyclo // Keep ordered validation and condition handling together in this reconciler.
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
+	if !validateFIPS(ctx, nodeClass) {
+		return reconcile.Result{}, nil
+	}
+
+	if !validateWindowsCompatibility(ctx, nodeClass) {
+		return reconcile.Result{}, nil
+	}
 
 	// A NodeClass requesting a Kata (Pod Sandboxing) workloadRuntime can only provision on a provision
 	// mode that can express the workload runtime. Surface the gap as a validation failure so the user
@@ -84,6 +103,15 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 		)
 		return reconcile.Result{}, nil
 	}
+	if nodeClass.IsManagedGPUEnabled() && !options.FromContext(ctx).IsAKSMachineAPIMode() {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			ManagedGPUUnsupportedProvisionMode,
+			fmt.Sprintf("gpu.nvidia.managementMode %q requires an AKS Machine API provision mode; provision-mode %q is not supported", nodeClass.GetManagementMode(), options.FromContext(ctx).ProvisionMode),
+		)
+		return reconcile.Result{}, nil
+	}
+
 	if nodeClass.IsKataEnabled() && lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureLinuxImageFamily {
 		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
 		if err != nil {
@@ -123,6 +151,43 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	// All validations passed - requeue to detect permission revocations
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
+}
+
+func validateFIPS(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
+	if options.FromContext(ctx).EnableFIPS && lo.FromPtr(nodeClass.Spec.FIPSMode) != v1beta1.FIPSModeFIPS {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			FIPSRequired,
+			"AKSNodeClass spec.fipsMode must be set to FIPS because FIPS is enabled at the cluster level",
+		)
+		return false
+	}
+	return true
+}
+
+func validateWindowsCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
+	imageFamily := lo.FromPtr(nodeClass.Spec.ImageFamily)
+	if !v1beta1.IsWindowsImageFamily(imageFamily) {
+		return true
+	}
+	providerOptions := options.FromContext(ctx)
+	if providerOptions.NetworkDataplane == consts.NetworkDataplaneCilium {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			WindowsUnsupportedNetworkDataplane,
+			fmt.Sprintf("imageFamily %q is not supported with network-dataplane %q", imageFamily, providerOptions.NetworkDataplane),
+		)
+		return false
+	}
+	if !providerOptions.IsAKSMachineAPIMode() {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			WindowsUnsupportedProvisionMode,
+			fmt.Sprintf("imageFamily %q is not supported with provision-mode %q; Windows requires an AKS Machine API provision mode", imageFamily, providerOptions.ProvisionMode),
+		)
+		return false
+	}
+	return true
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {
