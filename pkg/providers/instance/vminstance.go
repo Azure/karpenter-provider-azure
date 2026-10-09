@@ -815,6 +815,16 @@ func resolveUltraSSDRequested(nodeClaim *karpv1.NodeClaim) bool {
 	return compatibleWithTrue && !compatibleWithFalse
 }
 
+func filterBackendPools(pools *loadbalancer.BackendAddressPools, nodeClaim *karpv1.NodeClaim) *loadbalancer.BackendAddressPools {
+	// Azure CCM's updateNodeCaches adds nodes to its load balancer exclusion cache based on label
+	// presence, regardless of value. Match that here so initial NIC backend pool assignment agrees.
+	// https://github.com/kubernetes-sigs/cloud-provider-azure/blob/e2712175252faaf96b39313b303f94b79a1d1171/pkg/provider/azure.go#L851-L868
+	if _, hasLabel := nodeClaim.Labels[v1.LabelNodeExcludeBalancers]; hasLabel {
+		return pools.WithoutKubernetesInboundPools()
+	}
+	return pools
+}
+
 // beginLaunchInstance starts the launch of a VM instance.
 // The returned VirtualMachinePromise must be called to gather any errors
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
@@ -852,6 +862,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	if err != nil {
 		return nil, fmt.Errorf("getting backend pools: %w", err)
 	}
+	backendPools = filterBackendPools(backendPools, nodeClaim)
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
 
@@ -892,7 +903,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		if refreshErr != nil {
 			return nil, fmt.Errorf("refreshing backend pools after network interface failure: %w", refreshErr)
 		}
-		nicOpts.BackendPools = refreshedPools
+		nicOpts.BackendPools = filterBackendPools(refreshedPools, nodeClaim)
 		// Try again
 		nicReference, err = p.createNetworkInterface(ctx, nicOpts)
 	}
