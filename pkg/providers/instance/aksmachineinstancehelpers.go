@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -194,9 +195,25 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 	if nodeClass.IsGPUDriverInstallationEnabled() {
 		driverSetting = armcontainerservice.GPUDriverInstall
 	}
-	return &armcontainerservice.GPUProfile{
+	gpuProfile := &armcontainerservice.GPUProfile{
 		Driver: lo.ToPtr(driverSetting),
 	}
+	// Managed GPU experience: AKS installs additional components (DCGM metrics,
+	// NVIDIA device plugin) on top of the driver. It is NVIDIA-only and requires
+	// driver installation. Only emit Nvidia settings when the user explicitly
+	// opts in via gpu.nvidia.managementMode=Managed; leaving Nvidia nil keeps the
+	// request unmanaged, which is the non-breaking default (RP treats nil as
+	// Unmanaged). The SKU/driver guards avoid sending Managed for SKUs the RP
+	// would reject (e.g. AMD GPUs or driver=None), which the API-level CEL rule
+	// and instance-type filtering already prevent, but we re-check defensively.
+	if nodeClass.IsManagedGPUEnabled() &&
+		utils.IsNvidiaEnabledSKU(instanceType.Name) &&
+		nodeClass.IsGPUDriverInstallationEnabled() {
+		gpuProfile.Nvidia = &armcontainerservice.NvidiaGPUProfile{
+			ManagementMode: lo.ToPtr(armcontainerservice.ManagementModeManaged),
+		}
+	}
+	return gpuProfile
 }
 
 // configureWorkloadRuntime maps a Kata workloadRuntime to the AKS machine API enum.
@@ -388,7 +405,7 @@ func configureLinuxProfile(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice
 
 func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
-	allTaints := lo.Flatten([][]v1.Taint{generalTaints, startupTaints})
+	allTaints := slices.Concat(generalTaints, startupTaints)
 	allTaintsStr := lo.Map(allTaints, func(taint v1.Taint, _ int) string { return taint.ToString() })
 	// Deduplicate (original behavior used sets.NewString for deduplication)
 	allTaintsStr = lo.Uniq(allTaintsStr)
