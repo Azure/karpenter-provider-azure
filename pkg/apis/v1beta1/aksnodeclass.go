@@ -576,20 +576,35 @@ type KubeletConfiguration struct {
 	// +optional
 	FailSwapOn *bool `json:"failSwapOn,omitempty"`
 	// kubeReserved configures resources reserved for Kubernetes system daemons and overrides Karpenter's computed defaults per field.
+	// Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+	// and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
 	// +optional
 	KubeReserved *KubeReserved `json:"kubeReserved,omitempty"`
 	// evictionHard configures hard eviction thresholds and overrides Karpenter's computed defaults per field.
+	// Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+	// and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
 	// +optional
 	EvictionHard *EvictionThreshold `json:"evictionHard,omitempty"`
 	// evictionSoft configures soft eviction thresholds and overrides Karpenter's computed defaults per field.
 	// Each configured threshold must have a matching field in evictionSoftGracePeriod.
+	// Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+	// and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
 	// +optional
 	EvictionSoft *EvictionThreshold `json:"evictionSoft,omitempty"`
 	// evictionSoftGracePeriod configures grace periods for soft eviction signals.
 	// Each configured grace period must have a matching field in evictionSoft.
+	// Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+	// and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
 	// +optional
 	EvictionSoftGracePeriod *EvictionSoftGracePeriod `json:"evictionSoftGracePeriod,omitempty"`
 	// evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
+	// Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+	// and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	EvictionMaxPodGracePeriod *int32 `json:"evictionMaxPodGracePeriod,omitempty"`

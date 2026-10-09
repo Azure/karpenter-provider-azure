@@ -180,8 +180,11 @@ spec:
                     - static
                     type: string
                   evictionHard:
-                    description: evictionHard configures hard eviction thresholds
-                      and overrides Karpenter's computed defaults per field.
+                    description: |-
+                      evictionHard configures hard eviction thresholds and overrides Karpenter's computed defaults per field.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                     properties:
                       memoryAvailable:
                         description: memoryAvailable is the available-memory threshold
@@ -206,8 +209,11 @@ spec:
                         type: string
                     type: object
                   evictionMaxPodGracePeriod:
-                    description: evictionMaxPodGracePeriod is the maximum grace period
-                      (in seconds) kubelet honors when terminating pods for soft eviction.
+                    description: |-
+                      evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                     format: int32
                     minimum: 0
                     type: integer
@@ -215,6 +221,9 @@ spec:
                     description: |-
                       evictionSoft configures soft eviction thresholds and overrides Karpenter's computed defaults per field.
                       Each configured threshold must have a matching field in evictionSoftGracePeriod.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                     properties:
                       memoryAvailable:
                         description: memoryAvailable is the available-memory threshold
@@ -242,6 +251,9 @@ spec:
                     description: |-
                       evictionSoftGracePeriod configures grace periods for soft eviction signals.
                       Each configured grace period must have a matching field in evictionSoft.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                     properties:
                       memoryAvailable:
                         description: memoryAvailable is the grace period for the memoryAvailable
@@ -297,9 +309,11 @@ spec:
                     minimum: 0
                     type: integer
                   kubeReserved:
-                    description: kubeReserved configures resources reserved for Kubernetes
-                      system daemons and overrides Karpenter's computed defaults per
-                      field.
+                    description: |-
+                      kubeReserved configures resources reserved for Kubernetes system daemons and overrides Karpenter's computed defaults per field.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                     properties:
                       cpuMillicores:
                         description: cpuMillicores is the CPU reservation in millicores.
@@ -1480,8 +1494,11 @@ spec:
                     - static
                     type: string
                   evictionHard:
-                    description: evictionHard configures hard eviction thresholds
-                      and overrides Karpenter's computed defaults per field.
+                    description: |-
+                      evictionHard configures hard eviction thresholds and overrides Karpenter's computed defaults per field.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                     properties:
                       memoryAvailable:
                         description: memoryAvailable is the available-memory threshold
@@ -1506,8 +1523,11 @@ spec:
                         type: string
                     type: object
                   evictionMaxPodGracePeriod:
-                    description: evictionMaxPodGracePeriod is the maximum grace period
-                      (in seconds) kubelet honors when terminating pods for soft eviction.
+                    description: |-
+                      evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                     format: int32
                     minimum: 0
                     type: integer
@@ -1515,6 +1535,9 @@ spec:
                     description: |-
                       evictionSoft configures soft eviction thresholds and overrides Karpenter's computed defaults per field.
                       Each configured threshold must have a matching field in evictionSoftGracePeriod.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                     properties:
                       memoryAvailable:
                         description: memoryAvailable is the available-memory threshold
@@ -1542,6 +1565,9 @@ spec:
                     description: |-
                       evictionSoftGracePeriod configures grace periods for soft eviction signals.
                       Each configured grace period must have a matching field in evictionSoft.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                     properties:
                       memoryAvailable:
                         description: memoryAvailable is the grace period for the memoryAvailable
@@ -1597,9 +1623,11 @@ spec:
                     minimum: 0
                     type: integer
                   kubeReserved:
-                    description: kubeReserved configures resources reserved for Kubernetes
-                      system daemons and overrides Karpenter's computed defaults per
-                      field.
+                    description: |-
+                      kubeReserved configures resources reserved for Kubernetes system daemons and overrides Karpenter's computed defaults per field.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                     properties:
                       cpuMillicores:
                         description: cpuMillicores is the CPU reservation in millicores.
