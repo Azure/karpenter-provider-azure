@@ -2041,16 +2041,11 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(lo.FromPtr(backendPools[2].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
 			})
 
-			allBackendPoolIDs := []string{
-				"/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes",
-				"/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool",
-				"/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes",
-			}
 			outboundBackendPoolIDs := []string{
 				"/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool",
 			}
 
-			DescribeTable("should filter inbound loadbalancer backend pools using CCM exclusion label semantics", func(labelValue string, expectedBackendPoolIDs []string) {
+			DescribeTable("should filter inbound loadbalancer backend pools when the exclusion label is present", func(labelValue string) {
 				standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
 				internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
 
@@ -2075,14 +2070,14 @@ var _ = Describe("InstanceType Provider", func() {
 				backendPoolIDs := lo.Map(backendPools, func(pool *armnetwork.BackendAddressPool, _ int) string {
 					return lo.FromPtr(pool.ID)
 				})
-				Expect(backendPoolIDs).To(Equal(expectedBackendPoolIDs))
+				Expect(backendPoolIDs).To(Equal(outboundBackendPoolIDs))
 			},
-				Entry("when true", "true", outboundBackendPoolIDs),
-				Entry("when using a true alias", "TRUE", outboundBackendPoolIDs),
-				Entry("when empty", "", outboundBackendPoolIDs),
-				Entry("when invalid", "invalid", outboundBackendPoolIDs),
-				Entry("when false", "false", allBackendPoolIDs),
-				Entry("when using a false alias", "0", allBackendPoolIDs),
+				Entry("when true", "true"),
+				Entry("when using a true alias", "TRUE"),
+				Entry("when empty", ""),
+				Entry("when invalid", "invalid"),
+				Entry("when false", "false"),
+				Entry("when using a false alias", "0"),
 			)
 		})
 

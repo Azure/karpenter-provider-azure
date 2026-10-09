@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
@@ -817,17 +816,10 @@ func resolveUltraSSDRequested(nodeClaim *karpv1.NodeClaim) bool {
 }
 
 func filterBackendPools(pools *loadbalancer.BackendAddressPools, nodeClaim *karpv1.NodeClaim) *loadbalancer.BackendAddressPools {
-	value, hasLabel := nodeClaim.Labels[v1.LabelNodeExcludeBalancers]
-	if !hasLabel {
-		return pools
-	}
-
-	// Match the CCM service controller's nodeIncludedPredicate behavior, including excluding on invalid values.
-	// https://github.com/kubernetes/cloud-provider/blob/289a507ea5fb2624ac24e10d38a7fe7f0b3455c0/controllers/service/controller.go#L1013-L1024
-	// Note: I am not sure that this is actually entirely "correct" Kubernetes label value handling, but most important thing is matching CCM logic
-	// so Karpenter and CCM are in-sync.
-	exclude, err := strconv.ParseBool(value)
-	if err != nil || exclude {
+	// Azure CCM's updateNodeCaches adds nodes to its load balancer exclusion cache based on label
+	// presence, regardless of value. Match that here so initial NIC backend pool assignment agrees.
+	// https://github.com/kubernetes-sigs/cloud-provider-azure/blob/e2712175252faaf96b39313b303f94b79a1d1171/pkg/provider/azure.go#L851-L868
+	if _, hasLabel := nodeClaim.Labels[v1.LabelNodeExcludeBalancers]; hasLabel {
 		return pools.WithoutKubernetesInboundPools()
 	}
 	return pools
