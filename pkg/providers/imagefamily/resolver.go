@@ -19,6 +19,7 @@ package imagefamily
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
@@ -161,7 +162,7 @@ func (r *defaultResolver) Resolve(
 	}
 
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
-	allTaints := lo.Flatten([][]corev1.Taint{generalTaints, startupTaints})
+	allTaints := slices.Concat(generalTaints, startupTaints)
 
 	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
 	if err != nil {
@@ -222,8 +223,9 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 		return "", nil, err
 	}
 
-	if instancetype.UseEphemeralDisk(sku, nodeClass) {
-		_, placement = instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+	placement = instancetype.FindEphemeralOSDiskPlacement(sku, nodeClass)
+
+	if placement != nil {
 		return consts.StorageProfileEphemeral, placement, nil
 	}
 	return consts.StorageProfileManagedDisks, nil, nil
