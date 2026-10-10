@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/logging"
@@ -174,7 +175,7 @@ func (r *defaultResolver) Resolve(
 	if err != nil {
 		return nil, err
 	}
-	diskType := lo.Ternary(osDiskProfile.IsEphemeral(), consts.StorageProfileEphemeral, consts.StorageProfileManagedDisks)
+	diskType := lo.Ternary(osDiskProfile.Type == armcontainerservice.OSDiskTypeEphemeral, consts.StorageProfileEphemeral, consts.StorageProfileManagedDisks)
 	var vtpmEnabled, secureBootEnabled *bool
 	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.TrustedLaunch != nil {
 		vtpmEnabled = nodeClass.Spec.Security.TrustedLaunch.VTPM
@@ -210,7 +211,7 @@ func (r *defaultResolver) Resolve(
 			secureBootEnabled,
 		),
 		StorageProfileDiskType:    diskType,
-		StorageProfileIsEphemeral: osDiskProfile.IsEphemeral(),
+		StorageProfileIsEphemeral: osDiskProfile.Type == armcontainerservice.OSDiskTypeEphemeral,
 		StorageProfilePlacement:   lo.FromPtr(osDiskProfile.Placement),
 		StorageProfileSizeGB:      osDiskProfile.SizeGB,
 		ImageID:                   imageID,

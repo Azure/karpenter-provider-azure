@@ -310,8 +310,7 @@ func configureOSDisk(ctx context.Context, instanceTypeProvider instancetype.Prov
 	if err != nil {
 		return nil, nil, err
 	}
-	osDiskType := lo.Ternary(osDiskProfile.IsEphemeral(), armcontainerservice.OSDiskTypeEphemeral, armcontainerservice.OSDiskTypeManaged)
-	return lo.ToPtr(osDiskProfile.SizeGB), lo.ToPtr(osDiskType), nil
+	return lo.ToPtr(osDiskProfile.SizeGB), lo.ToPtr(osDiskProfile.Type), nil
 }
 
 func configurePriority(capacityType string) *armcontainerservice.ScaleSetPriority {
