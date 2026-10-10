@@ -59,10 +59,9 @@ created.
   See [Routing preference](#routing-preference). Azure restricts other tag types, such as
   `FirstPartyUsage`, to some subscriptions.
 - **Outbound type `none`.** Not supported. See [Outbound traffic](#outbound-traffic).
-- **Windows nodes.** TODO(e2e): unverified. Confirm that Windows nodes get the address, with and
-  without a prefix, that they report an `ExternalIP`, that a host port accepts inbound through
-  the node IP, and which address egress uses. A host port on a Windows node also needs a Windows
-  Firewall rule if you turned the firewall back on; AKS turns it off on Windows nodes.
+- **Windows nodes.** Node public IP behavior on Windows is unverified. A host port on a Windows
+  node also needs a Windows Firewall rule if you turned the firewall back on; AKS turns it off
+  on Windows nodes.
 
 ## Prerequisites
 
@@ -81,8 +80,9 @@ Two identities need `Microsoft.Network/publicIPPrefixes/join/action` on the pref
   Without the permission, the node fails while it's being created, also with
   `LinkedAuthorizationFailed`.
 
-The built-in `Network Contributor` role on the prefix covers the permission. A prefix outside
-the node resource group always needs an explicit grant. The kubelet identity needs nothing.
+Both identities need join permission covering the prefix. If existing role assignments,
+including inherited permissions, don't provide it, grant the built-in `Network Contributor`
+role on the prefix. The kubelet identity needs no additional permissions for this feature.
 
 Role assignments take a few minutes to apply; launches that fail in the meantime are retried on
 their own.
@@ -137,10 +137,10 @@ for PRINCIPAL_ID in $(printf '%s\n' "${CLUSTER_PRINCIPAL_ID}" "${KARPENTER_PRINC
 done
 ```
 
-### The prefix is in the cluster's subscription
+### The prefix is in the cluster's region and subscription
 
-The prefix can be in any resource group, but it must be in the same subscription as the
-cluster.
+The prefix can be in any resource group, but it must be in the same region and subscription
+as the cluster. See [Public IP prefix limitations](https://learn.microsoft.com/azure/virtual-network/ip-services/public-ip-address-prefix#limitations).
 
 ### The prefix serves every zone the nodes can use
 
@@ -283,9 +283,12 @@ IPv4 public IP prefixes hold at most 16 addresses (`/28`) by default, and each n
 
 - Use one prefix per NodeClass. Karpenter doesn't count how many addresses a prefix has left.
 - Across the NodePools that use the NodeClass, keep the sum of `spec.limits.nodes` within the
-  prefix size, minus headroom for replacements. Drift, expiration, and consolidation launch the
-  replacement node before they remove the old one, so a prefix with no free address blocks
-  them.
+  prefix size, minus headroom for replacements. Drift and consolidation that require replacement
+  capacity launch replacement nodes before they remove the old ones, so a prefix with no free
+  address blocks those replacements.
+- [Expiration](https://karpenter.sh/docs/concepts/disruption/#expiration) is forceful: expired nodes
+  begin draining without waiting for replacement capacity. Prefix exhaustion doesn't prevent
+  expiration and can leave workloads pending while replacement nodes fail to provision.
 
 For example, for a single NodePool using a `/28` prefix:
 
@@ -298,6 +301,9 @@ spec:
 ## Outbound traffic
 
 The outbound type is set per cluster, and Karpenter doesn't read it.
+
+Karpenter configures node public IPs. AKS and Azure networking determine routing, egress source
+addresses, and inbound access.
 
 | Outbound type | Supported | Egress source | Inbound to the node IP |
 | --- | --- | --- | --- |
@@ -354,10 +360,10 @@ unless a network security group (NSG) allows it.
   [node resource group lockdown](https://learn.microsoft.com/azure/aks/node-resource-group-lockdown)
   set to `ReadOnly`, the AKS-managed NSG can't be changed, so host ports can't be opened. AKS
   Automatic enables lockdown by default.
-- TODO(e2e): confirm that rules you add to the AKS-managed NSG survive AKS reconciliation on an
-  AKS-managed VNet.
-- TODO(e2e): on a BYO VNet, confirm whether the AKS-managed NSG is attached to each node's NIC,
-  and so whether a rule in your subnet's NSG alone is enough.
+- **AKS-managed VNet.** Persistence of custom rules in the AKS-managed NSG across AKS
+  reconciliation is unverified. Check that required rules remain in place after reconciliation.
+- **BYO VNet.** Attachment of the AKS-managed NSG to node NICs is unverified for this setup.
+  Inspect each node NIC's NSG association before relying on subnet NSG rules alone.
 
 ## Finding a node's address
 
@@ -367,8 +373,6 @@ Karpenter doesn't publish the address on the NodeClaim or NodeClass. Read the no
 ```bash
 kubectl get node <node> -o jsonpath='{.status.addresses[?(@.type=="ExternalIP")].address}'
 ```
-
-TODO(e2e): confirm that nodes without a prefix also report an `ExternalIP`.
 
 ## Troubleshooting
 
@@ -405,11 +409,12 @@ kubectl get events -A --field-selector involvedObject.kind=NodeClaim,reason=Asyn
 | Cause | Fix |
 | --- | --- |
 | The prefix has no free addresses | Lower the NodePools' `spec.limits.nodes`, remove nodes that use the prefix, or use a larger prefix |
+| The prefix is in a different region from the cluster | Use a prefix in the cluster's region and subscription |
 | A zonal prefix in a different zone from the node | See [Zones](#zones) |
 | The cluster identity can't join the prefix (`LinkedAuthorizationFailed`, naming the cluster identity) | Grant it. See [Prerequisites](#karpenters-identity-and-the-cluster-identity-can-join-the-prefix) |
 | The subscription's public IP quota is exhausted | Request a quota increase, or remove unused public IPs |
 | The prefix is IPv6 | Use an IPv4 prefix |
 | "A zonal PublicIPAddress … cannot support for routing preference feature", with no code | The NodeClass sets `RoutingPreference=Internet` and the node is zonal | Require regional nodes in every NodePool that uses the NodeClass. See [Routing preference](#routing-preference) |
 
-TODO(e2e): record the exact code AKS returns for each of these. Where AKS doesn't pass on a more
-specific network error, the code is `CreateOrUpdatePublicIPAddressError`.
+Where AKS doesn't pass on a more specific network error, the code is
+`CreateOrUpdatePublicIPAddressError`.
