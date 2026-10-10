@@ -891,7 +891,7 @@ func ResolveOSDiskProfileFromSKU(
 				usableBytes = max(0, usableBytes-int64(units.GiB))
 			}
 			resolvedSizeGiB := min(usableBytes/int64(units.GiB), maxEphemeralOSDiskSizeGiB)
-			resolvedSize := int32(resolvedSizeGiB) //nolint:gosec // G115: value is bounded to [0,2040]
+			resolvedSize := int32(resolvedSizeGiB)
 			if placement := findEphemeralOSDiskPlacement(sku, lo.ToPtr(resolvedSize), trustedLaunch); placement != nil {
 				return OSDiskProfile{SizeGB: resolvedSize, Placement: placement}
 			}
