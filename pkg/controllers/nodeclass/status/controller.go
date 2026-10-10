@@ -53,7 +53,7 @@ type Controller struct {
 	kubernetesVersion        *KubernetesVersionReconciler
 	nodeImage                *NodeImageReconciler
 	subnet                   *SubnetReconciler
-	validation               *ValidationReconciler
+	validation               *StaticValidationReconciler
 	localDNS                 *LocalDNSReconciler
 	capacityReservationGroup *CapacityReservationGroupReconciler
 }
@@ -86,7 +86,7 @@ func NewController(
 		kubernetesVersion:        NewKubernetesVersionReconciler(kubernetesVersionProvider),
 		nodeImage:                NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
 		subnet:                   NewSubnetReconciler(subnetClient),
-		validation:               NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
+		validation:               NewStaticValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
 		localDNS:                 NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),
 		capacityReservationGroup: NewCapacityReservationGroupReconciler(subscriptionID, location, capacityReservationGroupsClient, capacityReservationsClient, instanceTypes, unavailableOfferings),
 	}

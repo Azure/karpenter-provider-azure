@@ -62,7 +62,7 @@ func createZoneOverride(zone string, forwardToVnetDNS bool) v1beta1.LocalDNSZone
 
 var _ = Describe("Validation Reconciler", func() {
 	var ctx context.Context
-	var reconciler *status.ValidationReconciler
+	var reconciler *status.StaticValidationReconciler
 	var nodeClass *v1beta1.AKSNodeClass
 	var fakeDesAPI *fake.DiskEncryptionSetsAPI
 	var emptyDiskEncryptionSetID *arm.ResourceID
@@ -71,7 +71,7 @@ var _ = Describe("Validation Reconciler", func() {
 		ctx = options.ToContext(context.Background(), test.Options())
 		fakeDesAPI = &fake.DiskEncryptionSetsAPI{}
 
-		reconciler = status.NewValidationReconciler(fakeDesAPI, emptyDiskEncryptionSetID)
+		reconciler = status.NewStaticValidationReconciler(fakeDesAPI, emptyDiskEncryptionSetID)
 		nodeClass = &v1beta1.AKSNodeClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "test-nodeclass",
@@ -153,7 +153,7 @@ var _ = Describe("Validation Reconciler", func() {
 	})
 
 	// All LocalDNS validations are now handled declaratively by CEL and kubebuilder markers.
-	// The ValidationReconciler is a skeleton for future runtime validations that cannot be
+	// The StaticValidationReconciler is a skeleton for future runtime validations that cannot be
 	// expressed in the CRD schema (e.g., external API calls, cross-resource checks, etc.).
 
 	Context("basic validation reconciliation", func() {
@@ -464,14 +464,14 @@ var _ = Describe("Validation Reconciler", func() {
 
 	Context("Disk Encryption Set RBAC validation", func() {
 		var fakeDesClient *fake.DiskEncryptionSetsAPI
-		var desReconciler *status.ValidationReconciler
+		var desReconciler *status.StaticValidationReconciler
 		const testID = "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Compute/diskEncryptionSets/test-des"
 
 		BeforeEach(func() {
 			fakeDesClient = &fake.DiskEncryptionSetsAPI{}
 			parsedID, err := arm.ParseResourceID(testID)
 			Expect(err).ToNot(HaveOccurred())
-			desReconciler = status.NewValidationReconciler(fakeDesClient, parsedID)
+			desReconciler = status.NewStaticValidationReconciler(fakeDesClient, parsedID)
 		})
 
 		It("should set ValidationSucceeded to true and requeue after success interval when Disk Encryption Set RBAC check passes", func() {

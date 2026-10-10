@@ -66,91 +66,76 @@ const (
 	WindowsUnsupportedProvisionMode = "WindowsUnsupportedProvisionMode"
 )
 
-type ValidationReconciler struct {
+type StaticValidationReconciler struct {
 	diskEncryptionSetsAPI     azapi.DiskEncryptionSetsAPI
 	parsedDiskEncryptionSetID *arm.ResourceID // parsed by options.Validate(), will be nil if DiskEncryptionSetID is not set
 }
 
-func NewValidationReconciler(
+type validator func(context.Context, *v1beta1.AKSNodeClass) (validationResult, error)
+
+type validationResult struct {
+	passed       bool
+	reason       string
+	message      string
+	requeueAfter time.Duration
+}
+
+func pass() validationResult {
+	return validationResult{passed: true}
+}
+
+func fail(reason string, message string) validationResult {
+	return validationResult{
+		passed:  false,
+		reason:  reason,
+		message: message,
+	}
+}
+
+func retryableFail(reason string, message string, requeueAfter time.Duration) validationResult {
+	return validationResult{
+		passed:       false,
+		reason:       reason,
+		message:      message,
+		requeueAfter: requeueAfter,
+	}
+}
+
+func NewStaticValidationReconciler(
 	diskEncryptionSetsAPI azapi.DiskEncryptionSetsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
-) *ValidationReconciler {
-	return &ValidationReconciler{
+) *StaticValidationReconciler {
+	return &StaticValidationReconciler{
 		diskEncryptionSetsAPI:     diskEncryptionSetsAPI,
 		parsedDiskEncryptionSetID: parsedDiskEncryptionSetID,
 	}
 }
 
-//nolint:gocyclo // Keep ordered validation and condition handling together in this reconciler.
-func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	logger := log.FromContext(ctx)
-	// TODO: Consolidate ordered validation steps into a list of validation functions.
-	if !validateFIPS(ctx, nodeClass) {
-		return reconcile.Result{}, nil
-	}
-	if !validateACLConfiguration(ctx, nodeClass) {
-		return reconcile.Result{}, nil
-	}
-
-	if !validateWindowsCompatibility(ctx, nodeClass) {
-		return reconcile.Result{}, nil
+// Reconcile performs static validation checks on the given AKSNodeClass and updates its status accordingly.
+// Complex checks or checks that are dependent on external systems (e.g. calling Azure) should be performed in their own status controller.
+func (r *StaticValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
+	validators := []validator{
+		r.validateFIPS,
+		r.validateACLConfiguration,
+		r.validateWindowsCompatibility,
+		r.validateKataProvisionMode,
+		r.validateManagedGPUProvisionMode,
+		r.validateKataImageFamily,
+		r.validateDiskEncryptionSetRBAC,
 	}
 
-	// A NodeClass requesting a Kata (Pod Sandboxing) workloadRuntime can only provision on a provision
-	// mode that can express the workload runtime. Surface the gap as a validation failure so the user
-	// gets fast feedback on the NodeClass (and Karpenter core won't create doomed NodeClaims) instead of
-	// silently-pending pods and churning launch failures. The provisioning paths keep their own guards
-	// as defense-in-depth.
-	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).SupportsWorkloadRuntime() {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeValidationSucceeded,
-			KataPodSandboxingUnsupportedProvisionMode,
-			fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode),
-		)
-		return reconcile.Result{}, nil
-	}
-	if nodeClass.IsManagedGPUEnabled() && !options.FromContext(ctx).IsAKSMachineAPIMode() {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeValidationSucceeded,
-			ManagedGPUUnsupportedProvisionMode,
-			fmt.Sprintf("gpu.nvidia.managementMode %q requires an AKS Machine API provision mode; provision-mode %q is not supported", nodeClass.GetManagementMode(), options.FromContext(ctx).ProvisionMode),
-		)
-		return reconcile.Result{}, nil
-	}
-
-	if nodeClass.IsKataEnabled() && lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureLinuxImageFamily {
-		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	for _, validate := range validators {
+		result, err := validate(ctx, nodeClass)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
+			return reconcile.Result{}, err
 		}
-		if !imagefamily.UseAzureLinux3(kubernetesVersion) {
+		if !result.passed {
 			nodeClass.StatusConditions().SetFalse(
 				v1beta1.ConditionTypeValidationSucceeded,
-				KataRequiresAzureLinux3,
-				fmt.Sprintf("workloadRuntime KataVmIsolation requires Azure Linux 3 and Kubernetes 1.32 or newer; Kubernetes version %s resolves imageFamily AzureLinux to Azure Linux 2", kubernetesVersion),
+				result.reason,
+				result.message,
 			)
-			return reconcile.Result{}, nil
-		}
-	}
-
-	// Check BYOK RBAC if DES ID is configured
-	if r.parsedDiskEncryptionSetID != nil {
-		logger.V(1).Info("validating Disk Encryption Set RBAC")
-		err := r.validateDiskEncryptionSetRBAC(ctx)
-		if err != nil {
-			if sdkerrors.IsAuthorizationErr(err) {
-				// Auth failure (403/401) - set condition to False, requeue soon to detect permission grants
-				logger.V(1).Info("Disk Encryption Set RBAC validation failed - missing permissions", "error", err)
-				nodeClass.StatusConditions().SetFalse(
-					v1beta1.ConditionTypeValidationSucceeded,
-					DiskEncryptionSetRBACMissing,
-					err.Error(),
-				)
-				return reconcile.Result{RequeueAfter: ValidationFailureRequeueInterval}, nil
-			}
-			// Unexpected error (network, parsing, etc.) - don't change condition, return error for retry
-			logger.Error(err, "Disk Encryption Set RBAC validation encountered unexpected error")
-			return reconcile.Result{}, err
+			return reconcile.Result{RequeueAfter: result.requeueAfter}, nil
 		}
 	}
 
@@ -159,16 +144,14 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
 }
 
-func validateACLConfiguration(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
+func (r *StaticValidationReconciler) validateACLConfiguration(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
 	if reason := incompatibleACLConfiguration(ctx, nodeClass); reason != "" {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeValidationSucceeded,
+		return fail(
 			reason,
 			"AzureContainerLinux requires an AKS Machine API provision mode and shared image gallery access (UseSIG=true)",
-		)
-		return false
+		), nil
 	}
-	return true
+	return pass(), nil
 }
 
 func incompatibleACLConfiguration(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) string {
@@ -185,51 +168,93 @@ func incompatibleACLConfiguration(ctx context.Context, nodeClass *v1beta1.AKSNod
 	return ""
 }
 
-func validateFIPS(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
+func (r *StaticValidationReconciler) validateFIPS(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
 	if options.FromContext(ctx).EnableFIPS && lo.FromPtr(nodeClass.Spec.FIPSMode) != v1beta1.FIPSModeFIPS {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeValidationSucceeded,
+		return fail(
 			FIPSRequired,
 			"AKSNodeClass spec.fipsMode must be set to FIPS because FIPS is enabled at the cluster level",
-		)
-		return false
+		), nil
 	}
-	return true
+	return pass(), nil
 }
 
-func validateWindowsCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
+func (r *StaticValidationReconciler) validateWindowsCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
 	imageFamily := lo.FromPtr(nodeClass.Spec.ImageFamily)
 	if !v1beta1.IsWindowsImageFamily(imageFamily) {
-		return true
+		return pass(), nil
 	}
 	providerOptions := options.FromContext(ctx)
 	if providerOptions.NetworkDataplane == consts.NetworkDataplaneCilium {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeValidationSucceeded,
+		return fail(
 			WindowsUnsupportedNetworkDataplane,
 			fmt.Sprintf("imageFamily %q is not supported with network-dataplane %q", imageFamily, providerOptions.NetworkDataplane),
-		)
-		return false
+		), nil
 	}
 	if !providerOptions.IsAKSMachineAPIMode() {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeValidationSucceeded,
+		return fail(
 			WindowsUnsupportedProvisionMode,
 			fmt.Sprintf("imageFamily %q is not supported with provision-mode %q; Windows requires an AKS Machine API provision mode", imageFamily, providerOptions.ProvisionMode),
-		)
-		return false
+		), nil
 	}
-	return true
+	return pass(), nil
 }
 
-func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {
+func (r *StaticValidationReconciler) validateKataProvisionMode(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
+	// A NodeClass requesting a Kata (Pod Sandboxing) workloadRuntime can only provision on a provision
+	// mode that can express the workload runtime. Surface the gap as a validation failure so the user
+	// gets fast feedback on the NodeClass (and Karpenter core won't create doomed NodeClaims) instead of
+	// silently-pending pods and churning launch failures. The provisioning paths keep their own guards
+	// as defense-in-depth.
+	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).SupportsWorkloadRuntime() {
+		return fail(
+			KataPodSandboxingUnsupportedProvisionMode,
+			fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode),
+		), nil
+	}
+	return pass(), nil
+}
+
+func (r *StaticValidationReconciler) validateManagedGPUProvisionMode(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
+	if nodeClass.IsManagedGPUEnabled() && !options.FromContext(ctx).IsAKSMachineAPIMode() {
+		return fail(
+			ManagedGPUUnsupportedProvisionMode,
+			fmt.Sprintf("gpu.nvidia.managementMode %q requires an AKS Machine API provision mode; provision-mode %q is not supported", nodeClass.GetManagementMode(), options.FromContext(ctx).ProvisionMode),
+		), nil
+	}
+	return pass(), nil
+}
+
+func (r *StaticValidationReconciler) validateKataImageFamily(_ context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
+	if nodeClass.IsKataEnabled() && lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureLinuxImageFamily {
+		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+		if err != nil {
+			return validationResult{}, fmt.Errorf("getting kubernetes version, %w", err)
+		}
+		if !imagefamily.UseAzureLinux3(kubernetesVersion) {
+			return fail(
+				KataRequiresAzureLinux3,
+				fmt.Sprintf("workloadRuntime KataVmIsolation requires Azure Linux 3 and Kubernetes 1.32 or newer; Kubernetes version %s resolves imageFamily AzureLinux to Azure Linux 2", kubernetesVersion),
+			), nil
+		}
+	}
+	return pass(), nil
+}
+
+// TODO: Possibly this should move out because it is not really "static" validation
+func (r *StaticValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context, _ *v1beta1.AKSNodeClass) (validationResult, error) {
+	if r.parsedDiskEncryptionSetID == nil {
+		return pass(), nil
+	}
+
+	logger := log.FromContext(ctx)
+	logger.V(1).Info("validating Disk Encryption Set RBAC")
 	// Attempt to read the DiskEncryptionSet
 	// This uses the controller's current credentials (DefaultAzureCredential)
 	_, err := r.diskEncryptionSetsAPI.Get(ctx, r.parsedDiskEncryptionSetID.ResourceGroupName, r.parsedDiskEncryptionSetID.Name, nil)
 	if err != nil {
 		if sdkerrors.IsAuthorizationErr(err) {
-			// Wrap the original error to preserve the error chain for isAuthorizationErr checks
-			return fmt.Errorf(
+			// Auth failure (403/401) - set condition to False, requeue soon to detect permission grants
+			err = fmt.Errorf(
 				"%s '%s'. "+
 					"Grant the Reader role on the DiskEncryptionSet to the controlling identity. "+
 					"For self-hosted installations, this is the Karpenter workload identity. "+
@@ -239,10 +264,19 @@ func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context
 				r.parsedDiskEncryptionSetID,
 				err,
 			)
+			logger.V(1).Info("Disk Encryption Set RBAC validation failed - missing permissions", "error", err)
+			return retryableFail(
+				DiskEncryptionSetRBACMissing,
+				err.Error(),
+				ValidationFailureRequeueInterval,
+			), nil
 		}
-		return fmt.Errorf("failed to validate DiskEncryptionSet '%s': %w", r.parsedDiskEncryptionSetID, err)
+		// Unexpected error (network, parsing, etc.) - don't change condition, return error for retry
+		err = fmt.Errorf("failed to validate DiskEncryptionSet '%s': %w", r.parsedDiskEncryptionSetID, err)
+		logger.Error(err, "Disk Encryption Set RBAC validation encountered unexpected error")
+		return validationResult{}, err
 	}
 
-	log.FromContext(ctx).V(1).Info("Disk Encryption Set RBAC validation passed", "desID", r.parsedDiskEncryptionSetID)
-	return nil
+	logger.V(1).Info("Disk Encryption Set RBAC validation passed", "desID", r.parsedDiskEncryptionSetID)
+	return pass(), nil
 }
