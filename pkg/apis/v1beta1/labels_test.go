@@ -61,6 +61,11 @@ func TestGetOSSKUFromImageFamily(t *testing.T) {
 			expected:    "Windows2025",
 		},
 		{
+			name:        "AzureContainerLinux",
+			imageFamily: v1beta1.AzureContainerLinuxImageFamily,
+			expected:    "AzureContainerLinux",
+		},
+		{
 			name:        "empty string defaults to Ubuntu",
 			imageFamily: "",
 			expected:    "Ubuntu",
