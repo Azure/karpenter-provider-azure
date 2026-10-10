@@ -223,8 +223,9 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 		return "", nil, err
 	}
 
-	if instancetype.UseEphemeralDisk(sku, nodeClass) {
-		_, placement = instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+	placement = instancetype.FindEphemeralOSDiskPlacement(sku, nodeClass)
+
+	if placement != nil {
 		return consts.StorageProfileEphemeral, placement, nil
 	}
 	return consts.StorageProfileManagedDisks, nil, nil
@@ -327,6 +328,8 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunc
 		return &Windows2022{Options: parameters}
 	case v1beta1.Windows2025ImageFamily:
 		return &Windows2025{Options: parameters}
+	case v1beta1.AzureContainerLinuxImageFamily:
+		return &AzureContainerLinux{Options: parameters}
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:
