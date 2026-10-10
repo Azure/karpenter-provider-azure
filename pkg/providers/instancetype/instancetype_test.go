@@ -112,7 +112,7 @@ func TestInstanceTypeMemoryReservations(t *testing.T) {
 			})
 			instanceType := newInstanceType(ctx, &sku, vmsize, "westus3", nil, &instanceTypeParameters{
 				ImageFamily:  v1beta1.Ubuntu2204ImageFamily,
-				OSDiskSizeGB: 128,
+				OSDiskSizeGB: lo.ToPtr[int32](128),
 				MaxPods:      250,
 			}, "x64")
 			g.Expect(instanceType.Capacity.Memory().Value()).To(Equal(test.wantCapacityBytes))

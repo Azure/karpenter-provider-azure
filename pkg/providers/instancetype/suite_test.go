@@ -59,6 +59,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/skewer"
 	"github.com/alecthomas/units"
@@ -1130,7 +1131,7 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(placement).To(Equal(lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)))
 				})
 			})
-			Context("FindEphemeralOSDiskPlacement", func() {
+			Context("OS disk placement resolution", func() {
 				DescribeTable("should not select an ephemeral placement when Managed is requested",
 					func(skuName string, sizeGiB int32) {
 						testNodeClass := test.AKSNodeClass()
@@ -1138,8 +1139,9 @@ var _ = Describe("InstanceType Provider", func() {
 						testNodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
 
 						sku := fake.MakeSKU(skuName)
-						Expect(instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)).To(BeNil())
-						Expect(instancetype.UseEphemeralDisk(sku, testNodeClass)).To(BeFalse())
+						profile := resolveOSDiskProfile(sku, testNodeClass)
+						Expect(profile.Placement).To(BeNil())
+						Expect(profile.Type).To(Equal(armcontainerservice.OSDiskTypeManaged))
 					},
 					Entry("cache disk", "Standard_D2s_v3", int32(50)),
 					Entry("resource disk fallback", "Standard_B20ms", int32(128)),
@@ -1149,12 +1151,13 @@ var _ = Describe("InstanceType Provider", func() {
 					func(skuName string, maxSizeGiB int32, expectedPlacement armcompute.DiffDiskPlacement) {
 						testNodeClass := test.AKSNodeClass()
 						testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr(maxSizeGiB)
-						placement := instancetype.FindEphemeralOSDiskPlacement(fake.MakeSKU(skuName), testNodeClass)
-						Expect(placement).ToNot(BeNil())
-						Expect(*placement).To(Equal(expectedPlacement))
+						profile := resolveOSDiskProfile(fake.MakeSKU(skuName), testNodeClass)
+						Expect(profile.Placement).ToNot(BeNil())
+						Expect(*profile.Placement).To(Equal(expectedPlacement))
 
 						testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr(maxSizeGiB + 1)
-						Expect(instancetype.FindEphemeralOSDiskPlacement(fake.MakeSKU(skuName), testNodeClass)).To(BeNil())
+						profile = resolveOSDiskProfile(fake.MakeSKU(skuName), testNodeClass)
+						Expect(profile.Placement).To(BeNil())
 					},
 					Entry("D2s v3 fits 50 GiB but not 51 GiB", "Standard_D2s_v3", int32(50), armcompute.DiffDiskPlacementCacheDisk),
 					Entry("B20ms fits 160 GiB but not 161 GiB", "Standard_B20ms", int32(160), armcompute.DiffDiskPlacementResourceDisk),
@@ -1165,7 +1168,8 @@ var _ = Describe("InstanceType Provider", func() {
 					func(sizeGiB int32, expectEphemeral bool) {
 						testNodeClass := test.AKSNodeClass()
 						testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr(sizeGiB)
-						Expect(instancetype.UseEphemeralDisk(fake.MakeSKU("Standard_D128ds_v6"), testNodeClass)).To(Equal(expectEphemeral))
+						profile := resolveOSDiskProfile(fake.MakeSKU("Standard_D128ds_v6"), testNodeClass)
+						Expect(profile.Type).To(Equal(lo.Ternary(expectEphemeral, armcontainerservice.OSDiskTypeEphemeral, armcontainerservice.OSDiskTypeManaged)))
 					},
 					Entry("2040 GiB", int32(2040), true),
 					Entry("2041 GiB", int32(2041), false),
@@ -1177,9 +1181,9 @@ var _ = Describe("InstanceType Provider", func() {
 						testNodeClass := test.AKSNodeClass()
 						testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 
-						placement := instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)
-						Expect(placement).ToNot(BeNil())
-						Expect(*placement).To(Equal(expected))
+						profile := resolveOSDiskProfile(sku, testNodeClass)
+						Expect(profile.Placement).ToNot(BeNil())
+						Expect(*profile.Placement).To(Equal(expected))
 					},
 					Entry("cache only", "CacheDisk", armcompute.DiffDiskPlacementCacheDisk),
 					Entry("resource only", "ResourceDisk", armcompute.DiffDiskPlacementResourceDisk),
@@ -1191,16 +1195,16 @@ var _ = Describe("InstanceType Provider", func() {
 					testNodeClass := test.AKSNodeClass()
 					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 
-					Expect(instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)).To(BeNil())
+					Expect(resolveOSDiskProfile(sku, testNodeClass).Placement).To(BeNil())
 				})
 				It("should retain legacy placement inference when placement metadata is absent", func() {
 					sku := withoutEphemeralOSDiskPlacementCapability(fake.MakeSKU("Standard_D64s_v3"))
 					testNodeClass := test.AKSNodeClass()
 					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 
-					placement := instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)
-					Expect(placement).ToNot(BeNil())
-					Expect(*placement).To(Equal(armcompute.DiffDiskPlacementCacheDisk))
+					profile := resolveOSDiskProfile(sku, testNodeClass)
+					Expect(profile.Placement).ToNot(BeNil())
+					Expect(*profile.Placement).To(Equal(armcompute.DiffDiskPlacementCacheDisk))
 				})
 				It("should continue to inferred resource disk when absent metadata cache is too small", func() {
 					sku := withoutEphemeralOSDiskPlacementCapability(fake.MakeSKU("Standard_D64s_v3"))
@@ -1209,9 +1213,9 @@ var _ = Describe("InstanceType Provider", func() {
 					testNodeClass := test.AKSNodeClass()
 					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](60)
 
-					placement := instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)
-					Expect(placement).ToNot(BeNil())
-					Expect(*placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
+					profile := resolveOSDiskProfile(sku, testNodeClass)
+					Expect(profile.Placement).ToNot(BeNil())
+					Expect(*profile.Placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
 				})
 				It("should prefer resource disk over NVMe when cache does not fit", func() {
 					sku := withSKUCapability(fake.MakeSKU("Standard_B20ms"), "SupportedEphemeralOSDiskPlacements", "CacheDisk,ResourceDisk,NvmeDisk")
@@ -1219,16 +1223,148 @@ var _ = Describe("InstanceType Provider", func() {
 					testNodeClass := test.AKSNodeClass()
 					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 
-					placement := instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)
-					Expect(placement).ToNot(BeNil())
-					Expect(*placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
+					profile := resolveOSDiskProfile(sku, testNodeClass)
+					Expect(profile.Placement).ToNot(BeNil())
+					Expect(*profile.Placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
 				})
 				It("should ignore a malformed eligible placement capacity", func() {
 					sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", "CacheDisk")
 					sku = withSKUCapability(sku, "CachedDiskBytes", "invalid")
 					testNodeClass := test.AKSNodeClass()
 					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1)
-					Expect(instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)).To(BeNil())
+					Expect(resolveOSDiskProfile(sku, testNodeClass).Placement).To(BeNil())
+				})
+			})
+			DescribeTable("should reserve exactly one GiB of local storage for Trusted Launch",
+				func(sku *skewer.SKU, sizeGiB int32, trustedLaunch *v1beta1.TrustedLaunch, expected bool) {
+					testNodeClass := test.AKSNodeClass()
+					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr(sizeGiB)
+					testNodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: trustedLaunch}
+
+					Expect(resolveOSDiskProfile(sku, testNodeClass).Type).To(Equal(lo.Ternary(expected, armcontainerservice.OSDiskTypeEphemeral, armcontainerservice.OSDiskTypeManaged)))
+				},
+				Entry("cache exact fit without Trusted Launch", fake.MakeSKU("Standard_D64s_v3"), int32(1600), nil, true),
+				Entry("cache exact fit with vTPM", fake.MakeSKU("Standard_D64s_v3"), int32(1600), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, false),
+				Entry("cache one-GiB headroom with Secure Boot", fake.MakeSKU("Standard_D64s_v3"), int32(1599), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, true),
+				Entry("cache one-GiB headroom with both features", fake.MakeSKU("Standard_D64s_v3"), int32(1599), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}, true),
+				Entry("cache exact fit with both features disabled", fake.MakeSKU("Standard_D64s_v3"), int32(1600), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(false)}, true),
+				Entry("resource exact fit with vTPM", withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "CachedDiskBytes", "0"), int32(512), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, false),
+				Entry("resource one-GiB headroom with vTPM", withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "CachedDiskBytes", "0"), int32(511), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, true),
+				Entry("NVMe exact fit with Secure Boot", withSKUCapability(fake.MakeSKU("Standard_D128ds_v6"), "NvmeDiskSizeInMiB", "131072"), int32(128), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, false),
+				Entry("NVMe one-GiB headroom with Secure Boot", withSKUCapability(fake.MakeSKU("Standard_D128ds_v6"), "NvmeDiskSizeInMiB", "131072"), int32(127), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, true),
+			)
+			It("should allow a 2040-GiB disk when the placement has one GiB of Trusted Launch headroom", func() {
+				sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", "ResourceDisk")
+				sku = withSKUCapability(sku, "MaxResourceVolumeMB", strconv.FormatInt(2041*int64(units.GiB)/int64(units.MiB), 10))
+				testNodeClass := test.AKSNodeClass()
+				testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](2040)
+				testNodeClass.Spec.Security = &v1beta1.Security{
+					TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
+				}
+
+				profile := resolveOSDiskProfile(sku, testNodeClass)
+				Expect(profile.Placement).ToNot(BeNil())
+				Expect(*profile.Placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
+			})
+			It("should continue to resource disk when Trusted Launch consumes an exact-fit cache boundary", func() {
+				testNodeClass := test.AKSNodeClass()
+				testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](30)
+				testNodeClass.Spec.Security = &v1beta1.Security{
+					TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
+				}
+
+				profile := resolveOSDiskProfile(fake.MakeSKU("Standard_B20ms"), testNodeClass)
+				Expect(profile.Placement).ToNot(BeNil())
+				Expect(*profile.Placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
+			})
+			Context("ResolveOSDiskProfileFromSKU(sku *skewer.SKU, requestedOSDiskSizeGB *int32) -> OSDiskProfile", func() {
+				DescribeTable("should resolve OS disk size and type",
+					func(sku *skewer.SKU, requestedOSDiskSizeGB *int32, expected instancetype.OSDiskProfile) {
+						profile := instancetype.ResolveOSDiskProfileFromSKU(sku, requestedOSDiskSizeGB, "", false)
+						Expect(profile).To(Equal(expected))
+					},
+					// explicit size: used as-is; ephemeral if it fits within the SKU-supported size
+					Entry("explicit size fitting ephemeral", fake.MakeSKU("Standard_D64s_v3"), lo.ToPtr[int32](128),
+						instancetype.OSDiskProfile{SizeGB: 128, Type: armcontainerservice.OSDiskTypeEphemeral, Placement: lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)}),
+					Entry("explicit size too large for ephemeral", fake.MakeSKU("Standard_D2s_v3"), lo.ToPtr[int32](128),
+						instancetype.OSDiskProfile{SizeGB: 128, Type: armcontainerservice.OSDiskTypeManaged}),
+					Entry("explicit size on SKU without ephemeral support", fake.MakeSKU("Standard_D2as_v6"), lo.ToPtr[int32](256),
+						instancetype.OSDiskProfile{SizeGB: 256, Type: armcontainerservice.OSDiskTypeManaged}),
+					Entry("explicit 0 is not treated as auto", fake.MakeSKU("Standard_D2as_v6"), lo.ToPtr[int32](0),
+						instancetype.OSDiskProfile{SizeGB: 0, Type: armcontainerservice.OSDiskTypeManaged}),
+					Entry("explicit size at the ephemeral limit fits ephemeral", fake.MakeSKU("Standard_D128ds_v6"), lo.ToPtr[int32](2040),
+						instancetype.OSDiskProfile{SizeGB: 2040, Type: armcontainerservice.OSDiskTypeEphemeral, Placement: lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)}),
+					Entry("explicit size above the ephemeral limit falls back to managed", fake.MakeSKU("Standard_D128ds_v6"), lo.ToPtr[int32](2048),
+						instancetype.OSDiskProfile{SizeGB: 2048, Type: armcontainerservice.OSDiskTypeManaged}),
+					// auto (nil): ephemeral at SKU-supported size (capped 2040GB) above 128GiB, else managed by vCPU
+					Entry("auto-sizes ephemeral to SKU-supported size", fake.MakeSKU("Standard_D64s_v3"), nil,
+						instancetype.OSDiskProfile{SizeGB: 1600, Type: armcontainerservice.OSDiskTypeEphemeral, Placement: lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)}),
+					Entry("auto uses the larger eligible resource disk when cache is below the threshold", fake.MakeSKU("Standard_B20ms"), nil,
+						instancetype.OSDiskProfile{SizeGB: 160, Type: armcontainerservice.OSDiskTypeEphemeral, Placement: lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)}),
+					Entry("caps auto-sized ephemeral at 2040GB", fake.MakeSKU("Standard_D128ds_v6"), nil,
+						instancetype.OSDiskProfile{SizeGB: 2040, Type: armcontainerservice.OSDiskTypeEphemeral, Placement: lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)}),
+					Entry("auto falls back to managed default when ephemeral is not supported", fake.MakeSKU("Standard_D2as_v6"), nil,
+						instancetype.OSDiskProfile{SizeGB: 128, Type: armcontainerservice.OSDiskTypeManaged}),
+					Entry("auto falls back to managed default for nil SKU", nil, nil,
+						instancetype.OSDiskProfile{SizeGB: 128, Type: armcontainerservice.OSDiskTypeManaged}),
+				)
+				It("should reserve Trusted Launch storage when auto-sizing", func() {
+					profile := instancetype.ResolveOSDiskProfileFromSKU(
+						fake.MakeSKU("Standard_D64s_v3"), nil, "", true,
+					)
+					Expect(profile).To(Equal(instancetype.OSDiskProfile{
+						SizeGB:    1599,
+						Type:      armcontainerservice.OSDiskTypeEphemeral,
+						Placement: lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk),
+					}))
+				})
+				It("should honor an explicit Managed type when size is unset", func() {
+					profile := instancetype.ResolveOSDiskProfileFromSKU(
+						fake.MakeSKU("Standard_D64s_v3"), nil, v1beta1.OSDiskTypeManaged, false,
+					)
+					Expect(profile).To(Equal(instancetype.OSDiskProfile{SizeGB: 1024, Type: armcontainerservice.OSDiskTypeManaged}))
+				})
+				DescribeTable("should default managed OS disk size by vCPU count when the SKU cannot use ephemeral",
+					func(vcpus int, expectedSizeGB int32) {
+						sku := &skewer.SKU{
+							Name: lo.ToPtr("Standard_Test"),
+							Capabilities: &[]compute.ResourceSkuCapabilities{
+								{Name: lo.ToPtr(skewer.VCPUs), Value: lo.ToPtr(strconv.Itoa(vcpus))},
+							},
+						}
+						profile := instancetype.ResolveOSDiskProfileFromSKU(sku, nil, "", false)
+						Expect(profile).To(Equal(instancetype.OSDiskProfile{SizeGB: expectedSizeGB, Type: armcontainerservice.OSDiskTypeManaged}))
+					},
+					Entry("2 vCPUs -> 128GB", 2, int32(128)),
+					Entry("7 vCPUs -> 128GB", 7, int32(128)),
+					Entry("8 vCPUs -> 256GB", 8, int32(256)),
+					Entry("15 vCPUs -> 256GB", 15, int32(256)),
+					Entry("16 vCPUs -> 512GB", 16, int32(512)),
+					Entry("63 vCPUs -> 512GB", 63, int32(512)),
+					Entry("64 vCPUs -> 1024GB", 64, int32(1024)),
+					Entry("128 vCPUs -> 1024GB", 128, int32(1024)),
+				)
+			})
+			Context("Capacity", func() {
+				It("should report ephemeral-storage capacity matching the auto-resolved OS disk size", func() {
+					instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass) // OSDiskSizeGB not set
+					Expect(err).ToNot(HaveOccurred())
+					capacityByName := map[string]string{}
+					for _, it := range instanceTypes {
+						capacityByName[it.Name] = it.Capacity.StorageEphemeral().String()
+					}
+					Expect(capacityByName).To(HaveKeyWithValue("Standard_D64s_v3", "1600G"))   // ephemeral, SKU-supported size
+					Expect(capacityByName).To(HaveKeyWithValue("Standard_D128ds_v6", "2040G")) // ephemeral, capped
+					Expect(capacityByName).To(HaveKeyWithValue("Standard_D2s_v3", "128G"))     // managed, ephemeral below 128GiB
+					Expect(capacityByName).To(HaveKeyWithValue("Standard_D2as_v6", "128G"))    // managed default, <8 vCPUs
+				})
+				It("should report ephemeral-storage capacity matching the explicit OS disk size", func() {
+					nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](256)
+					instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					for _, it := range instanceTypes {
+						Expect(it.Capacity.StorageEphemeral().String()).To(Equal("256G"))
+					}
 				})
 			})
 			Context("Placement", func() {
@@ -1282,7 +1418,60 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
 					Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementCacheDisk))
 				})
-				It("should select resource disk if cache disk is too small but temp disk supports ephemeral and fits osDiskSizeGB to have parity with the AKS Nodepool API", func() {
+				It("should use managed disk when Trusted Launch consumes an exact-fit cache boundary", func() {
+					nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1600)
+					nodeClass.Spec.Security = &v1beta1.Security{
+						TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
+					}
+					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_D64s_v3"},
+					})
+
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+					statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
+						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+					pod := coretest.UnschedulablePod()
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+
+					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+					Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).ToNot(BeNil())
+					Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(1600)))
+					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+					Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
+					Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
+				})
+				It("should use ephemeral cache disk when Trusted Launch has one GiB of headroom", func() {
+					nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1599)
+					nodeClass.Spec.Security = &v1beta1.Security{
+						TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)},
+					}
+					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_D64s_v3"},
+					})
+
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+					statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
+						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+					pod := coretest.UnschedulablePod()
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+
+					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
+					Expect(*vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).To(Equal(armcompute.DiffDiskPlacementCacheDisk))
+					Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
+					Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
+				})
+				It("should select resource disk if cache disk is too small but resource disk fits osDiskSizeGB", func() {
+					nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128) // Standard_B20ms cache is 30 GiB and resource disk is 160 GiB.
 					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
@@ -1299,9 +1488,10 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
 				})
 			})
-			It("should use ephemeral disk if supported, and has space of at least 128GB by default", func() {
+			It("should auto-size ephemeral disk to the SKU-supported size if osDiskSizeGB is not set", func() {
 				// Create a NodePool that selects a sku that supports ephemeral
-				// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 128GB
+				// SKU Standard_D64s_v3 has 1600GiB of CacheDisk space; with osDiskSizeGB unset, the
+				// ephemeral disk is auto-sized to the SKU-supported maximum
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -1315,10 +1505,52 @@ var _ = Describe("InstanceType Provider", func() {
 				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 				Expect(vm).NotTo(BeNil())
 				Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).NotTo(BeNil())
-				Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(128)))
+				Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(1600)))
 				// should have local disk attached
 				Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
 				Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
+			})
+			It("should cap auto-sized ephemeral disk at 2040GB if osDiskSizeGB is not set", func() {
+				// Standard_D128ds_v6 supports NVMe ephemeral placement with 7040GiB available,
+				// which exceeds Azure's 2040GiB ephemeral OS disk limit
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D128ds_v6"}})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm).NotTo(BeNil())
+				Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).NotTo(BeNil())
+				Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(2040)))
+				Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
+				Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementNvmeDisk))
+
+				// The published SKU capability label is also capped at 2040GiB, matching the
+				// actual OS disk provisioned above, despite 7040GiB of raw NVMe capacity.
+				ExpectKubeletNodeLabelsInCustomData(&vm, v1beta1.LabelSKUStorageEphemeralOSMaxSize, "2190")
+			})
+			It("should auto-size managed disk by vCPU count if osDiskSizeGB is not set and the SKU cannot use ephemeral", func() {
+				// Standard_D2as_v6 (2 vCPUs) does not support ephemeral OS disk
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2as_v6"}})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm).NotTo(BeNil())
+				Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).NotTo(BeNil())
+				Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(128)))
+				Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
 			})
 			It("should fail to provision if ephemeral disk ask for is too large", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1353,7 +1585,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should use ephemeral disk if supported, and set disk size to OSDiskSizeGB from node class", func() {
 				// Create a Nodepool that selects a sku that supports ephemeral
-				// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 256GB
+				// SKU Standard_D64s_v3 has 1600GiB of CacheDisk space, so we expect we can create an ephemeral disk with size 256GB
 				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](256)
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
@@ -1373,9 +1605,10 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should not use ephemeral disk if ephemeral is supported, but we don't have enough space", func() {
 				// Create a Nodepool that selects a sku that supports ephemeral Standard_D2s_v3
-				// Standard_D2s_V3 has 53GB Of CacheDisk space,
-				// and has 16GB of Temp Disk Space.
-				// With our rule of 100GB being the minimum OSDiskSize, this VM should be created without local disk
+				// Standard_D2s_V3 has 50GiB Of CacheDisk space,
+				// and has 16GiB of Temp Disk Space.
+				// The requested 128GB does not fit, so this VM should be created without local disk
+				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -3219,6 +3452,52 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		Context("Caching", func() {
+			It("should isolate resolved disk profiles and kubelet overrides in cached instance types", func() {
+				cases := []struct {
+					name             string
+					diskSizeGB       *int32
+					diskType         *v1beta1.OSDiskType
+					security         *v1beta1.Security
+					cpuMillicores    int32
+					memoryMB         int32
+					nodeFsPercentage float32
+					capacity         string
+				}{
+					{name: "auto-sized", cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "1600G"},
+					{name: "explicit size", diskSizeGB: lo.ToPtr[int32](128), cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "128G"},
+					{name: "managed default", diskType: lo.ToPtr(v1beta1.OSDiskTypeManaged), cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "1024G"},
+					{name: "Trusted Launch auto-sized", security: &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "1599G"},
+					{name: "reservation overrides changed", cpuMillicores: 500, memoryMB: 1024, nodeFsPercentage: 12, capacity: "1600G"},
+					{name: "eviction override changed", cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 15, capacity: "1600G"},
+					{name: "original cache entry reused", cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "1600G"},
+				}
+				for _, entry := range cases {
+					By(entry.name)
+					nodeClass.Spec.OSDiskSizeGB = entry.diskSizeGB
+					nodeClass.Spec.OSDiskType = entry.diskType
+					nodeClass.Spec.Security = entry.security
+					nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+						KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(entry.cpuMillicores), MemoryMB: lo.ToPtr(entry.memoryMB)},
+						EvictionHard: &v1beta1.EvictionThreshold{NodeFsAvailable: lo.ToPtr(fmt.Sprintf("%g%%", entry.nodeFsPercentage))},
+					}
+
+					instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					instanceType, ok := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+						return instanceType.Name == "Standard_D64s_v3"
+					})
+					Expect(ok).To(BeTrue())
+					capacity := instanceType.Capacity[v1.ResourceEphemeralStorage]
+					Expect(capacity.String()).To(Equal(entry.capacity))
+					cpu := instanceType.Overhead.KubeReserved[v1.ResourceCPU]
+					memory := instanceType.Overhead.KubeReserved[v1.ResourceMemory]
+					Expect(cpu.MilliValue()).To(Equal(int64(entry.cpuMillicores)))
+					Expect(memory.Value()).To(Equal(int64(entry.memoryMB) * 1024 * 1024))
+					eviction := instanceType.Overhead.EvictionThreshold[v1.ResourceEphemeralStorage]
+					Expect(eviction.Value()).To(Equal(int64(float64(capacity.Value()) * float64(entry.nodeFsPercentage/100))))
+				}
+			})
+
 			It("should isolate cached instance type ordering from caller mutations", func() {
 				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
@@ -4405,6 +4684,15 @@ var _ = Describe("Tax Calculator", func() {
 	})
 
 })
+
+func resolveOSDiskProfile(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) instancetype.OSDiskProfile {
+	return instancetype.ResolveOSDiskProfileFromSKU(
+		sku,
+		nodeClass.Spec.OSDiskSizeGB,
+		lo.FromPtr(nodeClass.Spec.OSDiskType),
+		nodeClass.IsTrustedLaunchEnabled(),
+	)
+}
 
 func withSKUCapability(sku *skewer.SKU, name, value string) *skewer.SKU {
 	return withSKUCapabilityValue(sku, name, lo.ToPtr(value))
