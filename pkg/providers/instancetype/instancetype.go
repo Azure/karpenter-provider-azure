@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 
 	"github.com/Azure/skewer"
 	"github.com/samber/lo"
@@ -113,12 +115,13 @@ func newInstanceType(
 		Offerings:    offerings,
 		Capacity:     capacity,
 		Overhead: &cloudprovider.InstanceTypeOverhead{
-			KubeReserved:   KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening),
+			KubeReserved:   KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening, params.KubeReserved),
 			SystemReserved: SystemReservedResources(totalMemoryMiB, opts.NetworkPlugin, enableNodeHardening),
 			EvictionThreshold: EvictionThreshold(
 				totalMemoryMiB,
 				capacity[corev1.ResourceEphemeralStorage],
 				enableNodeHardening,
+				params.EvictionHard,
 			),
 		},
 	}
@@ -261,7 +264,7 @@ func computeCapacity(ctx context.Context, sku *skewer.SKU, params *instanceTypeP
 	return corev1.ResourceList{
 		corev1.ResourceCPU:                    *cpu(sku),
 		corev1.ResourceMemory:                 *memoryWithoutOverhead(ctx, sku),
-		corev1.ResourceEphemeralStorage:       *ephemeralStorage(params),
+		corev1.ResourceEphemeralStorage:       *ephemeralStorage(sku, params),
 		corev1.ResourcePods:                   *pods(params),
 		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
 		corev1.ResourceName("amd.com/gpu"):    *gpuAMDCount(sku),
@@ -326,8 +329,12 @@ func CalculateMemoryWithoutOverhead(vmMemoryOverheadPercent float64, skuMemoryGi
 	return memory
 }
 
-func ephemeralStorage(params *instanceTypeParameters) *resource.Quantity {
-	return resource.NewScaledQuantity(int64(params.OSDiskSizeGB), resource.Giga)
+// ephemeralStorage conservatively models the formatted node filesystem. Azure's API
+// size is GiB, while the existing decimal-G quantity leaves headroom for filesystem
+// and image overhead before kubelet's separate eviction reservation is applied.
+func ephemeralStorage(sku *skewer.SKU, params *instanceTypeParameters) *resource.Quantity {
+	profile := ResolveOSDiskProfileFromSKU(sku, params.OSDiskSizeGB, params.OSDiskType, params.TrustedLaunch)
+	return resources.Quantity(fmt.Sprintf("%dG", profile.SizeGB))
 }
 
 func pods(params *instanceTypeParameters) *resource.Quantity {
@@ -348,7 +355,7 @@ func SystemReservedResources(totalMemoryMiB int64, networkPlugin string, enableN
 	}
 }
 
-func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNodeHardening bool) corev1.ResourceList {
+func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNodeHardening bool, overrides map[string]string) corev1.ResourceList {
 	// AKS reserves 20 MiB per pod plus 50 MiB, capped at 25% of node memory.
 	// https://learn.microsoft.com/azure/aks/node-resource-reservations#memory-reservations
 	reservedMemoryMiB := min(20*int64(maxPods)+50, totalMemoryMiB/4)
@@ -362,25 +369,73 @@ func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNod
 		corev1.ResourceCPU:    *resource.NewScaledQuantity(reservedCPUMilli, resource.Milli),
 		corev1.ResourceMemory: *resource.NewQuantity(reservedMemoryMiB*bytesPerMiB, resource.BinarySI),
 	}
+	if len(overrides) > 0 {
+		for _, resourceName := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+			if value, ok := overrides[string(resourceName)]; ok {
+				if quantity, err := resource.ParseQuantity(value); err == nil {
+					resources[resourceName] = quantity
+				}
+			}
+		}
+	}
 
 	return resources
 }
 
-func EvictionThreshold(totalMemoryMiB int64, ephemeralStorageCapacity resource.Quantity, enableNodeHardening bool) corev1.ResourceList {
+func EvictionThreshold(totalMemoryMiB int64, ephemeralStorageCapacity resource.Quantity, enableNodeHardening bool, overrides map[string]string) corev1.ResourceList {
+	return corev1.ResourceList{
+		corev1.ResourceMemory:           memoryEvictionThreshold(totalMemoryMiB, enableNodeHardening, overrides),
+		corev1.ResourceEphemeralStorage: ephemeralStorageEvictionThreshold(ephemeralStorageCapacity, overrides),
+	}
+}
+
+func memoryEvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool, overrides map[string]string) resource.Quantity {
 	memory := resource.MustParse(DefaultMemoryAvailable)
 	if enableNodeHardening {
 		_, hardMemoryMiB := evictionMemoryLadder(totalMemoryMiB)
 		memory = *resource.NewQuantity(hardMemoryMiB*bytesPerMiB, resource.BinarySI)
 	}
+	if len(overrides) == 0 {
+		return memory
+	}
+	// Values are validated at CRD admission; an unexpected parse failure here falls back to the computed default.
+	value, ok := overrides[MemoryAvailable]
+	if !ok {
+		return memory
+	}
+	if strings.HasSuffix(value, "%") {
+		if percentage, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64); err == nil && !math.IsNaN(percentage) && percentage >= 0 && percentage <= 100 {
+			memory = *resource.NewQuantity(int64(float64(totalMemoryMiB*bytesPerMiB)*float64(float32(percentage)/100)), resource.BinarySI)
+		}
+	} else if quantity, err := resource.ParseQuantity(value); err == nil {
+		memory = quantity
+	}
+	return memory
+}
 
+func ephemeralStorageEvictionThreshold(ephemeralStorageCapacity resource.Quantity, overrides map[string]string) resource.Quantity {
 	// Kubelet parses percentage eviction thresholds as float32, converts them
 	// to float64 for multiplication, and truncates the result to bytes.
 	storagePercentage := float32(hardEvictionNodeFSAvailablePercent) / 100
 	storageBytes := int64(float64(ephemeralStorageCapacity.Value()) * float64(storagePercentage))
-	return corev1.ResourceList{
-		corev1.ResourceMemory:           memory,
-		corev1.ResourceEphemeralStorage: *resource.NewQuantity(storageBytes, resource.BinarySI),
+	// Honor a customer nodefs.available override so the modeled ephemeral-storage
+	// overhead matches the eviction threshold actually applied to the kubelet.
+	if value, ok := overrideValue(overrides, NodeFSAvailable); ok {
+		if strings.HasSuffix(value, "%") {
+			if percentage, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64); err == nil && !math.IsNaN(percentage) && percentage >= 0 && percentage <= 100 {
+				storageBytes = int64(float64(ephemeralStorageCapacity.Value()) * float64(float32(percentage)/100))
+			}
+		} else if quantity, err := resource.ParseQuantity(value); err == nil {
+			storageBytes = quantity.Value()
+		}
 	}
+	return *resource.NewQuantity(storageBytes, resource.BinarySI)
+}
+
+// overrideValue returns the customer override for key, if present.
+func overrideValue(overrides map[string]string, key string) (string, bool) {
+	value, ok := overrides[key]
+	return value, ok
 }
 
 // SoftEvictionThreshold returns the hardened soft-eviction memory threshold

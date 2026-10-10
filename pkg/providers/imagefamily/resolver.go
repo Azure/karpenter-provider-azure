@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/logging"
@@ -164,10 +164,18 @@ func (r *defaultResolver) Resolve(
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
 	allTaints := slices.Concat(generalTaints, startupTaints)
 
-	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
+	osDiskProfile, err := instancetype.ResolveOSDiskProfileFromInstanceType(
+		ctx,
+		r.instanceTypeProvider,
+		instanceType.Name,
+		nodeClass.Spec.OSDiskSizeGB,
+		lo.FromPtr(nodeClass.Spec.OSDiskType),
+		nodeClass.IsTrustedLaunchEnabled(),
+	)
 	if err != nil {
 		return nil, err
 	}
+	diskType := lo.Ternary(osDiskProfile.Type == armcontainerservice.OSDiskTypeEphemeral, consts.StorageProfileEphemeral, consts.StorageProfileManagedDisks)
 	var vtpmEnabled, secureBootEnabled *bool
 	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.TrustedLaunch != nil {
 		vtpmEnabled = nodeClass.Spec.Security.TrustedLaunch.VTPM
@@ -203,32 +211,15 @@ func (r *defaultResolver) Resolve(
 			secureBootEnabled,
 		),
 		StorageProfileDiskType:    diskType,
-		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
-		StorageProfilePlacement:   lo.FromPtr(placement),
-
-		// TODO: We could potentially use the instance type to do defaulting like
-		// traditional AKS, so putting this here along with the other settings
-		StorageProfileSizeGB:     lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
-		ImageID:                  imageID,
-		EnableFIPS1403Encryption: requiresFIPS1403Encryption(imageDistro),
-		IsWindows:                false, // TODO(Windows)
+		StorageProfileIsEphemeral: osDiskProfile.Type == armcontainerservice.OSDiskTypeEphemeral,
+		StorageProfilePlacement:   lo.FromPtr(osDiskProfile.Placement),
+		StorageProfileSizeGB:      osDiskProfile.SizeGB,
+		ImageID:                   imageID,
+		EnableFIPS1403Encryption:  requiresFIPS1403Encryption(imageDistro),
+		IsWindows:                 false, // TODO(Windows)
 	}
 
 	return template, nil
-}
-
-func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) (diskType string, placement *armcompute.DiffDiskPlacement, err error) {
-	sku, err := r.instanceTypeProvider.Get(ctx, instanceType.Name)
-	if err != nil {
-		return "", nil, err
-	}
-
-	placement = instancetype.FindEphemeralOSDiskPlacement(sku, nodeClass)
-
-	if placement != nil {
-		return consts.StorageProfileEphemeral, placement, nil
-	}
-	return consts.StorageProfileManagedDisks, nil, nil
 }
 
 // Ubuntu 22.04 FIPS images require Compute's FIPS 140-3 encryption for
@@ -304,7 +295,56 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 		kubeletConfig.KubeReserved["pid"] = instancetype.KubeReservedPIDs
 		kubeletConfig.EvictionHard[instancetype.PIDAvailable] = instancetype.HardEvictionPIDAvailable
 	}
+
+	overlayKubeletConfiguration(kubeletConfig, nodeClass.Spec.Kubelet)
 	return kubeletConfig
+}
+
+func overlayKubeletConfiguration(kubeletConfig *bootstrap.KubeletConfiguration, overrides *v1beta1.KubeletConfiguration) {
+	if overrides == nil {
+		return
+	}
+	kubeletConfig.KubeReserved = lo.Assign(kubeletConfig.KubeReserved, instancetype.KubeReservedOverrides(overrides.KubeReserved))
+	kubeletConfig.EvictionHard = lo.Assign(kubeletConfig.EvictionHard, evictionThresholdMap(overrides.EvictionHard))
+	kubeletConfig.EvictionSoft = lo.Assign(kubeletConfig.EvictionSoft, evictionThresholdMap(overrides.EvictionSoft))
+	kubeletConfig.EvictionSoftGracePeriod = lo.Assign(kubeletConfig.EvictionSoftGracePeriod, evictionGracePeriodMap(overrides.EvictionSoftGracePeriod))
+	if overrides.EvictionMaxPodGracePeriod != nil {
+		kubeletConfig.EvictionMaxPodGracePeriod = lo.ToPtr(*overrides.EvictionMaxPodGracePeriod)
+	}
+}
+
+func evictionThresholdMap(config *v1beta1.EvictionThreshold) map[string]string {
+	if config == nil {
+		return nil
+	}
+	result := map[string]string{}
+	if config.MemoryAvailable != nil {
+		result[instancetype.MemoryAvailable] = *config.MemoryAvailable
+	}
+	if config.NodeFsAvailable != nil {
+		result[instancetype.NodeFSAvailable] = *config.NodeFsAvailable
+	}
+	if config.NodeFsInodesFree != nil {
+		result[instancetype.NodeFSInodesFree] = *config.NodeFsInodesFree
+	}
+	return result
+}
+
+func evictionGracePeriodMap(config *v1beta1.EvictionSoftGracePeriod) map[string]metav1.Duration {
+	if config == nil {
+		return nil
+	}
+	result := map[string]metav1.Duration{}
+	if config.MemoryAvailable != nil && config.MemoryAvailable.Duration != nil {
+		result[instancetype.MemoryAvailable] = metav1.Duration{Duration: *config.MemoryAvailable.Duration}
+	}
+	if config.NodeFsAvailable != nil && config.NodeFsAvailable.Duration != nil {
+		result[instancetype.NodeFSAvailable] = metav1.Duration{Duration: *config.NodeFsAvailable.Duration}
+	}
+	if config.NodeFsInodesFree != nil && config.NodeFsInodesFree.Duration != nil {
+		result[instancetype.NodeFSInodesFree] = metav1.Duration{Duration: *config.NodeFsInodesFree.Duration}
+	}
+	return result
 }
 
 func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
