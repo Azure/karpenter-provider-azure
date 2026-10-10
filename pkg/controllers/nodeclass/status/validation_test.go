@@ -428,7 +428,7 @@ var _ = Describe("Validation Reconciler", func() {
 			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
 		})
 
-		DescribeTable("should reject every provision mode while node public IP is unsupported",
+		DescribeTable("should reject provision modes that do not support node public IP",
 			func(provisionMode string) {
 				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
 
@@ -440,15 +440,28 @@ var _ = Describe("Validation Reconciler", func() {
 				Expect(condition.IsFalse()).To(BeTrue())
 				Expect(condition.Reason).To(Equal(status.NodePublicIPUnsupportedProvisionMode))
 				Expect(condition.Message).To(ContainSubstring(provisionMode))
+				Expect(condition.Message).To(ContainSubstring(consts.ProvisionModeAKSMachineAPI))
+				Expect(condition.Message).To(ContainSubstring(consts.ProvisionModeAKSMachineAPIHeaderBatch))
 			},
 			Entry("aksscriptless", consts.ProvisionModeAKSScriptless),
 			Entry("bootstrappingclient", consts.ProvisionModeBootstrappingClient),
+		)
+
+		DescribeTable("should accept node public IP in AKS Machine API provision modes",
+			func(provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+			},
 			Entry("aksmachineapi", consts.ProvisionModeAKSMachineAPI),
 			Entry("aksmachineapiheaderbatch", consts.ProvisionModeAKSMachineAPIHeaderBatch),
 		)
 
 		It("should clear the failure after node public IP is disabled", func() {
-			ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeAKSMachineAPI})
+			ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeAKSScriptless})
 			_, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsFalse()).To(BeTrue())

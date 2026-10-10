@@ -517,20 +517,64 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		Context("Create - Node Public IP", func() {
-			It("should not create a Machine from pending pods when node public IP is enabled", func() {
-				nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+			const prefixID = "/subscriptions/subscriptionID/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/node-prefix"
+
+			provisionAndPopNetwork := func() *armcontainerservice.MachineNetworkProperties {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
-				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
-				Expect(condition.IsFalse()).To(BeTrue())
-				Expect(condition.Reason).To(Equal(status.NodePublicIPUnsupportedProvisionMode))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
 
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(BeZero())
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Properties).ToNot(BeNil())
+				Expect(aksMachine.Properties.Network).ToNot(BeNil())
+				return aksMachine.Properties.Network
+			}
+
+			It("should request a node public IP when enabled", func() {
+				nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+
+				network := provisionAndPopNetwork()
+				Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+				Expect(network.NodePublicIPPrefixID).To(BeNil())
+				Expect(network.NodePublicIPTags).To(BeNil())
 			})
+
+			It("should request a node public IP from the configured prefix", func() {
+				nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}}
+
+				network := provisionAndPopNetwork()
+				Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+				Expect(lo.FromPtr(network.NodePublicIPPrefixID)).To(Equal(prefixID))
+				Expect(network.NodePublicIPTags).To(BeNil())
+			})
+
+			It("should request a node public IP with the configured IP tags", func() {
+				nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "Internet"}}}
+
+				network := provisionAndPopNetwork()
+				Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+				Expect(network.NodePublicIPPrefixID).To(BeNil())
+				Expect(network.NodePublicIPTags).To(Equal([]*armcontainerservice.IPTag{{IPTagType: lo.ToPtr("RoutingPreference"), Tag: lo.ToPtr("Internet")}}))
+			})
+
+			DescribeTable("should not send node public IP fields when node public IP is not enabled",
+				func(nodePublicIP *v1beta1.NodePublicIP) {
+					nodeClass.Spec.NodePublicIP = nodePublicIP
+
+					network := provisionAndPopNetwork()
+					Expect(network.EnableNodePublicIP).To(BeNil())
+					Expect(network.NodePublicIPPrefixID).To(BeNil())
+					Expect(network.NodePublicIPTags).To(BeNil())
+				},
+				Entry("when omitted", nil),
+				Entry("when explicitly disabled", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}),
+			)
 		})
 
 		// Ported from VM test: Context "additional-tags"

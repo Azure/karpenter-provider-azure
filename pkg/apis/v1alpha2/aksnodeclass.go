@@ -78,9 +78,10 @@ type CapacityReservationConfiguration struct {
 type NodePublicIP struct {
 	// enabled requests a dedicated public IP address for each node.
 	// If omitted or false, nodes don't get a public IP address.
-	// Node public IP isn't supported in any provision mode yet. Setting enabled to true
-	// makes the NodeClass not ready, with the ValidationSucceeded condition reporting
-	// the reason.
+	// Node public IP is supported only in the AKS Machine API provision modes
+	// (aksmachineapi and aksmachineapiheaderbatch). In other provision modes, setting
+	// enabled to true makes the NodeClass not ready, with the ValidationSucceeded
+	// condition reporting the reason.
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
 	// prefixIDs are the ARM resource IDs of the public IP prefixes that node public IP
