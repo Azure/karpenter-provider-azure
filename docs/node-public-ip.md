@@ -394,7 +394,6 @@ kubectl get nodeclaim <name> -o jsonpath='{.status.conditions[?(@.type=="Launche
 | `InvalidPublicIPPrefixDifferentSub` | The prefix is in another subscription | Use a prefix in the cluster's subscription |
 | `LinkedAuthorizationFailed`, naming Karpenter's identity (the cluster identity on NAP) | Karpenter's identity can't join the prefix, or the prefix doesn't exist | Fix the prefix ID, or grant the permission. See [Prerequisites](#karpenters-identity-and-the-cluster-identity-can-join-the-prefix) |
 | `GetPublicIPPrefixByResourceIDError` | The prefix doesn't exist. You only get this code if Karpenter's identity can join prefixes at a broader scope, such as the resource group | Fix the prefix ID |
-| `PublicIpPrefixOutOfIpAddressesForVMScaleSet` (`PublicIPPrefixInsufficientIPs`) | The prefix is too small | Use a larger prefix. See [Sizing a prefix](#sizing-a-prefix) |
 | `InvalidParameter` | The cluster uses authorized IP ranges and the NodeClass has no prefix | Add a prefix that's in the authorized list. See [API server authorized IP ranges](#api-server-authorized-ip-ranges) |
 | `UnsupportedIPTagType` | An `ipTagType` that Azure doesn't support. The message lists the supported types | Fix the NodeClass's `ipTags` |
 
@@ -408,7 +407,7 @@ kubectl get events -A --field-selector involvedObject.kind=NodeClaim,reason=Asyn
 
 | Cause | Fix |
 | --- | --- |
-| The prefix has no free addresses | Lower the NodePools' `spec.limits.nodes`, remove nodes that use the prefix, or use a larger prefix |
+| The prefix has no free addresses ("No more IPs available in IpPrefix …") | Lower the NodePools' `spec.limits.nodes`, remove nodes that use the prefix, or use a larger prefix |
 | The prefix is in a different region from the cluster | Use a prefix in the cluster's region and subscription |
 | A zonal prefix in a different zone from the node | See [Zones](#zones) |
 | The cluster identity can't join the prefix (`LinkedAuthorizationFailed`, naming the cluster identity) | Grant it. See [Prerequisites](#karpenters-identity-and-the-cluster-identity-can-join-the-prefix) |
