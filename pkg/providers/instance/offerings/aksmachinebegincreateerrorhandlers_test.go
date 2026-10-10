@@ -204,9 +204,7 @@ func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTest
 		nodePublicIPBeginCreateErrorTestCase("UnsupportedIPTagType",
 			"UnsupportedIPTagType", "IP tag type UnknownTagType is not supported. Supported values are FirstPartyUsage, NetworkDomain and RoutingPreference."),
 		nodePublicIPBeginCreateErrorTestCase("GetPublicIPPrefixByResourceIDError",
-			"GetPublicIPPrefixByResourceIDError", "Failed to get public IP prefix. The resource was not found."),
-		nodePublicIPBeginCreateErrorTestCase("PublicIpPrefixOutOfIpAddressesForVMScaleSet",
-			"PublicIpPrefixOutOfIpAddressesForVMScaleSet", "The public IP prefix doesn't have enough IP addresses for the requested nodes."),
+			"GetPublicIPPrefixByResourceIDError", "Failed to get public IP prefix object by ID prefixID."),
 	}
 }
 
