@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -668,17 +669,8 @@ func (p *DefaultAKSMachineProvider) handleMachineBeginCreateError(ctx context.Co
 }
 
 func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, aksMachineName string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType, existingAKSMachine *armcontainerservice.Machine) (*AKSMachinePromise, error) {
-	// Reconstruct properties from existing AKS machine instance.
-	if err := validateRetrievedAKSMachineBasicProperties(existingAKSMachine); err != nil {
-		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, err)
-	}
-	if err := validateExistingAKSMachineCapacityReservation(existingAKSMachine, nodeClass); err != nil {
-		return nil, fmt.Errorf("found existing AKS machine %s, but it %w", aksMachineName, err)
-	}
-	if existingAKSMachine.Properties.Tags == nil || existingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] == nil {
-		// This is not included in validateRetrievedAKSMachineBasicProperties as inplaceupdate can repair it.
-		// Although, we don't want to reuse a machine until that happens.
-		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, fmt.Errorf("irretrievable karpenter.azure.com_aksmachine_nodeclaim tag"))
+	if err := validateExistingAKSMachineForReuse(aksMachineName, nodeClass, existingAKSMachine); err != nil {
+		return nil, err
 	}
 
 	existingAKSMachineVMSize := lo.FromPtr(existingAKSMachine.Properties.Hardware.VMSize)
@@ -737,6 +729,25 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 	), nil
 }
 
+func validateExistingAKSMachineForReuse(aksMachineName string, nodeClass *v1beta1.AKSNodeClass, existingAKSMachine *armcontainerservice.Machine) error {
+	// Reconstruct properties from existing AKS machine instance.
+	if err := validateRetrievedAKSMachineBasicProperties(existingAKSMachine); err != nil {
+		return fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, err)
+	}
+	if err := validateExistingAKSMachineCapacityReservation(existingAKSMachine, nodeClass); err != nil {
+		return fmt.Errorf("found existing AKS machine %s, but it %w", aksMachineName, err)
+	}
+	if err := validateExistingAKSMachineNodePublicIP(existingAKSMachine, nodeClass); err != nil {
+		return fmt.Errorf("found existing AKS machine %s, but it %w", aksMachineName, err)
+	}
+	if existingAKSMachine.Properties.Tags == nil || existingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] == nil {
+		// This is not included in validateRetrievedAKSMachineBasicProperties as inplaceupdate can repair it.
+		// Although, we don't want to reuse a machine until that happens.
+		return fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, fmt.Errorf("irretrievable karpenter.azure.com_aksmachine_nodeclaim tag"))
+	}
+	return nil
+}
+
 // validateExistingAKSMachineCapacityReservation refuses to adopt a Machine left behind
 // by an earlier attempt whose capacity reservation group differs from the NodeClass.
 func validateExistingAKSMachineCapacityReservation(machine *armcontainerservice.Machine, nodeClass *v1beta1.AKSNodeClass) error {
@@ -745,6 +756,48 @@ func validateExistingAKSMachineCapacityReservation(machine *armcontainerservice.
 		actual = lo.FromPtr(machine.Properties.CapacityReservation.CapacityReservationGroup.ID)
 	}
 	return validateCapacityReservationGroupAssociation(actual, nodeClass.GetCapacityReservationGroupID())
+}
+
+// validateExistingAKSMachineNodePublicIP refuses to adopt a Machine left behind by an earlier
+// attempt whose node public IP settings differ from the NodeClass. Adopting it would stamp the
+// current NodeClass hash on a node with the wrong public IP settings, and drift would never
+// replace it.
+//
+// GET and LIST return the settings as they were sent, so a missing Network block or a nil
+// enablement means disabled.
+func validateExistingAKSMachineNodePublicIP(machine *armcontainerservice.Machine, nodeClass *v1beta1.AKSNodeClass) error {
+	var actualEnabled bool
+	var actualPrefixID string
+	var actualIPTags []v1beta1.IPTag
+	if machine.Properties != nil && machine.Properties.Network != nil {
+		actualEnabled = lo.FromPtr(machine.Properties.Network.EnableNodePublicIP)
+		actualPrefixID = lo.FromPtr(machine.Properties.Network.NodePublicIPPrefixID)
+		actualIPTags = lo.FilterMap(machine.Properties.Network.NodePublicIPTags, func(t *armcontainerservice.IPTag, _ int) (v1beta1.IPTag, bool) {
+			if t == nil {
+				return v1beta1.IPTag{}, false
+			}
+			return v1beta1.IPTag{IPTagType: lo.FromPtr(t.IPTagType), Tag: lo.FromPtr(t.Tag)}, true
+		})
+	}
+	desiredEnabled := nodeClass.IsNodePublicIPEnabled()
+	var desiredPrefixID string
+	if prefixIDs := nodeClass.GetNodePublicIPPrefixIDs(); len(prefixIDs) > 0 {
+		desiredPrefixID = prefixIDs[0]
+	}
+	desiredIPTags := nodeClass.GetNodePublicIPTags()
+
+	if actualEnabled != desiredEnabled {
+		return fmt.Errorf("has node public IP enabled=%t, but the NodeClass now specifies enabled=%t", actualEnabled, desiredEnabled)
+	}
+	// ARM echoes resource IDs back with different casing than it was given.
+	if !strings.EqualFold(actualPrefixID, desiredPrefixID) {
+		return fmt.Errorf("uses node public IP prefix %q, but the NodeClass now specifies %q", actualPrefixID, desiredPrefixID)
+	}
+	// IP tags are compared as a set with exact casing; order doesn't matter.
+	if !lo.ElementsMatch(actualIPTags, desiredIPTags) {
+		return fmt.Errorf("has node public IP tags %v, but the NodeClass now specifies %v", actualIPTags, desiredIPTags)
+	}
+	return nil
 }
 
 func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string, capacityReservationGroupID string) (*armcontainerservice.Machine, error) {
