@@ -394,6 +394,36 @@ var _ = Describe("CloudProvider", func() {
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
 		})
 
+		It("should refuse to create a VM until NodeClass status is reconciled against the latest spec", func() {
+			statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
+				azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+			nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+			Expect(nodeClass.StatusConditions().Get(corestatus.ConditionReady).IsTrue()).To(BeTrue())
+
+			// Change the spec without reconciling status: Ready=True is now stale
+			nodeClass.Spec.Tags = lo.Assign(nodeClass.Spec.Tags, map[string]string{"spec-changed": "true"})
+			ExpectApplied(ctx, env.Client, nodeClass)
+			Expect(nodeClass.StatusConditions().Get(corestatus.ConditionReady).IsTrue()).To(BeTrue())
+			Expect(nodeClass.StatusConditions().Get(corestatus.ConditionReady).ObservedGeneration).To(BeNumerically("<", nodeClass.Generation))
+
+			created, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(corecloudprovider.IsNodeClassNotReadyError(err)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring("NodeClass status has not been reconciled against the latest spec"))
+			Expect(created).To(BeNil())
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+
+			// Once status catches up with the spec, creation proceeds
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+			created, err = CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			validateVMNodeClaim(created, nodePool)
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+		})
+
 		It("should list nodeclaim created by the CloudProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
