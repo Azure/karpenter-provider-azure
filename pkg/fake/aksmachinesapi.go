@@ -56,7 +56,9 @@ type AKSMachineCreateOrUpdateInput struct {
 	AgentPoolName     string
 	AKSMachineName    string
 	AKSMachine        armcontainerservice.Machine
-	Options           *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions
+	// RequestedAKSMachine preserves the request before the fake applies server-side defaults.
+	RequestedAKSMachine armcontainerservice.Machine
+	Options             *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions
 }
 
 type AKSMachineGetInput struct {
@@ -285,12 +287,13 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(
 	options *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions,
 ) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error) {
 	input := &AKSMachineCreateOrUpdateInput{
-		ResourceGroupName: resourceGroupName,
-		ResourceName:      resourceName,
-		AgentPoolName:     agentPoolName,
-		AKSMachineName:    aksMachineName,
-		AKSMachine:        parameters,
-		Options:           options,
+		ResourceGroupName:   resourceGroupName,
+		ResourceName:        resourceName,
+		AgentPoolName:       agentPoolName,
+		AKSMachineName:      aksMachineName,
+		AKSMachine:          parameters,
+		RequestedAKSMachine: deepCopyMachine(parameters),
+		Options:             options,
 	}
 
 	// Validate parent AgentPool
