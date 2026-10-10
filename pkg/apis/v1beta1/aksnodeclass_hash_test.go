@@ -98,6 +98,18 @@ var _ = Describe("Hash", func() {
 		Entry("OSDiskSizeGB", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
 		Entry("ImageFamily", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
+		Entry("Kubelet.KubeReserved.CPUMillicores", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250))}}}}),
+		Entry("Kubelet.KubeReserved.MemoryMB", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{MemoryMB: lo.ToPtr(int32(512))}}}}),
+		Entry("Kubelet.EvictionHard.MemoryAvailable", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")}}}}),
+		Entry("Kubelet.EvictionHard.NodeFsAvailable", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{NodeFsAvailable: lo.ToPtr("15%")}}}}),
+		Entry("Kubelet.EvictionHard.NodeFsInodesFree", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{NodeFsInodesFree: lo.ToPtr("5%")}}}}),
+		Entry("Kubelet.EvictionSoft.MemoryAvailable", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionSoft: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")}}}}),
+		Entry("Kubelet.EvictionSoft.NodeFsAvailable", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionSoft: &v1beta1.EvictionThreshold{NodeFsAvailable: lo.ToPtr("15%")}}}}),
+		Entry("Kubelet.EvictionSoft.NodeFsInodesFree", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionSoft: &v1beta1.EvictionThreshold{NodeFsInodesFree: lo.ToPtr("5%")}}}}),
+		Entry("Kubelet.EvictionSoftGracePeriod.MemoryAvailable", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))}}}}),
+		Entry("Kubelet.EvictionSoftGracePeriod.NodeFsAvailable", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{NodeFsAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))}}}}),
+		Entry("Kubelet.EvictionSoftGracePeriod.NodeFsInodesFree", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{NodeFsInodesFree: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))}}}}),
+		Entry("Kubelet.EvictionMaxPodGracePeriod", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionMaxPodGracePeriod: lo.ToPtr(int32(60))}}}),
 		Entry("MaxPods", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
 		Entry("CapacityReservation", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg")}}}),
 		Entry("LocalDNS.Mode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}}}),
@@ -141,6 +153,17 @@ var _ = Describe("Hash", func() {
 		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}
 		updatedHash := nodeClass.Hash()
 		Expect(hash).To(Equal(updatedHash))
+	})
+	It("should hash eviction grace periods by duration rather than raw spelling", func() {
+		nodeClass.Spec.Kubelet.EvictionSoft = &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")}
+		nodeClass.Spec.Kubelet.EvictionSoftGracePeriod = &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))}
+		hash := nodeClass.Hash()
+
+		nodeClass.Spec.Kubelet.EvictionSoftGracePeriod.MemoryAvailable = lo.ToPtr(karpv1.MustParseNillableDuration("1m30s"))
+		Expect(nodeClass.Hash()).To(Equal(hash))
+
+		nodeClass.Spec.Kubelet.EvictionSoftGracePeriod.MemoryAvailable = lo.ToPtr(karpv1.MustParseNillableDuration("2m"))
+		Expect(nodeClass.Hash()).ToNot(Equal(hash))
 	})
 	It("should not change hash when tags are changed", func() {
 		hash := nodeClass.Hash()
