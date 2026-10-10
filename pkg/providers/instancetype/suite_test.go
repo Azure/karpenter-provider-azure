@@ -59,6 +59,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/skewer"
 	"github.com/alecthomas/units"
 
@@ -2078,7 +2079,7 @@ var _ = Describe("InstanceType Provider", func() {
 		Context("LoadBalancer", func() {
 			resourceGroup := "test-resourceGroup"
 
-			It("should include loadbalancer backend pools the allocated VMs", func() {
+			It("should include loadbalancer backend pools on the allocated VMs", func() {
 				standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
 				internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
 
@@ -2102,6 +2103,45 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(lo.FromPtr(backendPools[1].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
 				Expect(lo.FromPtr(backendPools[2].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
 			})
+
+			outboundBackendPoolIDs := []string{
+				"/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool",
+			}
+
+			DescribeTable("should filter inbound loadbalancer backend pools when the exclusion label is present", func(labelValue string) {
+				standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
+				internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
+
+				azureEnv.LoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
+				azureEnv.LoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
+				nodePool.Spec.Template.Labels = map[string]string{
+					v1.LabelNodeExcludeBalancers: labelValue,
+				}
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				iface := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+
+				Expect(iface.Properties.IPConfigurations).ToNot(BeEmpty())
+				Expect(lo.FromPtr(iface.Properties.IPConfigurations[0].Properties.Primary)).To(Equal(true))
+
+				backendPools := iface.Properties.IPConfigurations[0].Properties.LoadBalancerBackendAddressPools
+				backendPoolIDs := lo.Map(backendPools, func(pool *armnetwork.BackendAddressPool, _ int) string {
+					return lo.FromPtr(pool.ID)
+				})
+				Expect(backendPoolIDs).To(Equal(outboundBackendPoolIDs))
+			},
+				Entry("when true", "true"),
+				Entry("when using a true alias", "TRUE"),
+				Entry("when empty", ""),
+				Entry("when invalid", "invalid"),
+				Entry("when false", "false"),
+				Entry("when using a false alias", "0"),
+			)
 		})
 
 		Context("Zone-aware provisioning", func() {
@@ -2755,6 +2795,63 @@ var _ = Describe("InstanceType Provider", func() {
 				Entry("retains a SKU with an invalid retirement date", lo.ToPtr("not-a-date"), true),
 			)
 		})
+		Context("Filtering GPU SKUs AzureContainerLinux", func() {
+			It("should combine ACL GPU support with Trusted Launch capability", func() {
+				// Control all other capabilities so negative assertions exercise the intended filters.
+				for _, sku := range []struct {
+					name       string
+					tlDisabled string
+				}{
+					{"Standard_NC24ads_A100_v4", "False"},
+					{"Standard_NC48ads_A100_v4", "True"},
+					{"Standard_ND112asr_A100_v4", "False"},
+					{"Standard_NC144ds_xl_RTXPRO6000BSE_v6", "False"},
+					{"Standard_NV4ads_V710_v5", "False"},
+				} {
+					azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+						Name: lo.ToPtr(sku.name), Size: lo.ToPtr(strings.TrimPrefix(sku.name, "Standard_")),
+						Family: lo.ToPtr("standardTestACLFamily"), ResourceType: lo.ToPtr("virtualMachines"),
+						Locations: &[]string{fake.Region},
+						Capabilities: &[]compute.ResourceSkuCapabilities{
+							{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("24")},
+							{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("96")},
+							{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+							{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V2")},
+							{Name: lo.ToPtr("TrustedLaunchDisabled"), Value: lo.ToPtr(sku.tlDisabled)},
+							{Name: lo.ToPtr("GPUs"), Value: lo.ToPtr("1")},
+						},
+					})
+				}
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+				nc := test.AKSNodeClass()
+				// GPU driver installation is independent of OS compatibility; don't let it mask filtering.
+				nc.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}
+				nc.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+				getName := func(it *corecloudprovider.InstanceType) string { return it.Name }
+				nc.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+				baseline, err := azureEnv.InstanceTypesProvider.List(ctx, nc)
+				Expect(err).ToNot(HaveOccurred())
+				for _, name := range []string{"Standard_NC24ads_A100_v4", "Standard_NC144ds_xl_RTXPRO6000BSE_v6", "Standard_NV4ads_V710_v5"} {
+					Expect(baseline).To(ContainElement(WithTransform(getName, Equal(name))))
+				}
+				nc.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				nc.Spec.Security = nil
+				baseline, err = azureEnv.InstanceTypesProvider.List(ctx, nc)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(baseline).To(ContainElement(WithTransform(getName, Equal("Standard_NC48ads_A100_v4"))))
+				Expect(baseline).To(ContainElement(WithTransform(getName, Equal("Standard_ND112asr_A100_v4"))))
+				nc.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+				nc.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+				ExpectApplied(ctx, env.Client, nc)
+				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nc)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(instanceTypes).To(ContainElement(WithTransform(getName, Equal("Standard_NC24ads_A100_v4"))))
+				for _, name := range []string{"Standard_NC48ads_A100_v4", "Standard_ND112asr_A100_v4", "Standard_NC144ds_xl_RTXPRO6000BSE_v6", "Standard_NV4ads_V710_v5"} {
+					Expect(instanceTypes).ToNot(ContainElement(WithTransform(getName, Equal(name))))
+				}
+			})
+		})
+
 		Context("Filtering GPU SKUs AzureLinux", func() {
 			var instanceTypes corecloudprovider.InstanceTypes
 			var err error

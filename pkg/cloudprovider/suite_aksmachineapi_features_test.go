@@ -129,6 +129,69 @@ var _ = Describe("CloudProvider", func() {
 		// Mostly ported from VM test: "ImageReference" and "ImageProvider + Image Family"
 		// Note: AKS Machine API does not support Community Image Gallery (CIG)
 		Context("Create - ImageReference and ImageProvider + Image Family", func() {
+			DescribeTable("should provision AzureContainerLinux with explicit Trusted Launch",
+				func(provisionMode string, fipsMode *v1beta1.FIPSMode, definition string, withOverrides bool) {
+					testOptions.ProvisionMode = provisionMode
+					// Dispatch mode is captured when the provider is constructed, not read on each create.
+					azureEnv.Reset(ctx)
+					azureEnv = test.NewEnvironment(ctx, env)
+					cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+					cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+					coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
+					statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, testOptions.NetworkPolicy, testOptions.NetworkPlugin,
+						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+					nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+					nodeClass.Spec.FIPSMode = fipsMode
+					nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+					if withOverrides {
+						nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+							KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+							EvictionHard:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi")},
+							EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
+							EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))},
+							EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
+						}
+					}
+					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+						Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{"Standard_D2_v5"},
+					})
+					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+					pod := coretest.UnschedulablePod(coretest.PodOptions{})
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+
+					Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					machine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+					Expect(machine.Properties.NodeImageVersion).To(Equal(lo.ToPtr("AKSAzureLinux-" + definition + "-202608.26.0")))
+					Expect(machine.Properties.OperatingSystem.OSSKU).To(Equal(lo.ToPtr(armcontainerservice.OSSKUAzureContainerLinux)))
+					Expect(machine.Properties.OperatingSystem.EnableFIPS).To(Equal(lo.ToPtr(lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS)))
+					Expect(machine.Properties.Security.EnableVTPM).To(Equal(lo.ToPtr(true)))
+					Expect(machine.Properties.Security.EnableSecureBoot).To(Equal(lo.ToPtr(true)))
+					if withOverrides {
+						kubeletConfig := machine.Properties.Kubernetes.KubeletConfig
+						Expect(kubeletConfig).ToNot(BeNil())
+						Expect(kubeletConfig.KubeReserved).ToNot(BeNil())
+						Expect(kubeletConfig.KubeReserved.CPUMillicores).To(Equal(lo.ToPtr(int32(250))))
+						Expect(kubeletConfig.KubeReserved.MemoryMB).To(Equal(lo.ToPtr(int32(512))))
+						Expect(kubeletConfig.HardEvictionThreshold).ToNot(BeNil())
+						Expect(kubeletConfig.HardEvictionThreshold.MemoryAvailable).To(Equal(lo.ToPtr("333Mi")))
+						Expect(kubeletConfig.SoftEvictionThreshold).ToNot(BeNil())
+						Expect(kubeletConfig.SoftEvictionThreshold.MemoryAvailable).To(Equal(lo.ToPtr("500Mi")))
+						Expect(kubeletConfig.SoftEvictionGracePeriod).ToNot(BeNil())
+						Expect(kubeletConfig.SoftEvictionGracePeriod.MemoryAvailable).To(Equal(lo.ToPtr("90s")))
+						Expect(kubeletConfig.EvictionMaxPodGracePeriodInSeconds).To(Equal(lo.ToPtr(int32(120))))
+					}
+				},
+				Entry("Machine API default", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2TL", false),
+				Entry("Machine API FIPS", consts.ProvisionModeAKSMachineAPI, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", false),
+				Entry("batched Machine API default", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2TL", false),
+				Entry("batched Machine API FIPS", consts.ProvisionModeAKSMachineAPIHeaderBatch, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", false),
+				Entry("Machine API default with kubelet overrides", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2TL", true),
+				Entry("Machine API FIPS with kubelet overrides", consts.ProvisionModeAKSMachineAPI, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", true),
+				Entry("batched Machine API default with kubelet overrides", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2TL", true),
+				Entry("batched Machine API FIPS with kubelet overrides", consts.ProvisionModeAKSMachineAPIHeaderBatch, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", true),
+			)
 
 			// Ported from VM test: "should use shared image gallery images when options are set to UseSIG"
 			It("should use shared image gallery images", func() {

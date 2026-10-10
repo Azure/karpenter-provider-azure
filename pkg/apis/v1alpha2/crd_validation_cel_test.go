@@ -278,6 +278,65 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("Versions", func() {
+		DescribeTable("should require kubernetesVersion when nodeImageVersion is set", func(kubernetesVersion, nodeImageVersion *string, expected bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					Versions: &v1alpha2.Versions{
+						KubernetesVersion: kubernetesVersion,
+						NodeImageVersion:  nodeImageVersion,
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("should accept omitted versions", nil, nil, true),
+			Entry("should accept kubernetesVersion without nodeImageVersion", lo.ToPtr("1.31.0"), nil, true),
+			Entry("should reject nodeImageVersion without kubernetesVersion", nil, lo.ToPtr("202501.01.0"), false),
+			Entry("should accept nodeImageVersion with kubernetesVersion", lo.ToPtr("1.31.0"), lo.ToPtr("202501.01.0"), true),
+		)
+	})
+
+	Context("OSDiskType", func() {
+		It("should accept Managed OSDiskType", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					OSDiskType: lo.ToPtr(v1alpha2.OSDiskTypeManaged),
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept omitted OSDiskType", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1alpha2.AKSNodeClassSpec{
+					// OSDiskType is nil - should be accepted
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			Expect(nodeClass.Spec.OSDiskType).To(BeNil())
+		})
+
+		It("should reject invalid OSDiskType", func() {
+			invalidOSDiskType := v1alpha2.OSDiskType("asdf")
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					OSDiskType: &invalidOSDiskType,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+
 	Context("FIPSMode", func() {
 		It("should reject invalid FIPSMode", func() {
 			invalidFIPSMode := v1alpha2.FIPSMode("123")
@@ -858,12 +917,102 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeFIPS, false, true),
 			Entry("generic AzureLinux when TrustedLaunch is enabled should succeed", v1alpha2.AzureLinuxImageFamily, nil, true, true),
 			Entry("generic AzureLinux when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should fail", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeFIPS, true, false),
+			Entry("Windows2022 when FIPSMode is explicitly Disabled should succeed", v1alpha2.Windows2022ImageFamily, &v1alpha2.FIPSModeDisabled, false, true),
+			Entry("Windows2022 when FIPSMode is not explicitly set should succeed", v1alpha2.Windows2022ImageFamily, nil, false, true),
+			Entry("Windows2022 when FIPSMode is explicitly FIPS should fail", v1alpha2.Windows2022ImageFamily, &v1alpha2.FIPSModeFIPS, false, false),
+			Entry("Windows2022 when TrustedLaunch is enabled should fail", v1alpha2.Windows2022ImageFamily, nil, true, false),
+			Entry("Windows2025 when FIPSMode is explicitly Disabled should fail", v1alpha2.Windows2025ImageFamily, &v1alpha2.FIPSModeDisabled, false, false),
+			Entry("Windows2025 when FIPSMode is not explicitly set should succeed", v1alpha2.Windows2025ImageFamily, nil, false, true),
+			Entry("Windows2025 when FIPSMode is explicitly FIPS should succeed", v1alpha2.Windows2025ImageFamily, &v1alpha2.FIPSModeFIPS, false, true),
+			Entry("Windows2025 when TrustedLaunch is enabled should succeed", v1alpha2.Windows2025ImageFamily, nil, true, true),
+			Entry("Windows2025 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1alpha2.Windows2025ImageFamily, &v1alpha2.FIPSModeFIPS, true, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly Disabled should succeed", "", &v1alpha2.FIPSModeDisabled, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1alpha2.FIPSModeFIPS, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when TrustedLaunch is enabled should succeed", "", nil, true, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", "", &v1alpha2.FIPSModeFIPS, true, true),
 		)
+	})
+
+	Context("AzureContainerLinux", func() {
+		DescribeTable("should require explicit security on create and update",
+			func(security *v1alpha2.Security, valid bool) {
+				nodeClass := &v1alpha2.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1alpha2.AKSNodeClassSpec{
+						ImageFamily: lo.ToPtr(v1alpha2.AzureContainerLinuxImageFamily),
+						Security:    security,
+					},
+				}
+				if valid {
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+					Expect(nodeClass.IsVTPMEnabled()).To(BeTrue())
+					Expect(nodeClass.IsSecureBootEnabled()).To(BeTrue())
+				} else {
+					Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("to be explicitly set to true")))
+					nodeClass.Spec.Security = &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+					nodeClass.Spec.Security = security
+					Expect(env.Client.Update(ctx, nodeClass)).To(MatchError(ContainSubstring("to be explicitly set to true")))
+				}
+			},
+			Entry("omitted security", nil, false),
+			Entry("empty security", &v1alpha2.Security{}, false),
+			Entry("empty Trusted Launch", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{}}, false),
+			Entry("only vTPM enabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true)}}, false),
+			Entry("only Secure Boot enabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{SecureBoot: lo.ToPtr(true)}}, false),
+			Entry("both enabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, true),
+			Entry("vTPM disabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(false)}}, false),
+			Entry("Secure Boot disabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{SecureBoot: lo.ToPtr(false)}}, false),
+			Entry("vTPM enabled but Secure Boot disabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(false)}}, false),
+			Entry("Secure Boot enabled but vTPM disabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(true)}}, false),
+		)
+
+		DescribeTable("should require explicit Trusted Launch with FIPS", func(explicit bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1alpha2.AzureContainerLinuxImageFamily),
+					FIPSMode:    &v1alpha2.FIPSModeFIPS,
+				},
+			}
+			if explicit {
+				nodeClass.Spec.Security = &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+			}
+			if explicit {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("to be explicitly set to true")))
+			}
+		}, Entry("implicit rejected", false), Entry("explicit accepted", true))
+
+		DescribeTable("should require at least a 60 GB OS disk", func(size *int32, valid bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1alpha2.AzureContainerLinuxImageFamily), OSDiskSizeGB: size,
+					Security: &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
+				},
+			}
+			if valid {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+				Expect(lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)).To(Equal(lo.FromPtrOr(size, int32(128))))
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("AzureContainerLinux requires an OS disk of at least 60 GB")))
+			}
+		}, Entry("below minimum", lo.ToPtr(int32(59)), false), Entry("minimum", lo.ToPtr(int32(60)), true), Entry("default", nil, true))
+
+		It("should reject Kata", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ImageFamily:     lo.ToPtr(v1alpha2.AzureContainerLinuxImageFamily),
+					WorkloadRuntime: lo.ToPtr(v1alpha2.WorkloadRuntimeKataVMIsolation),
+					Security:        &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("workloadRuntime KataVmIsolation requires imageFamily AzureLinux")))
+		})
 	})
 
 	Context("WorkloadRuntime and ImageFamily", func() {
@@ -940,6 +1089,55 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("disabled TrustedLaunch with KataVmIsolation should succeed", &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(false)}, lo.ToPtr(v1alpha2.WorkloadRuntimeKataVMIsolation), true),
 			Entry("unset TrustedLaunch with KataVmIsolation should succeed", nil, lo.ToPtr(v1alpha2.WorkloadRuntimeKataVMIsolation), true),
 			Entry("vTPM with OCIContainer should succeed", &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true)}, lo.ToPtr(v1alpha2.WorkloadRuntimeOCIContainer), true),
+		)
+	})
+
+	Context("Windows unsupported profiles", func() {
+		It("should reject artifact streaming for Windows", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ImageFamily:       lo.ToPtr(v1alpha2.Windows2022ImageFamily),
+					ArtifactStreaming: &v1alpha2.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		It("should allow disabled artifact streaming for Windows", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ImageFamily:       lo.ToPtr(v1alpha2.Windows2022ImageFamily),
+					ArtifactStreaming: &v1alpha2.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		DescribeTable("should validate LocalDNS mode for Windows",
+			func(mode v1alpha2.LocalDNSMode, expected bool) {
+				nodeClass := &v1alpha2.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1alpha2.AKSNodeClassSpec{
+						ImageFamily: lo.ToPtr(v1alpha2.Windows2022ImageFamily),
+						LocalDNS: &v1alpha2.LocalDNS{
+							Mode:             mode,
+							VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+							KubeDNSOverrides: []v1alpha2.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+						},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				if expected {
+					Expect(err).To(Succeed())
+				} else {
+					Expect(err).ToNot(Succeed())
+				}
+			},
+			Entry("Disabled is accepted", v1alpha2.LocalDNSModeDisabled, true),
+			Entry("Preferred is rejected", v1alpha2.LocalDNSModePreferred, false),
+			Entry("Required is rejected", v1alpha2.LocalDNSModeRequired, false),
 		)
 	})
 
@@ -1252,6 +1450,61 @@ var _ = Describe("CEL/Validation", func() {
 			}
 			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
 		})
+	})
+
+	Context("Taints", func() {
+		It("should allow the kubernetes.azure.com/scalesetpriority taint", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: v1beta1.AKSLabelScaleSetPriority, Value: "spot", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject kubernetes.azure.com/scalesetpriority taint with non-spot value", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: v1beta1.AKSLabelScaleSetPriority, Value: "regular", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should allow the kubernetes.azure.com/scalesetpriority startup taint", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{Key: v1beta1.AKSLabelScaleSetPriority, Value: "spot", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should allow taints with non-restricted domains", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "example.com/my-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject taints with restricted kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/some-other-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject startup taints with restricted kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/some-other-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+
 	})
 
 	Context("Tags", func() {

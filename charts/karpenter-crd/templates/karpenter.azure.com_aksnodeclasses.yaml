@@ -119,6 +119,7 @@ spec:
                 default: Ubuntu
                 description: |-
                   imageFamily is the image family that instances use.
+                  AzureContainerLinux requires an AKS Machine API provision mode with shared image gallery (SIG) access.
                   Windows node support for the Windows2022 and Windows2025 image families is in preview and
                   isn't meant for production. Support is best effort, and changes to APIs or behavior may result
                   in unstable clusters or downtime. For details, see
@@ -130,6 +131,7 @@ spec:
                 - AzureLinux
                 - Windows2022
                 - Windows2025
+                - AzureContainerLinux
                 type: string
               kubelet:
                 description: |-
@@ -927,12 +929,14 @@ spec:
                       provisioned nodes.
                     properties:
                       secureBoot:
-                        description: secureBoot specifies whether Secure Boot should
-                          be enabled for provisioned nodes.
+                        description: |-
+                          secureBoot specifies whether Secure Boot should be enabled for provisioned nodes.
+                          AzureContainerLinux requires this field to be explicitly set to true.
                         type: boolean
                       vtpm:
-                        description: vtpm specifies whether virtual TPM should be
-                          enabled for provisioned nodes.
+                        description: |-
+                          vtpm specifies whether virtual TPM should be enabled for provisioned nodes.
+                          AzureContainerLinux requires this field to be explicitly set to true.
                         type: boolean
                     type: object
                 type: object
@@ -1002,13 +1006,14 @@ spec:
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2404'') : true'
             - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu,
-                Ubuntu2204, and Windows2025
+                Ubuntu2204, Windows2025, and AzureContainerLinux
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
                 && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
                 || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''
-                || self.imageFamily == ''Windows2025'') : true'
+                || self.imageFamily == ''Windows2025'' || self.imageFamily == ''AzureContainerLinux'')
+                : true'
             - message: FIPS is not supported for Windows2022
               rule: '!has(self.fipsMode) || self.fipsMode != ''FIPS'' || !has(self.imageFamily)
                 || self.imageFamily != ''Windows2022'''
@@ -1030,6 +1035,15 @@ spec:
             - message: localDNS is not supported for Windows image families
               rule: '!has(self.localDNS) || self.localDNS.mode == ''Disabled'' ||
                 !has(self.imageFamily) || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
+            - message: AzureContainerLinux requires security.trustedLaunch.vtpm and
+                security.trustedLaunch.secureBoot to be explicitly set to true
+              rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
+                || (has(self.security) && has(self.security.trustedLaunch) && has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm && has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot)'
+            - message: AzureContainerLinux requires an OS disk of at least 60 GB
+              rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
+                || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
@@ -1433,6 +1447,7 @@ spec:
                 default: Ubuntu
                 description: |-
                   imageFamily is the image family that instances use.
+                  AzureContainerLinux requires an AKS Machine API provision mode with shared image gallery (SIG) access.
                   Windows node support for the Windows2022 and Windows2025 image families is in preview and
                   isn't meant for production. Support is best effort, and changes to APIs or behavior may result
                   in unstable clusters or downtime. For details, see
@@ -1444,6 +1459,7 @@ spec:
                 - AzureLinux
                 - Windows2022
                 - Windows2025
+                - AzureContainerLinux
                 type: string
               kubelet:
                 description: |-
@@ -2241,12 +2257,14 @@ spec:
                       provisioned nodes.
                     properties:
                       secureBoot:
-                        description: secureBoot specifies whether Secure Boot should
-                          be enabled for provisioned nodes.
+                        description: |-
+                          secureBoot specifies whether Secure Boot should be enabled for provisioned nodes.
+                          AzureContainerLinux requires this field to be explicitly set to true.
                         type: boolean
                       vtpm:
-                        description: vtpm specifies whether virtual TPM should be
-                          enabled for provisioned nodes.
+                        description: |-
+                          vtpm specifies whether virtual TPM should be enabled for provisioned nodes.
+                          AzureContainerLinux requires this field to be explicitly set to true.
                         type: boolean
                     type: object
                 type: object
@@ -2316,13 +2334,14 @@ spec:
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2404'') : true'
             - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu,
-                Ubuntu2204, and Windows2025
+                Ubuntu2204, Windows2025, and AzureContainerLinux
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
                 && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
                 || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''
-                || self.imageFamily == ''Windows2025'') : true'
+                || self.imageFamily == ''Windows2025'' || self.imageFamily == ''AzureContainerLinux'')
+                : true'
             - message: FIPS is not supported for Windows2022
               rule: '!has(self.fipsMode) || self.fipsMode != ''FIPS'' || !has(self.imageFamily)
                 || self.imageFamily != ''Windows2022'''
@@ -2344,6 +2363,15 @@ spec:
             - message: localDNS is not supported for Windows image families
               rule: '!has(self.localDNS) || self.localDNS.mode == ''Disabled'' ||
                 !has(self.imageFamily) || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
+            - message: AzureContainerLinux requires security.trustedLaunch.vtpm and
+                security.trustedLaunch.secureBoot to be explicitly set to true
+              rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
+                || (has(self.security) && has(self.security.trustedLaunch) && has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm && has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot)'
+            - message: AzureContainerLinux requires an OS disk of at least 60 GB
+              rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
+                || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)

@@ -44,7 +44,7 @@ func init() {
 	karpv1.WellKnownValuesForRequirements[AKSLabelMode] = sets.New(ModeSystem, ModeUser)
 	karpv1.WellKnownValuesForRequirements[AKSLabelScaleSetPriority] = sets.New(ScaleSetPriorityRegular, ScaleSetPrioritySpot)
 	karpv1.WellKnownValuesForRequirements[AKSLabelPriority] = sets.New(PriorityRegular, PrioritySpot)
-	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux, OSSKUWindows2022, OSSKUWindows2025)
+	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux, OSSKUWindows2022, OSSKUWindows2025, OSSKUAzureContainerLinux)
 	karpv1.WellKnownValuesForRequirements[AKSLabelFIPSEnabled] = sets.New("true")
 	karpv1.WellKnownValuesForRequirements[AKSLabelKataVMIsolation] = sets.New("true")
 }
@@ -194,18 +194,20 @@ const (
 )
 
 const (
-	UbuntuImageFamily     = "Ubuntu"
-	Ubuntu2204ImageFamily = "Ubuntu2204"
-	Ubuntu2404ImageFamily = "Ubuntu2404"
-	AzureLinuxImageFamily = "AzureLinux"
+	UbuntuImageFamily              = "Ubuntu"
+	Ubuntu2204ImageFamily          = "Ubuntu2204"
+	Ubuntu2404ImageFamily          = "Ubuntu2404"
+	AzureLinuxImageFamily          = "AzureLinux"
+	AzureContainerLinuxImageFamily = "AzureContainerLinux"
 
 	Windows2022ImageFamily = "Windows2022"
 	Windows2025ImageFamily = "Windows2025"
 )
 
 const (
-	OSSKUUbuntu     = "Ubuntu"
-	OSSKUAzureLinux = "AzureLinux"
+	OSSKUUbuntu              = "Ubuntu"
+	OSSKUAzureLinux          = "AzureLinux"
+	OSSKUAzureContainerLinux = "AzureContainerLinux"
 
 	OSSKUWindows2022 = "Windows2022"
 	OSSKUWindows2025 = "Windows2025"
@@ -241,12 +243,13 @@ var WindowsFamilies = sets.New(
 // imageFamilyToOSSKU maps imageFamily spec values to os-sku label values.
 // These values match what AKS writes for kubernetes.azure.com/os-sku.
 var imageFamilyToOSSKU = map[string]string{
-	UbuntuImageFamily:      OSSKUUbuntu,
-	Ubuntu2204ImageFamily:  OSSKUUbuntu,
-	Ubuntu2404ImageFamily:  OSSKUUbuntu,
-	AzureLinuxImageFamily:  OSSKUAzureLinux,
-	Windows2022ImageFamily: OSSKUWindows2022,
-	Windows2025ImageFamily: OSSKUWindows2025,
+	UbuntuImageFamily:              OSSKUUbuntu,
+	Ubuntu2204ImageFamily:          OSSKUUbuntu,
+	Ubuntu2404ImageFamily:          OSSKUUbuntu,
+	AzureLinuxImageFamily:          OSSKUAzureLinux,
+	Windows2022ImageFamily:         OSSKUWindows2022,
+	Windows2025ImageFamily:         OSSKUWindows2025,
+	AzureContainerLinuxImageFamily: OSSKUAzureContainerLinux,
 }
 
 // GetOSSKUFromImageFamily returns the kuberentes.azure.com/os-sku label value for the given imageFamily.
