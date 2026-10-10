@@ -284,8 +284,8 @@ func setupErrorDetailTestCases() []errorDetailTestCase {
 		// The handler receives the first entry of the Machine's provisioning error details, or the
 		// provisioning error itself when there are none. A failed node public IP is a configuration
 		// error, not a capacity error, whichever Azure Network error AKS wraps.
-		nodePublicIPErrorDetailTestCase("CreateOrUpdatePublicIPAddressError without details",
-			"CreateOrUpdatePublicIPAddressError", "Failed to create or update the node public IP address."),
+		nodePublicIPErrorDetailTestCase("public IP prefix out of addresses, without a code",
+			"", "No more IPs available in IpPrefix prefixID."),
 		nodePublicIPErrorDetailTestCase("LinkedAuthorizationFailed in details",
 			"LinkedAuthorizationFailed", "The client 'clientID' with object id 'objectID' has permission to perform action 'Microsoft.Compute/virtualMachines/write' on scope 'vmID'; however, it does not have permission to perform action(s) 'Microsoft.Network/publicIPPrefixes/join/action' on the linked scope(s) 'prefixID' (respectively) or the linked scope(s) are invalid."),
 		nodePublicIPErrorDetailTestCase("zonal public IP with routing preference, without a code",
