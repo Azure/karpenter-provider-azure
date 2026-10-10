@@ -23,11 +23,92 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
 
+func requireTrustedLaunchBoundaryInstanceType() {
+	GinkgoHelper()
+	// Both SKUs expose a 50-GiB cache and a 16-GiB resource disk, preserving
+	// the exact Trusted Launch boundary while tolerating subscription availability.
+	test.ReplaceRequirements(nodePool,
+		karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1beta1.LabelSKUFamily,
+			Operator: corev1.NodeSelectorOpExists,
+		},
+		karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"Standard_D2s_v3", "Standard_D2as_v4"},
+		},
+	)
+}
+
 var _ = Describe("Ephemeral OS Disk", func() {
+	It("should auto-size an ephemeral OS disk when osDiskSizeGB is unset", func() {
+		Expect(nodeClass.Spec.OSDiskSizeGB).To(BeNil())
+		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"Standard_D64s_v3"},
+		})
+
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+		env.ExpectCreatedNodeCount("==", 1)
+
+		vm := env.GetVM(pods[0].Spec.NodeName)
+		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+		Expect(string(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option))).To(Equal("Local"))
+
+		const expectedDiskSizeGB int32 = 1600
+		Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiskSizeGB)).To(Equal(expectedDiskSizeGB))
+
+		advertised := nodeClaim.Status.Capacity[corev1.ResourceEphemeralStorage]
+		expectedAdvertised := resource.MustParse("1600G")
+		Expect(advertised.Cmp(expectedAdvertised)).To(Equal(0))
+
+		actual := env.GetNode(pods[0].Spec.NodeName).Status.Capacity[corev1.ResourceEphemeralStorage]
+		expectedBytes := expectedAdvertised.Value()
+		// Allow 10% for filesystem formatting and node-image overhead.
+		Expect(actual.Value()).To(BeNumerically("~", expectedBytes, expectedBytes/10))
+	})
+
+	It("should auto-size a Trusted Launch ephemeral OS disk to usable capacity", func() {
+		Expect(nodeClass.Spec.OSDiskSizeGB).To(BeNil())
+		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"Standard_D4ds_v5"},
+		})
+		nodeClass.Spec.Security = &v1beta1.Security{
+			TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)},
+		}
+
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+		vm := env.GetVM(pods[0].Spec.NodeName)
+
+		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).ToNot(BeNil())
+		Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(149)))
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
+		Expect(*vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
+		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
+		Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
+
+		advertised := nodeClaim.Status.Capacity[corev1.ResourceEphemeralStorage]
+		Expect(advertised.Cmp(resource.MustParse("149G"))).To(Equal(0))
+	})
+
 	It("should use a node with an ephemeral os disk", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
@@ -89,6 +170,78 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
 		Expect(*vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
+	})
+
+	It("should use managed disk when Trusted Launch consumes exact-fit local storage", func() {
+		requireTrustedLaunchBoundaryInstanceType()
+		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
+		nodeClass.Spec.Security = &v1beta1.Security{
+			TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
+		}
+
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		vm := env.GetVM(pods[0].Spec.NodeName)
+
+		Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).ToNot(BeNil())
+		Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(50)))
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
+		Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
+	})
+	It("should select resource disk when Trusted Launch consumes an exact-fit cache boundary", func() {
+		test.ReplaceRequirements(nodePool,
+			karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      v1beta1.LabelSKUFamily,
+				Operator: corev1.NodeSelectorOpExists,
+			},
+			karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      corev1.LabelInstanceTypeStable,
+				Operator: corev1.NodeSelectorOpIn,
+				// Each candidate has a 30-GiB CacheDisk and a larger ResourceDisk.
+				Values: []string{"Standard_B4ms", "Standard_B8ms", "Standard_B12ms"},
+			},
+		)
+		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](30)
+		nodeClass.Spec.Security = &v1beta1.Security{
+			TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
+		}
+
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		vm := env.GetVM(pods[0].Spec.NodeName)
+
+		Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).ToNot(BeNil())
+		Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(30)))
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
+		Expect(*vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
+		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
+		Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
+	})
+	It("should use an ephemeral disk when Trusted Launch has one GiB of headroom", func() {
+		requireTrustedLaunchBoundaryInstanceType()
+		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](49)
+		nodeClass.Spec.Security = &v1beta1.Security{
+			TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)},
+		}
+
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		vm := env.GetVM(pods[0].Spec.NodeName)
+
+		Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).ToNot(BeNil())
+		Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(49)))
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
+		Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
 	})
 
 	It("should provision VM with SKU that does not support ephemeral OS disk", func() {
