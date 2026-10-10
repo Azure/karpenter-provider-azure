@@ -871,14 +871,14 @@ var _ = Describe("CEL/Validation", func() {
 			}
 			if valid {
 				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
-				Expect(lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)).To(Equal(lo.FromPtrOr(size, int32(128))))
+				Expect(nodeClass.Spec.OSDiskSizeGB).To(Equal(size))
 			} else {
 				Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("AzureContainerLinux requires an OS disk of at least 60 GB")))
 			}
 		},
 			Entry("below minimum", lo.ToPtr(int32(59)), false),
 			Entry("minimum", lo.ToPtr(int32(60)), true),
-			Entry("default", nil, true),
+			Entry("unset (auto-sized)", nil, true),
 		)
 
 		It("should accept AzureContainerLinux FIPS with explicit Secure Boot and vTPM", func() {
