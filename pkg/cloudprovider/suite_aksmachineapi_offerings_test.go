@@ -480,6 +480,33 @@ var _ = Describe("CloudProvider", func() {
 				Expect(err.Error()).To(ContainSubstring("resolving NodeClass readiness, NodeClass is in Ready=Unknown"))
 			})
 
+			It("should refuse to create an AKS machine until NodeClass status is reconciled against the latest spec", func() {
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				Expect(nodeClass.StatusConditions().Get(corestatus.ConditionReady).IsTrue()).To(BeTrue())
+
+				// Change the spec without reconciling status: Ready=True is now stale
+				nodeClass.Spec.Tags = lo.Assign(nodeClass.Spec.Tags, map[string]string{"spec-changed": "true"})
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
+				Expect(nodeClass.StatusConditions().Get(corestatus.ConditionReady).IsTrue()).To(BeTrue())
+				Expect(nodeClass.StatusConditions().Get(corestatus.ConditionReady).ObservedGeneration).To(BeNumerically("<", nodeClass.Generation))
+
+				created, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				Expect(corecloudprovider.IsNodeClassNotReadyError(err)).To(BeTrue())
+				Expect(err.Error()).To(ContainSubstring("NodeClass status has not been reconciled against the latest spec"))
+				Expect(created).To(BeNil())
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+
+				// Once status catches up with the spec, creation proceeds
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				created, err = CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(created).ToNot(BeNil())
+				Expect(created.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+			})
+
 			// Ported from VM test: "should return error when instance type resolution fails"
 			It("should return error when instance type resolution fails", func() {
 				// Create and set up the status controller

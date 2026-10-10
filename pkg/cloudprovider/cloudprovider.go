@@ -125,6 +125,11 @@ func (c *CloudProvider) validateNodeClass(ctx context.Context, nodeClass *v1beta
 	if nodeClassReady.IsUnknown() {
 		return cloudprovider.NewCreateError(fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message), NodeClassReadinessUnknownReason, "NodeClass is in Ready=Unknown")
 	}
+	// Ready does not account for generation, so after a spec change it reflects the previous spec until the
+	// status controller reconciles. Refuse to launch from a status that was not computed against the current spec.
+	if nodeClassReady != nil && nodeClassReady.ObservedGeneration != nodeClass.Generation {
+		return cloudprovider.NewNodeClassNotReadyError(fmt.Errorf("NodeClass status has not been reconciled against the latest spec, Ready ObservedGeneration %d does not match Generation %d", nodeClassReady.ObservedGeneration, nodeClass.Generation))
+	}
 	if _, err := nodeClass.GetKubernetesVersion(); err != nil {
 		return err
 	}
