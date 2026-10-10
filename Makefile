@@ -92,6 +92,7 @@ coverage:
 	go tool cover -html coverage.out -o coverage.html
 
 verify: tidy download ## Verify code. Includes dependencies, linting, formatting, etc
+	bash hack/toolchain_test.sh
 	SKIP_INSTALLED=true make toolchain
 	make az-swagger-generate-clients-raw
 	go generate ./...
