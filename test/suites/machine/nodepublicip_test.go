@@ -17,12 +17,17 @@ limitations under the License.
 package machine_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -42,6 +47,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/fake"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
@@ -64,13 +71,11 @@ const (
 
 	nodePublicIPProvisionTimeout = 20 * time.Minute
 	nodePublicIPReleaseTimeout   = 15 * time.Minute
+	nodePublicIPOperationTimeout = 2 * time.Minute
+	nsgRuleCleanupTimeout        = 5 * time.Minute
 	nsgRuleNamePrefix            = "e2e-node-public-ip"
 	nsgRulePriorityMin           = 3000
 	nsgRulePriorityMax           = 3999
-
-	// echoCGI is the only thing the listener serves: it replies with the caller's address.
-	echoCGI  = "#!/bin/sh\nprintf 'Content-Type: text/plain\\r\\n\\r\\n%s' \"$REMOTE_ADDR\"\n"
-	echoPath = "/cgi-bin/ip"
 )
 
 // nodePublicIPClients are built here because the Environment's network clients aren't exported.
@@ -129,23 +134,24 @@ var _ = Describe("Node Public IP", func() {
 		dep, selector := listenerDeployment(nodePool, 2, false)
 		env.ExpectCreated(nodeClass, nodePool, dep)
 
-		env.EventuallyExpectHealthyPodCountWithTimeout(nodePublicIPProvisionTimeout, selector, 2)
-		nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 2)
+		listeners := env.EventuallyExpectHealthyPodCountWithTimeout(nodePublicIPProvisionTimeout, selector, 2)
+		env.EventuallyExpectHealthyWithTimeout(nodePublicIPProvisionTimeout, listeners...)
+		nodeClaims := eventuallyExpectRegisteredNodeClaims(nodePool, 2)
 		addrs := expectNodePublicIPs(clients, nodeClaims, "", nil)
 		expectIngressAndEgress(rules, addrs)
+		env.EventuallyExpectHealthyWithTimeout(5*time.Minute, listeners...)
 		rules.removeAll()
 
 		By("disabling node public IP on the NodeClass")
 		nodes := nodesOf(nodeClaims)
 		nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}
 		env.ExpectUpdated(nodeClass)
-		env.EventuallyExpectDrifted(nodeClaims...)
 		env.EventuallyExpectNotFoundWithTimeout(nodePublicIPProvisionTimeout, nodes...)
 		env.EventuallyExpectNotFound(lo.Map(nodeClaims, func(nc *karpv1.NodeClaim, _ int) client.Object { return nc })...)
 		env.EventuallyExpectHealthyPodCountWithTimeout(nodePublicIPProvisionTimeout, selector, 2)
 
 		By("expecting the replacement nodes to have no public IP")
-		for _, nc := range env.EventuallyExpectRegisteredNodeClaimCount("==", 2) {
+		for _, nc := range eventuallyExpectRegisteredNodeClaims(nodePool, 2) {
 			expectNoNodePublicIP(nc)
 		}
 		eventuallyExpectPublicIPsReleased(clients, addrs)
@@ -175,14 +181,16 @@ var _ = Describe("Node Public IP", func() {
 		env.ExpectCreated(nodeClass, nodePool, dep)
 
 		// The join grant can take minutes to apply; launches fail and retry until it does.
-		env.EventuallyExpectHealthyPodCountWithTimeout(nodePublicIPProvisionTimeout, selector, replicas)
-		nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", replicas)
+		listeners := env.EventuallyExpectHealthyPodCountWithTimeout(nodePublicIPProvisionTimeout, selector, replicas)
+		env.EventuallyExpectHealthyWithTimeout(nodePublicIPProvisionTimeout, listeners...)
+		nodeClaims := eventuallyExpectRegisteredNodeClaims(nodePool, replicas)
 		addrs := expectNodePublicIPs(clients, nodeClaims, prefixID, nil)
 		if len(aksZones) > 0 {
 			nodeZones := lo.Map(nodesOf(nodeClaims), func(n client.Object, _ int) string { return n.GetLabels()[corev1.LabelTopologyZone] })
 			Expect(nodeZones).To(ConsistOf(aksZones), "expected one node in every zone")
 		}
 		expectIngressAndEgress(rules, addrs)
+		env.EventuallyExpectHealthyWithTimeout(5*time.Minute, listeners...)
 		rules.removeAll()
 
 		By("deleting the workload and the NodeClaims")
@@ -247,7 +255,8 @@ var _ = Describe("Node Public IP", func() {
 		ipTags := []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "Internet"}}
 		nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: ipTags}
 		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, regional)
-		dep, selector := listenerDeployment(nodePool, 2, false)
+		dep := pendingDeployment(nodePool)
+		selector := labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 
 		const unsupportedIPTagType = "E2EUnsupportedIPTagType"
 		unsupportedClass := env.DefaultAKSNodeClass()
@@ -259,9 +268,8 @@ var _ = Describe("Node Public IP", func() {
 		By("expecting AKS to reject the Machine with the unsupported IP tag type")
 		eventuallyExpectLaunchError(unsupportedPool, And(ContainSubstring("UnsupportedIPTagType"), ContainSubstring(unsupportedIPTagType)))
 
-		env.EventuallyExpectHealthyPodCountWithTimeout(nodePublicIPProvisionTimeout, selector, 2)
-		nodeClaims := env.EventuallyExpectRegisteredNodeClaimCountWithSelector("==", 2,
-			labels.SelectorFromSet(map[string]string{karpv1.NodePoolLabelKey: nodePool.Name}))
+		env.EventuallyExpectHealthyPodCountWithTimeout(nodePublicIPProvisionTimeout, selector, 1)
+		nodeClaims := eventuallyExpectRegisteredNodeClaims(nodePool, 1)
 		addrs := expectNodePublicIPs(clients, nodeClaims, "", ipTags)
 
 		By("expecting regional nodes with zone-redundant public IPs")
@@ -344,7 +352,26 @@ func karpenterPrincipalID() string {
 func createPrefix(c *nodePublicIPClients) string {
 	GinkgoHelper()
 	name := test.RandomName("e2e-node-public-ip")
-	poller, err := c.prefixes.BeginCreateOrUpdate(env.Context, env.ClusterResourceGroup, name, armnetwork.PublicIPPrefix{
+	DeferCleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(env.Context), nodePublicIPReleaseTimeout)
+		defer cancel()
+		Eventually(ctx, func(g Gomega) {
+			opCtx, opCancel := context.WithTimeout(ctx, nodePublicIPOperationTimeout)
+			defer opCancel()
+			deletePoller, deleteErr := c.prefixes.BeginDelete(opCtx, env.ClusterResourceGroup, name, nil)
+			if isNotFound(deleteErr) {
+				return
+			}
+			g.Expect(deleteErr).ToNot(HaveOccurred())
+			_, deleteErr = deletePoller.PollUntilDone(opCtx, nil)
+			if !isNotFound(deleteErr) {
+				g.Expect(deleteErr).ToNot(HaveOccurred())
+			}
+		}).WithPolling(30 * time.Second).Should(Succeed())
+	})
+	ctx, cancel := context.WithTimeout(env.Context, 5*time.Minute)
+	defer cancel()
+	poller, err := c.prefixes.BeginCreateOrUpdate(ctx, env.ClusterResourceGroup, name, armnetwork.PublicIPPrefix{
 		Location: lo.ToPtr(env.Region),
 		SKU: &armnetwork.PublicIPPrefixSKU{
 			Name: lo.ToPtr(armnetwork.PublicIPPrefixSKUNameStandard),
@@ -356,20 +383,9 @@ func createPrefix(c *nodePublicIPClients) string {
 		},
 	}, nil)
 	Expect(err).ToNot(HaveOccurred(), "failed to create public IP prefix %s", name)
-	resp, err := poller.PollUntilDone(env.Context, nil)
+	resp, err := poller.PollUntilDone(ctx, nil)
 	Expect(err).ToNot(HaveOccurred(), "failed to create public IP prefix %s", name)
-
-	DeferCleanup(func() {
-		Eventually(func(g Gomega) {
-			deletePoller, deleteErr := c.prefixes.BeginDelete(env.Context, env.ClusterResourceGroup, name, nil)
-			if isNotFound(deleteErr) {
-				return
-			}
-			g.Expect(deleteErr).ToNot(HaveOccurred())
-			_, deleteErr = deletePoller.PollUntilDone(env.Context, nil)
-			g.Expect(deleteErr).ToNot(HaveOccurred())
-		}).WithTimeout(nodePublicIPReleaseTimeout).WithPolling(30 * time.Second).Should(Succeed())
-	})
+	Expect(resp.ID).To(HaveValue(Not(BeEmpty())))
 	return lo.FromPtr(resp.ID)
 }
 
@@ -381,7 +397,11 @@ func grantJoin(prefixID, principalID string) {
 	Expect(err).ToNot(HaveOccurred(), "failed to grant join on %s", prefixID)
 	if assignmentID != "" {
 		DeferCleanup(func() {
-			Expect(env.RBACManager.DeleteRoleAssignment(env.Context, assignmentID)).To(Succeed())
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(env.Context), nsgRuleCleanupTimeout)
+			defer cancel()
+			Eventually(ctx, func() error {
+				return env.RBACManager.DeleteRoleAssignment(ctx, assignmentID)
+			}).WithPolling(5 * time.Second).Should(Succeed())
 		})
 	}
 }
@@ -411,18 +431,22 @@ func listenerDeployment(pool *karpv1.NodePool, replicas int32, spreadZones bool)
 	return dep, labels.SelectorFromSet(podLabels)
 }
 
-// echoContainer serves echoPath and nothing else; every other path returns 404.
 func echoContainer(name string, port int32) corev1.Container {
 	return corev1.Container{
-		Name:  name,
-		Image: nodePublicIPImage,
-		Command: []string{"sh", "-c", `mkdir -p /www/cgi-bin && printf '%s' "$ECHO_CGI" > /www/cgi-bin/ip && ` +
-			`chmod 755 /www/cgi-bin/ip && exec httpd -f -p "0.0.0.0:$PORT" -h /www`},
+		Name:    name,
+		Image:   nodePublicIPImage,
+		Command: []string{"sh", "-c", `exec tcpsvd 0.0.0.0 "$PORT" sh -c 'printf "%s\n" "$TCPREMOTEADDR"'`},
 		Env: []corev1.EnvVar{
 			{Name: "PORT", Value: strconv.Itoa(int(port))},
-			{Name: "ECHO_CGI", Value: echoCGI},
 		},
 		Ports: []corev1.ContainerPort{{ContainerPort: port, HostPort: port, Protocol: corev1.ProtocolTCP}},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{
+				Command: []string{"sh", "-c", `nc -z -w 1 127.0.0.1 "$PORT"`},
+			}},
+			PeriodSeconds:  2,
+			TimeoutSeconds: 2,
+		},
 		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),
 			corev1.ResourceMemory: resource.MustParse("32Mi"),
@@ -442,6 +466,18 @@ func pendingDeployment(pool *karpv1.NodePool) *appsv1.Deployment {
 
 func nodesOf(nodeClaims []*karpv1.NodeClaim) []client.Object {
 	return lo.Map(nodeClaims, func(nc *karpv1.NodeClaim, _ int) client.Object { return env.GetNode(nc.Status.NodeName) })
+}
+
+func eventuallyExpectRegisteredNodeClaims(pool *karpv1.NodePool, count int) []*karpv1.NodeClaim {
+	GinkgoHelper()
+	var claims []*karpv1.NodeClaim
+	Eventually(func(g Gomega) {
+		claims = lo.Filter(env.ExpectLiveNodeClaimsForNodePool(env.Context, g, pool), func(nc *karpv1.NodeClaim, _ int) bool {
+			return nc.StatusConditions().IsTrue(karpv1.ConditionTypeRegistered) && nc.Status.NodeName != ""
+		})
+		g.Expect(claims).To(HaveLen(count), "expected %d live registered NodeClaims for NodePool %s", count, pool.Name)
+	}).WithTimeout(nodePublicIPProvisionTimeout).Should(Succeed())
+	return claims
 }
 
 // expectNodePublicIPs runs the per-node checks: Machine readback, the NIC's public IP with its prefix and IP tags,
@@ -621,10 +657,18 @@ func expectIngressAndEgress(rules *nsgRules, addrs []nodeAddress) {
 // each reply, or the error, as "allowed=..." and "denied=...".
 func echoClientPod(nodeName, target string) *corev1.Pod {
 	script := fmt.Sprintf(`while true; do
-  echo "allowed=$(wget -qO- -T 5 http://%[1]s:%[2]d%[4]s 2>&1 | tr -d '\r\n')"
-  echo "denied=$(wget -qO- -T 5 http://%[1]s:%[3]d%[4]s 2>&1 | tr -d '\r\n')"
+  nc -z -w 1 127.0.0.1 %[2]d && nc -z -w 1 127.0.0.1 %[3]d
+  local_before=$?
+  allowed=$(nc -w 5 %[1]s %[2]d 2>&1)
+  allowed_status=$?
+  nc -z -w 5 %[1]s %[3]d
+  denied_status=$?
+  nc -z -w 1 127.0.0.1 %[2]d && nc -z -w 1 127.0.0.1 %[3]d
+  local_after=$?
+  printf 'allowed=%%s\nallowed-status=%%d\ndenied-status=%%d\nlocal-before=%%d\nlocal-after=%%d\n' \
+    "$allowed" "$allowed_status" "$denied_status" "$local_before" "$local_after"
   sleep 5
-done`, target, allowedPort, deniedPort, echoPath)
+done`, target, allowedPort, deniedPort)
 	pod := coretest.Pod(coretest.PodOptions{
 		ObjectMeta:                    metav1.ObjectMeta{Labels: map[string]string{"app": test.RandomName("node-public-ip-client")}},
 		NodeName:                      nodeName,
@@ -639,19 +683,37 @@ done`, target, allowedPort, deniedPort, echoPath)
 // expectEchoes checks a client's log: allowedPort answered with the caller's public IP, and deniedPort didn't
 // answer at all, including after allowedPort did.
 func expectEchoes(g Gomega, pod *corev1.Pod, from nodeAddress) {
-	raw, err := env.KubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{}).DoRaw(env.Context)
+	ctx, cancel := context.WithTimeout(env.Context, nodePublicIPOperationTimeout)
+	defer cancel()
+	raw, err := env.KubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{}).DoRaw(ctx)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to read logs of %s", pod.Name)
-	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	g.Expect(checkEchoes(string(raw), from)).To(Succeed())
+}
 
-	allowedAt := lo.IndexOf(lines, "allowed="+from.address)
-	g.Expect(allowedAt).To(BeNumerically(">=", 0),
-		"%s never got its public IP %s echoed back on port %d; last lines: %v", from.nodeName, from.address, allowedPort, lo.Subset(lines, -4, 4))
-	denied := lo.FilterMap(lines, func(l string, _ int) (string, bool) { return strings.CutPrefix(l, "denied=") })
-	g.Expect(lo.ContainsBy(lines[allowedAt:], func(l string) bool { return strings.HasPrefix(l, "denied=") })).To(BeTrue(),
-		"no call to port %d after port %d answered", deniedPort, allowedPort)
-	for _, reply := range denied {
-		g.Expect(net.ParseIP(reply)).To(BeNil(), "port %d answered %s with %q", deniedPort, from.nodeName, reply)
+func checkEchoes(raw string, from nodeAddress) error {
+	lines := strings.Split(strings.TrimSpace(raw), "\n")
+	var echoed bool
+	for i, line := range lines {
+		if status, ok := strings.CutPrefix(line, "denied-status="); ok {
+			if status != "1" {
+				return fmt.Errorf("port %d probe from %s returned status %q, expected connection failure (1)", deniedPort, from.nodeName, status)
+			}
+		}
+		reply, ok := strings.CutPrefix(line, "allowed=")
+		if !ok || i+4 >= len(lines) {
+			continue
+		}
+		host, _, err := net.SplitHostPort(reply)
+		if err == nil && host == from.address &&
+			slices.Equal(lines[i+1:i+5], []string{"allowed-status=0", "denied-status=1", "local-before=0", "local-after=0"}) {
+			echoed = true
+		}
 	}
+	if !echoed {
+		return fmt.Errorf("%s never completed a controlled probe with public IP %s echoed on port %d; last lines: %v",
+			from.nodeName, from.address, allowedPort, lo.Subset(lines, -10, 10))
+	}
+	return nil
 }
 
 func isNodeResourceGroupLockedDown() bool {
@@ -672,11 +734,16 @@ func (r *nsgRules) allow(nsgID string, sources, destinations []string) {
 	})
 	for _, rule := range stale {
 		By(fmt.Sprintf("removing stale NSG rule %s from %s", lo.FromPtr(rule.Name), nsg.Name))
-		Expect(r.delete(nsgRule{nsg: nsg, name: lo.FromPtr(rule.Name)})).To(Succeed())
+		Eventually(func() error {
+			return r.delete(env.Context, nsgRule{nsg: nsg, name: lo.FromPtr(rule.Name)})
+		}).WithTimeout(nsgRuleCleanupTimeout).WithPolling(5 * time.Second).Should(Succeed())
 	}
 
 	name := test.RandomName(nsgRuleNamePrefix)
-	poller, err := r.clients.rules.BeginCreateOrUpdate(env.Context, nsg.ResourceGroupName, nsg.Name, name, armnetwork.SecurityRule{
+	r.added = append(r.added, nsgRule{nsg: nsg, name: name})
+	ctx, cancel := context.WithTimeout(env.Context, nsgRuleCleanupTimeout)
+	defer cancel()
+	poller, err := r.clients.rules.BeginCreateOrUpdate(ctx, nsg.ResourceGroupName, nsg.Name, name, armnetwork.SecurityRule{
 		Properties: &armnetwork.SecurityRulePropertiesFormat{
 			Access:                     lo.ToPtr(armnetwork.SecurityRuleAccessAllow),
 			Direction:                  lo.ToPtr(armnetwork.SecurityRuleDirectionInbound),
@@ -688,10 +755,8 @@ func (r *nsgRules) allow(nsgID string, sources, destinations []string) {
 			DestinationPortRange:       lo.ToPtr(strconv.Itoa(allowedPort)),
 		},
 	}, nil)
-	// Track the rule before waiting, so a failed or interrupted create is still cleaned up.
-	r.added = append(r.added, nsgRule{nsg: nsg, name: name})
 	Expect(err).ToNot(HaveOccurred(), "failed to add rule to %s", nsgID)
-	_, err = poller.PollUntilDone(env.Context, nil)
+	_, err = poller.PollUntilDone(ctx, nil)
 	Expect(err).ToNot(HaveOccurred(), "failed to add rule to %s", nsgID)
 }
 
@@ -703,19 +768,27 @@ func (r *nsgRules) removeAll() {
 		return
 	}
 	By("removing the NSG rules before the nodes' public IPs are released")
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(env.Context), nsgRuleCleanupTimeout)
+	defer cancel()
+	Eventually(ctx, func() error { return r.remove(ctx) }).WithPolling(5 * time.Second).Should(Succeed())
+}
+
+func (r *nsgRules) remove(ctx context.Context) error {
 	var errs []error
 	r.added = lo.Filter(r.added, func(rule nsgRule, _ int) bool {
-		err := r.delete(rule)
+		err := r.delete(ctx, rule)
 		errs = append(errs, err)
 		return err != nil
 	})
-	Expect(errors.Join(errs...)).ToNot(HaveOccurred())
+	return errors.Join(errs...)
 }
 
-func (r *nsgRules) delete(rule nsgRule) error {
-	poller, err := r.clients.rules.BeginDelete(env.Context, rule.nsg.ResourceGroupName, rule.nsg.Name, rule.name, nil)
+func (r *nsgRules) delete(ctx context.Context, rule nsgRule) error {
+	ctx, cancel := context.WithTimeout(ctx, nodePublicIPOperationTimeout)
+	defer cancel()
+	poller, err := r.clients.rules.BeginDelete(ctx, rule.nsg.ResourceGroupName, rule.nsg.Name, rule.name, nil)
 	if err == nil {
-		_, err = poller.PollUntilDone(env.Context, nil)
+		_, err = poller.PollUntilDone(ctx, nil)
 	}
 	if err != nil && !isNotFound(err) {
 		return fmt.Errorf("deleting rule %s from %s: %w", rule.name, rule.nsg.Name, err)
@@ -797,4 +870,94 @@ func launchErrorMessages(g Gomega, pool *karpv1.NodePool) []string {
 func isNotFound(err error) bool {
 	var respErr *azcore.ResponseError
 	return errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound
+}
+
+func TestNodePublicIPClientLogs(t *testing.T) {
+	from := nodeAddress{nodeName: "source", address: "203.0.113.1"}
+	success := "allowed=203.0.113.1:12345\nallowed-status=0\ndenied-status=1\nlocal-before=0\nlocal-after=0\n"
+	for _, tc := range []struct {
+		name    string
+		logs    string
+		wantErr bool
+	}{
+		{name: "successful controlled probe", logs: success},
+		{name: "retry after NSG propagation", logs: "allowed=nc: timed out\nallowed-status=1\ndenied-status=1\nlocal-before=0\nlocal-after=0\n" + success},
+		{name: "empty logs", wantErr: true},
+		{name: "missing denied probe", logs: "allowed=203.0.113.1:12345\nallowed-status=0\n", wantErr: true},
+		{name: "denied port connected", logs: strings.ReplaceAll(success, "denied-status=1", "denied-status=0"), wantErr: true},
+		{name: "earlier denied connection", logs: "denied-status=0\n" + success, wantErr: true},
+		{name: "probe command failed", logs: strings.ReplaceAll(success, "denied-status=1", "denied-status=127"), wantErr: true},
+		{name: "wrong source IP", logs: strings.ReplaceAll(success, "203.0.113.1", "203.0.113.2"), wantErr: true},
+		{name: "HTTP error instead of peer address", logs: strings.ReplaceAll(success, "203.0.113.1:12345", "HTTP/1.1 500 Internal Server Error"), wantErr: true},
+		{name: "allowed command failed", logs: strings.ReplaceAll(success, "allowed-status=0", "allowed-status=1"), wantErr: true},
+		{name: "listener not ready before probe", logs: strings.ReplaceAll(success, "local-before=0", "local-before=1"), wantErr: true},
+		{name: "listener failed after probe", logs: strings.ReplaceAll(success, "local-after=0", "local-after=1"), wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			err := checkEchoes(tc.logs, from)
+			if tc.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestNodePublicIPNSGCleanup(t *testing.T) {
+	g := NewWithT(t)
+	var attempts atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodDelete {
+			t.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if strings.HasSuffix(req.URL.Path, "/retry") && attempts.Add(1) == 1 {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		if strings.HasSuffix(req.URL.Path, "/missing") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	clientOptions := &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+		Cloud: cloud.Configuration{
+			Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
+				cloud.ResourceManager: {Endpoint: server.URL, Audience: server.URL},
+			},
+		},
+		Transport: server.Client(),
+		Retry:     policy.RetryOptions{MaxRetries: -1},
+	}}
+	ruleClient, err := armnetwork.NewSecurityRulesClient("subscription", &fake.TokenCredential{}, clientOptions)
+	g.Expect(err).ToNot(HaveOccurred())
+	nsg, err := arm.ParseResourceID("/subscriptions/subscription/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg")
+	g.Expect(err).ToNot(HaveOccurred())
+	rules := &nsgRules{
+		clients: &nodePublicIPClients{rules: ruleClient},
+		added:   []nsgRule{{nsg: nsg, name: "removed"}, {nsg: nsg, name: "retry"}},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	g.Expect(rules.remove(ctx)).To(HaveOccurred())
+	g.Expect(rules.added).To(ConsistOf(nsgRule{nsg: nsg, name: "retry"}))
+	g.Expect(rules.remove(ctx)).To(Succeed())
+	g.Expect(rules.added).To(BeEmpty())
+	g.Expect(attempts.Load()).To(Equal(int32(2)))
+	g.Expect(rules.remove(ctx)).To(Succeed())
+	rules.added = []nsgRule{{nsg: nsg, name: "missing"}}
+	g.Expect(rules.remove(ctx)).To(Succeed())
+	g.Expect(rules.added).To(BeEmpty())
+
+	canceled, cancelNow := context.WithCancel(context.Background())
+	cancelNow()
+	rules.added = []nsgRule{{nsg: nsg, name: "canceled"}}
+	g.Expect(rules.remove(canceled)).To(MatchError(ContainSubstring("context canceled")))
+	g.Expect(rules.added).To(HaveLen(1))
 }

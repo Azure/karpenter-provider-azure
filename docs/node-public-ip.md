@@ -137,10 +137,10 @@ for PRINCIPAL_ID in $(printf '%s\n' "${CLUSTER_PRINCIPAL_ID}" "${KARPENTER_PRINC
 done
 ```
 
-### The prefix is in the cluster's subscription
+### The prefix is in the cluster's region and subscription
 
-The prefix can be in any resource group, but it must be in the same subscription as the
-cluster.
+The prefix can be in any resource group, but it must be in the same region and subscription
+as the cluster. See [Public IP prefix limitations](https://learn.microsoft.com/azure/virtual-network/ip-services/public-ip-address-prefix#limitations).
 
 ### The prefix serves every zone the nodes can use
 
@@ -283,9 +283,12 @@ IPv4 public IP prefixes hold at most 16 addresses (`/28`) by default, and each n
 
 - Use one prefix per NodeClass. Karpenter doesn't count how many addresses a prefix has left.
 - Across the NodePools that use the NodeClass, keep the sum of `spec.limits.nodes` within the
-  prefix size, minus headroom for replacements. Drift, expiration, and consolidation launch the
-  replacement node before they remove the old one, so a prefix with no free address blocks
-  them.
+  prefix size, minus headroom for replacements. Drift and consolidation that require replacement
+  capacity launch replacement nodes before they remove the old ones, so a prefix with no free
+  address blocks those replacements.
+- [Expiration](https://karpenter.sh/docs/concepts/disruption/#expiration) is forceful: expired nodes
+  begin draining without waiting for replacement capacity. Prefix exhaustion doesn't prevent
+  expiration and can leave workloads pending while replacement nodes fail to provision.
 
 For example, for a single NodePool using a `/28` prefix:
 
@@ -405,6 +408,7 @@ kubectl get events -A --field-selector involvedObject.kind=NodeClaim,reason=Asyn
 | Cause | Fix |
 | --- | --- |
 | The prefix has no free addresses | Lower the NodePools' `spec.limits.nodes`, remove nodes that use the prefix, or use a larger prefix |
+| The prefix is in a different region from the cluster | Use a prefix in the cluster's region and subscription |
 | A zonal prefix in a different zone from the node | See [Zones](#zones) |
 | The cluster identity can't join the prefix (`LinkedAuthorizationFailed`, naming the cluster identity) | Grant it. See [Prerequisites](#karpenters-identity-and-the-cluster-identity-can-join-the-prefix) |
 | The subscription's public IP quota is exhausted | Request a quota increase, or remove unused public IPs |
