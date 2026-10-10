@@ -516,6 +516,23 @@ var _ = Describe("CloudProvider", func() {
 			})
 		})
 
+		Context("Create - Node Public IP", func() {
+			It("should not create a Machine from pending pods when node public IP is enabled", func() {
+				nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(status.NodePublicIPUnsupportedProvisionMode))
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(BeZero())
+			})
+		})
+
 		// Ported from VM test: Context "additional-tags"
 		Context("Create - Additional Tags", func() {
 			It("should add additional tags to the AKS machine", func() {

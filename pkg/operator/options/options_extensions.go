@@ -39,3 +39,9 @@ func (o *Options) IsNetworkPluginNone() bool {
 func (o *Options) SupportsWorkloadRuntime() bool {
 	return o.IsAKSMachineAPIMode() || o.ProvisionMode == consts.ProvisionModeBootstrappingClient
 }
+
+// SupportsNodePublicIP reports whether the configured provision mode can give nodes an
+// instance-level public IP address. No provision mode supports it yet.
+func (o *Options) SupportsNodePublicIP() bool {
+	return false
+}
