@@ -207,8 +207,8 @@ var _ = Describe("Node Public IP", func() {
 		})
 	})
 
-	Context("zonal nodes", func() {
-		// Pending until AKS gives zonal Machines a routing-compatible public IP; enable it then.
+	// Pending until AKS gives zonal Machines a routing-compatible public IP; enable it then.
+	PContext("zonal nodes", func() {
 		It("should apply the RoutingPreference=Internet tag to node public IPs", func() {
 			armZones := env.GetAvailableZones()
 			if len(armZones) == 0 {
