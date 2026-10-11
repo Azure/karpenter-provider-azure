@@ -53,8 +53,8 @@ created.
 - **IPv4 only, one prefix.** `prefixIDs` takes at most one entry, and it must be an IPv4 prefix.
   Karpenter can't tell a prefix's address family from its ID, so an IPv6 prefix is accepted
   and then fails at launch.
-- **IP tags.** `ipTags` and `prefixIDs` can't be combined. `RoutingPreference=Internet` requires
-  regional nodes, an IPv4 address, Kubernetes 1.29 or later, and a
+- **IP tags.** `ipTags` and `prefixIDs` can't be combined. `RoutingPreference=Internet` currently
+  requires regional nodes, an IPv4 address, Kubernetes 1.29 or later, and a
   [supported region](https://learn.microsoft.com/azure/virtual-network/ip-services/routing-preference-overview#regional-availability).
   See [Routing preference](#routing-preference). Azure restricts other tag types, such as
   `FirstPartyUsage`, to some subscriptions.
@@ -241,12 +241,11 @@ The `RoutingPreference=Internet` IP tag routes traffic to and from a node's publ
 networks rather than Microsoft's global network. See
 [Routing preference](https://learn.microsoft.com/azure/virtual-network/ip-services/routing-preference-overview).
 
-Azure supports it only on zone-redundant public IPs, and AKS creates those only for regional
-nodes. Every NodePool that uses the NodeClass must require
-`karpenter.azure.com/placement-scope: regional`. Regional nodes have no zone guarantee: Azure
-picks the zone, and the node's `topology.kubernetes.io/zone` label is `0`, so these nodes can't
-satisfy zone topology spread or zone requirements. A zonal node fails to launch. See
-[Troubleshooting](#troubleshooting).
+AKS currently gives a zonal node a single-zone public IP even with this tag, so zonal nodes
+fail to launch. See [Troubleshooting](#troubleshooting). Until AKS fixes this, every NodePool
+that uses the NodeClass must require `karpenter.azure.com/placement-scope: regional`. Regional
+nodes have no zone guarantee: Azure picks the zone, and the node's `topology.kubernetes.io/zone`
+label is `0`, so these nodes can't satisfy zone topology spread or zone requirements.
 
 ```yaml
 apiVersion: karpenter.azure.com/v1beta1
@@ -413,7 +412,7 @@ kubectl get events -A --field-selector involvedObject.kind=NodeClaim,reason=Asyn
 | The cluster identity can't join the prefix (`LinkedAuthorizationFailed`, naming the cluster identity) | Grant it. See [Prerequisites](#karpenters-identity-and-the-cluster-identity-can-join-the-prefix) |
 | The subscription's public IP quota is exhausted | Request a quota increase, or remove unused public IPs |
 | The prefix is IPv6 | Use an IPv4 prefix |
-| "A zonal PublicIPAddress … cannot support for routing preference feature", with no code | The NodeClass sets `RoutingPreference=Internet` and the node is zonal | Require regional nodes in every NodePool that uses the NodeClass. See [Routing preference](#routing-preference) |
+| "A zonal PublicIPAddress … cannot support for routing preference feature", with no code | Known AKS issue: the NodeClass sets `RoutingPreference=Internet` and the node is zonal, and AKS gives it a single-zone public IP | Require regional nodes in every NodePool that uses the NodeClass. See [Routing preference](#routing-preference) |
 
 Where AKS doesn't pass on a more specific network error, the code is
 `CreateOrUpdatePublicIPAddressError`.

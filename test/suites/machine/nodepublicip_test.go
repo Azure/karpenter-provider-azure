@@ -206,6 +206,40 @@ var _ = Describe("Node Public IP", func() {
 			eventuallyExpectLaunchError(nodePool, And(ContainSubstring("UnsupportedIPTagType"), ContainSubstring(unsupportedIPTagType)))
 		})
 	})
+
+	Context("zonal nodes", func() {
+		// Pending until AKS gives zonal Machines a routing-compatible public IP; enable it then.
+		It("should apply the RoutingPreference=Internet tag to node public IPs", Pending, func() {
+			armZones := env.GetAvailableZones()
+			if len(armZones) == 0 {
+				Skip(fmt.Sprintf("region %s has no availability zones", env.Region))
+			}
+			aksZone := zones.MakeAKSLabelZoneFromARMZone(env.Region, armZones[0])
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      corev1.LabelTopologyZone,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{aksZone},
+			})
+
+			ipTags := []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "Internet"}}
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: ipTags}
+			dep := nodePublicIPDeployment(nodePool, 1, false)
+			env.ExpectCreated(nodeClass, nodePool, dep)
+
+			pods := env.EventuallyExpectHealthyDeploymentWithTimeout(nodePublicIPProvisionTimeout, dep)
+			env.EventuallyExpectHealthyWithTimeout(nodePublicIPProvisionTimeout, pods...)
+			nodeClaims := env.EventuallyExpectRegisteredNodeClaimsForNodePoolWithTimeout(nodePublicIPProvisionTimeout, nodePool, 1)
+			addrs := expectNodePublicIPs(clients, nodeClaims, "", ipTags)
+
+			By("expecting zonal nodes with public IPs that aren't single-zone")
+			for _, n := range nodesOf(nodeClaims) {
+				Expect(n.GetLabels()).To(HaveKeyWithValue(corev1.LabelTopologyZone, aksZone), "node %s isn't in zone %s", n.GetName(), aksZone)
+			}
+			for _, a := range addrs {
+				Expect(a.zones).ToNot(HaveLen(1), "public IP %s is single-zone", a.ipID)
+			}
+		})
+	})
 })
 
 func newNodePublicIPClients() *nodePublicIPClients {
