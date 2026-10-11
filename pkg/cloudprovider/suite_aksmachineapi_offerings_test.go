@@ -590,6 +590,65 @@ var _ = Describe("CloudProvider", func() {
 				Expect(errors.As(err, &createErr)).To(BeTrue())
 				Expect(createErr.ConditionReason).To(Equal(offerings.ZonalAllocationFailureReason))
 			})
+
+			Context("node public IP errors", func() {
+				const prefixID = "/subscriptions/subscriptionID/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/node-prefix"
+				var testNodeClaim *karpv1.NodeClaim
+				var seqNum uint64
+
+				BeforeEach(func() {
+					nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}}
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+					testNodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{
+								karpv1.NodePoolLabelKey: nodePool.Name,
+							},
+						},
+						Spec: karpv1.NodeClaimSpec{
+							NodeClassRef: &karpv1.NodeClassReference{
+								Name:  nodeClass.Name,
+								Group: object.GVK(nodeClass).Group,
+								Kind:  object.GVK(nodeClass).Kind,
+							},
+						},
+					})
+					seqNum = azureEnv.UnavailableOfferingsCache.SeqNum()
+				})
+
+				// Public IP failures come from the NodeClass, not the offering, so they must go
+				// through the unhandled path: AKS's code and message reach the Launched condition,
+				// and no offering is marked unavailable.
+				expectUnhandledNodePublicIPError := func(err error, code, message string) {
+					GinkgoHelper()
+					Expect(err).To(HaveOccurred())
+					Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeFalse())
+					var createErr *corecloudprovider.CreateError
+					Expect(errors.As(err, &createErr)).To(BeTrue())
+					Expect(createErr.ConditionReason).To(Equal(CreateInstanceFailedReason))
+					Expect(createErr.ConditionMessage).To(ContainSubstring(code))
+					Expect(createErr.ConditionMessage).To(ContainSubstring(message))
+					Expect(azureEnv.UnavailableOfferingsCache.SeqNum()).To(Equal(seqNum))
+				}
+
+				It("should leave a synchronous public IP error unhandled", func() {
+					azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(fake.AKSMachineAPIErrorLinkedAuthorizationFailed(prefixID))
+
+					claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim)
+					Expect(claim).To(BeNil())
+					expectUnhandledNodePublicIPError(err, "LinkedAuthorizationFailed", "does not have permission to perform action(s) 'Microsoft.Network/publicIPPrefixes/join/action'")
+				})
+
+				It("should leave a public IP failure during provisioning unhandled", func() {
+					azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorLinkedAuthorizationFailed(prefixID)
+
+					claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim)
+					Expect(claim).To(BeNil())
+					expectUnhandledNodePublicIPError(err, "LinkedAuthorizationFailed", "does not have permission to perform action(s) 'Microsoft.Network/publicIPPrefixes/join/action'")
+				})
+			})
 		})
 
 		// Mostly ported from VM test: "Provider list"

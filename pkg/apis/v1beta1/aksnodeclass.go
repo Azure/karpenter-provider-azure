@@ -70,6 +70,59 @@ type CapacityReservationConfiguration struct {
 	GroupID *string `json:"groupID,omitempty"`
 }
 
+// NodePublicIP configures an instance-level public IP address for each node
+// provisioned by this NodeClass.
+// +kubebuilder:validation:XValidation:message="nodePublicIP.prefixIDs requires nodePublicIP.enabled to be true",rule="!has(self.prefixIDs) || (has(self.enabled) && self.enabled)"
+// +kubebuilder:validation:XValidation:message="nodePublicIP.ipTags requires nodePublicIP.enabled to be true",rule="!has(self.ipTags) || (has(self.enabled) && self.enabled)"
+// +kubebuilder:validation:XValidation:message="nodePublicIP.ipTags can't be combined with nodePublicIP.prefixIDs",rule="!has(self.ipTags) || !has(self.prefixIDs)"
+type NodePublicIP struct {
+	// enabled requests a dedicated public IP address for each node.
+	// If omitted or false, nodes don't get a public IP address.
+	// Node public IP is supported only in the AKS Machine API provision modes
+	// (aksmachineapi and aksmachineapiheaderbatch). In other provision modes, setting
+	// enabled to true makes the NodeClass not ready, with the ValidationSucceeded
+	// condition reporting the reason.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+	// prefixIDs are the ARM resource IDs of the public IP prefixes that node public IP
+	// addresses are allocated from. If omitted, each node gets a public IP address that
+	// isn't from a prefix. At most one prefix is supported, and it must be an IPv4 prefix
+	// in the cluster's subscription. Requires enabled to be true.
+	// A zonal prefix allocates addresses only for nodes in its zone; a zone-redundant
+	// prefix works for any node. Karpenter doesn't check this, so every NodePool using
+	// a zonal prefix must restrict topology.kubernetes.io/zone to the prefix's zone.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=1
+	// +kubebuilder:validation:items:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/publicIPPrefixes\/[^\/]+$`
+	// +listType=atomic
+	// +optional
+	PrefixIDs []string `json:"prefixIDs,omitempty"`
+	// ipTags are the IP tags set on each node's public IP address, for example
+	// {ipTagType: RoutingPreference, tag: Internet}. They aren't Azure resource tags, and they
+	// can't be changed on an existing address. Requires enabled to be true, and can't be
+	// combined with prefixIDs.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=4
+	// +kubebuilder:validation:XValidation:message="nodePublicIP.ipTags entries must be unique",rule="self.all(t, self.exists_one(u, u.ipTagType == t.ipTagType && u.tag == t.tag))"
+	// +listType=atomic
+	// +optional
+	IPTags []IPTag `json:"ipTags,omitempty"`
+}
+
+// IPTag is an IP tag on a public IP address.
+type IPTag struct {
+	// ipTagType is the type of the IP tag, for example RoutingPreference.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +required
+	IPTagType string `json:"ipTagType,omitempty"`
+	// tag is the value of the IP tag, for example Internet.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +required
+	Tag string `json:"tag,omitempty"`
+}
+
 // IsEnabled returns whether artifact streaming should be enabled for the given architecture.
 // ARM64 does not support artifact streaming and always returns false.
 //
@@ -113,6 +166,10 @@ type AKSNodeClassSpec struct {
 	// provisioned by this NodeClass target.
 	// +optional
 	CapacityReservation *CapacityReservationConfiguration `json:"capacityReservation,omitempty"`
+	// nodePublicIP configures an instance-level public IP address for each node
+	// provisioned by this NodeClass.
+	// +optional
+	NodePublicIP *NodePublicIP `json:"nodePublicIP,omitempty"`
 	// osDiskType is the type of disk to use for the OS.
 	// If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
 	// of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
@@ -952,6 +1009,21 @@ func (in *AKSNodeClass) Hash() string {
 		lo.FromPtr(spec.GPU.Nvidia.ManagementMode) == ManagementModeUnmanaged) {
 		spec.GPU.Nvidia = nil
 	}
+	// A disabled node public IP block requests nothing, so omitted, {}, and {enabled: false} must
+	// hash the same. ARM resource IDs are case-insensitive, so prefix ID casing must not drift nodes.
+	// IP tag values keep their casing; CEL keeps entries unique, so none cancel out as a set.
+	if spec.NodePublicIP == nil || !lo.FromPtr(spec.NodePublicIP.Enabled) {
+		spec.NodePublicIP = nil
+	} else {
+		if len(spec.NodePublicIP.PrefixIDs) == 0 {
+			spec.NodePublicIP.PrefixIDs = nil
+		} else {
+			spec.NodePublicIP.PrefixIDs = lo.Map(spec.NodePublicIP.PrefixIDs, func(id string, _ int) string { return strings.ToLower(id) })
+		}
+		if len(spec.NodePublicIP.IPTags) == 0 {
+			spec.NodePublicIP.IPTags = nil
+		}
+	}
 	return fmt.Sprint(lo.Must(hashstructure.Hash(spec, hashstructure.FormatV2, &hashstructure.HashOptions{
 		SlicesAsSets:    true,
 		IgnoreZeroValue: true,
@@ -983,6 +1055,30 @@ func (in *AKSNodeClass) GetCapacityReservationGroupID() string {
 		return ""
 	}
 	return lo.FromPtr(in.Spec.CapacityReservation.GroupID)
+}
+
+// IsNodePublicIPEnabled returns whether nodes from this NodeClass request a public IP address.
+// Returns false when nodePublicIP or nodePublicIP.enabled is nil.
+func (in *AKSNodeClass) IsNodePublicIPEnabled() bool {
+	return in.Spec.NodePublicIP != nil && lo.FromPtr(in.Spec.NodePublicIP.Enabled)
+}
+
+// GetNodePublicIPPrefixIDs returns the public IP prefix IDs that node public IP addresses are
+// allocated from. Returns nil when node public IP is disabled or no prefix is configured.
+func (in *AKSNodeClass) GetNodePublicIPPrefixIDs() []string {
+	if !in.IsNodePublicIPEnabled() || len(in.Spec.NodePublicIP.PrefixIDs) == 0 {
+		return nil
+	}
+	return in.Spec.NodePublicIP.PrefixIDs
+}
+
+// GetNodePublicIPTags returns the IP tags for node public IP addresses.
+// Returns nil when node public IP is disabled or no IP tags are configured.
+func (in *AKSNodeClass) GetNodePublicIPTags() []IPTag {
+	if !in.IsNodePublicIPEnabled() || len(in.Spec.NodePublicIP.IPTags) == 0 {
+		return nil
+	}
+	return in.Spec.NodePublicIP.IPTags
 }
 
 func (in *AKSNodeClass) IsVTPMEnabled() bool {

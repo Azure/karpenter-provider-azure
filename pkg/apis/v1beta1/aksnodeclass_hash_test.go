@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1_test
 
 import (
+	"strings"
 	"time"
 
 	"dario.cat/mergo"
@@ -85,6 +86,10 @@ var _ = Describe("Hash", func() {
 		// This value was generated before NvidiaGPU was added and protects existing
 		// GPU NodeClasses from drifting solely because the nested field now exists.
 		Entry("GPU.Mode Driver pre-feature compatibility", "6825272224360426163", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeDriver)}}}),
+		// A disabled nodePublicIP block must hash the same as the pre-feature base, so writing it
+		// doesn't drift existing nodes.
+		Entry("NodePublicIP empty pre-feature compatibility", staticHash, v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{NodePublicIP: &v1beta1.NodePublicIP{}}}),
+		Entry("NodePublicIP.Enabled false pre-feature compatibility", staticHash, v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{NodePublicIP: &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}}}),
 	)
 
 	DescribeTable("should change hash when static fields are updated", func(changes v1beta1.AKSNodeClass) {
@@ -119,7 +124,99 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 		Entry("ArtifactStreaming.Enabled", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
 		Entry("GPU.Nvidia.ManagementMode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged)}}}}),
+		Entry("NodePublicIP.Enabled", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{NodePublicIP: &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}}}),
 	)
+	Context("NodePublicIP", func() {
+		const (
+			prefixID      = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"
+			otherPrefixID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/other"
+		)
+		var (
+			routingPreferenceTag = v1beta1.IPTag{IPTagType: "RoutingPreference", Tag: "Internet"}
+			firstPartyUsageTag   = v1beta1.IPTag{IPTagType: "FirstPartyUsage", Tag: "/Unprivileged"}
+		)
+
+		It("should hash an empty prefix list the same as an omitted one", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+			hash := nodeClass.Hash()
+
+			nodeClass.Spec.NodePublicIP.PrefixIDs = []string{}
+			Expect(nodeClass.Hash()).To(Equal(hash))
+		})
+		It("should change hash when the prefix is added, changed, or removed", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+			noPrefixHash := nodeClass.Hash()
+
+			nodeClass.Spec.NodePublicIP.PrefixIDs = []string{prefixID}
+			prefixHash := nodeClass.Hash()
+			Expect(prefixHash).ToNot(Equal(noPrefixHash))
+
+			nodeClass.Spec.NodePublicIP.PrefixIDs = []string{otherPrefixID}
+			Expect(nodeClass.Hash()).ToNot(Equal(prefixHash))
+			Expect(nodeClass.Hash()).ToNot(Equal(noPrefixHash))
+
+			nodeClass.Spec.NodePublicIP.PrefixIDs = nil
+			Expect(nodeClass.Hash()).To(Equal(noPrefixHash))
+		})
+		It("should not change hash when prefix ID casing changes", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}}
+			hash := nodeClass.Hash()
+
+			nodeClass.Spec.NodePublicIP.PrefixIDs = []string{strings.ToUpper(prefixID)}
+			Expect(nodeClass.Hash()).To(Equal(hash))
+		})
+		It("should hash an empty IP tag list the same as an omitted one", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+			hash := nodeClass.Hash()
+
+			nodeClass.Spec.NodePublicIP.IPTags = []v1beta1.IPTag{}
+			Expect(nodeClass.Hash()).To(Equal(hash))
+		})
+		It("should not change hash when IP tags are reordered", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{routingPreferenceTag, firstPartyUsageTag}}
+			hash := nodeClass.Hash()
+
+			nodeClass.Spec.NodePublicIP.IPTags = []v1beta1.IPTag{firstPartyUsageTag, routingPreferenceTag}
+			Expect(nodeClass.Hash()).To(Equal(hash))
+		})
+		It("should change hash when an IP tag is added, changed, or removed", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+			noTagsHash := nodeClass.Hash()
+
+			nodeClass.Spec.NodePublicIP.IPTags = []v1beta1.IPTag{routingPreferenceTag}
+			oneTagHash := nodeClass.Hash()
+			Expect(oneTagHash).ToNot(Equal(noTagsHash))
+
+			nodeClass.Spec.NodePublicIP.IPTags = []v1beta1.IPTag{routingPreferenceTag, firstPartyUsageTag}
+			twoTagsHash := nodeClass.Hash()
+			Expect(twoTagsHash).ToNot(Equal(oneTagHash))
+			Expect(twoTagsHash).ToNot(Equal(noTagsHash))
+
+			nodeClass.Spec.NodePublicIP.IPTags = []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "MicrosoftNetwork"}}
+			Expect(nodeClass.Hash()).ToNot(Equal(oneTagHash))
+			Expect(nodeClass.Hash()).ToNot(Equal(noTagsHash))
+
+			// Tag values aren't normalized, so a casing change is a change.
+			nodeClass.Spec.NodePublicIP.IPTags = []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "internet"}}
+			Expect(nodeClass.Hash()).ToNot(Equal(oneTagHash))
+
+			nodeClass.Spec.NodePublicIP.IPTags = nil
+			Expect(nodeClass.Hash()).To(Equal(noTagsHash))
+		})
+		It("should not mutate node public IP settings while hashing", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{strings.ToUpper(prefixID)}, IPTags: []v1beta1.IPTag{}}
+			original := nodeClass.DeepCopy()
+
+			_ = nodeClass.Hash()
+			Expect(nodeClass).To(Equal(original))
+
+			nodeClass.Spec.NodePublicIP.Enabled = lo.ToPtr(false)
+			original = nodeClass.DeepCopy()
+
+			_ = nodeClass.Hash()
+			Expect(nodeClass).To(Equal(original))
+		})
+	})
 	It("should hash omitted, empty, and explicit Unmanaged NVIDIA settings equally", func() {
 		nodeClass.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeDriver)}
 		omittedHash := nodeClass.Hash()

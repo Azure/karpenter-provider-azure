@@ -898,6 +898,79 @@ spec:
                 maximum: 250
                 minimum: 10
                 type: integer
+              nodePublicIP:
+                description: |-
+                  nodePublicIP configures an instance-level public IP address for each node
+                  provisioned by this NodeClass.
+                properties:
+                  enabled:
+                    description: |-
+                      enabled requests a dedicated public IP address for each node.
+                      If omitted or false, nodes don't get a public IP address.
+                      Node public IP is supported only in the AKS Machine API provision modes
+                      (aksmachineapi and aksmachineapiheaderbatch). In other provision modes, setting
+                      enabled to true makes the NodeClass not ready, with the ValidationSucceeded
+                      condition reporting the reason.
+                    type: boolean
+                  ipTags:
+                    description: |-
+                      ipTags are the IP tags set on each node's public IP address, for example
+                      {ipTagType: RoutingPreference, tag: Internet}. They aren't Azure resource tags, and they
+                      can't be changed on an existing address. Requires enabled to be true, and can't be
+                      combined with prefixIDs.
+                    items:
+                      description: IPTag is an IP tag on a public IP address.
+                      properties:
+                        ipTagType:
+                          description: ipTagType is the type of the IP tag, for example
+                            RoutingPreference.
+                          maxLength: 256
+                          minLength: 1
+                          type: string
+                        tag:
+                          description: tag is the value of the IP tag, for example
+                            Internet.
+                          maxLength: 256
+                          minLength: 1
+                          type: string
+                      required:
+                      - ipTagType
+                      - tag
+                      type: object
+                    maxItems: 4
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                    x-kubernetes-validations:
+                    - message: nodePublicIP.ipTags entries must be unique
+                      rule: self.all(t, self.exists_one(u, u.ipTagType == t.ipTagType
+                        && u.tag == t.tag))
+                  prefixIDs:
+                    description: |-
+                      prefixIDs are the ARM resource IDs of the public IP prefixes that node public IP
+                      addresses are allocated from. If omitted, each node gets a public IP address that
+                      isn't from a prefix. At most one prefix is supported, and it must be an IPv4 prefix
+                      in the cluster's subscription. Requires enabled to be true.
+                      A zonal prefix allocates addresses only for nodes in its zone; a zone-redundant
+                      prefix works for any node. Karpenter doesn't check this, so every NodePool using
+                      a zonal prefix must restrict topology.kubernetes.io/zone to the prefix's zone.
+                    items:
+                      pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/publicIPPrefixes\/[^\/]+$
+                      type: string
+                    maxItems: 1
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
+                x-kubernetes-validations:
+                - message: nodePublicIP.prefixIDs requires nodePublicIP.enabled to
+                    be true
+                  rule: '!has(self.prefixIDs) || (has(self.enabled) && self.enabled)'
+                - message: nodePublicIP.ipTags requires nodePublicIP.enabled to be
+                    true
+                  rule: '!has(self.ipTags) || (has(self.enabled) && self.enabled)'
+                - message: nodePublicIP.ipTags can't be combined with nodePublicIP.prefixIDs
+                  rule: '!has(self.ipTags) || !has(self.prefixIDs)'
               osDiskSizeGB:
                 description: |-
                   osDiskSizeGB is the size of the OS disk in GB.
@@ -2228,6 +2301,79 @@ spec:
                 maximum: 250
                 minimum: 10
                 type: integer
+              nodePublicIP:
+                description: |-
+                  nodePublicIP configures an instance-level public IP address for each node
+                  provisioned by this NodeClass.
+                properties:
+                  enabled:
+                    description: |-
+                      enabled requests a dedicated public IP address for each node.
+                      If omitted or false, nodes don't get a public IP address.
+                      Node public IP is supported only in the AKS Machine API provision modes
+                      (aksmachineapi and aksmachineapiheaderbatch). In other provision modes, setting
+                      enabled to true makes the NodeClass not ready, with the ValidationSucceeded
+                      condition reporting the reason.
+                    type: boolean
+                  ipTags:
+                    description: |-
+                      ipTags are the IP tags set on each node's public IP address, for example
+                      {ipTagType: RoutingPreference, tag: Internet}. They aren't Azure resource tags, and they
+                      can't be changed on an existing address. Requires enabled to be true, and can't be
+                      combined with prefixIDs.
+                    items:
+                      description: IPTag is an IP tag on a public IP address.
+                      properties:
+                        ipTagType:
+                          description: ipTagType is the type of the IP tag, for example
+                            RoutingPreference.
+                          maxLength: 256
+                          minLength: 1
+                          type: string
+                        tag:
+                          description: tag is the value of the IP tag, for example
+                            Internet.
+                          maxLength: 256
+                          minLength: 1
+                          type: string
+                      required:
+                      - ipTagType
+                      - tag
+                      type: object
+                    maxItems: 4
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                    x-kubernetes-validations:
+                    - message: nodePublicIP.ipTags entries must be unique
+                      rule: self.all(t, self.exists_one(u, u.ipTagType == t.ipTagType
+                        && u.tag == t.tag))
+                  prefixIDs:
+                    description: |-
+                      prefixIDs are the ARM resource IDs of the public IP prefixes that node public IP
+                      addresses are allocated from. If omitted, each node gets a public IP address that
+                      isn't from a prefix. At most one prefix is supported, and it must be an IPv4 prefix
+                      in the cluster's subscription. Requires enabled to be true.
+                      A zonal prefix allocates addresses only for nodes in its zone; a zone-redundant
+                      prefix works for any node. Karpenter doesn't check this, so every NodePool using
+                      a zonal prefix must restrict topology.kubernetes.io/zone to the prefix's zone.
+                    items:
+                      pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/publicIPPrefixes\/[^\/]+$
+                      type: string
+                    maxItems: 1
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
+                x-kubernetes-validations:
+                - message: nodePublicIP.prefixIDs requires nodePublicIP.enabled to
+                    be true
+                  rule: '!has(self.prefixIDs) || (has(self.enabled) && self.enabled)'
+                - message: nodePublicIP.ipTags requires nodePublicIP.enabled to be
+                    true
+                  rule: '!has(self.ipTags) || (has(self.enabled) && self.enabled)'
+                - message: nodePublicIP.ipTags can't be combined with nodePublicIP.prefixIDs
+                  rule: '!has(self.ipTags) || !has(self.prefixIDs)'
               osDiskSizeGB:
                 description: |-
                   osDiskSizeGB is the size of the OS disk in GB.

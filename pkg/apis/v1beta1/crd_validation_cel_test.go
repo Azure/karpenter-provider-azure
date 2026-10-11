@@ -231,6 +231,68 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("empty group ID", "", false),
 		)
 	})
+	Context("NodePublicIP", func() {
+		const prefixID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/publicIPPrefixes/prefix"
+		routingPreferenceTag := v1beta1.IPTag{IPTagType: "RoutingPreference", Tag: "Internet"}
+
+		DescribeTable("Should only accept a valid nodePublicIP configuration", func(nodePublicIP *v1beta1.NodePublicIP, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					NodePublicIP: nodePublicIP,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("omitted", nil, true),
+			Entry("empty", &v1beta1.NodePublicIP{}, true),
+			Entry("enabled false", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}, true),
+			Entry("enabled true without prefixes", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}, true),
+			Entry("enabled true with one prefix", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}}, true),
+			Entry("prefixes with enabled omitted", &v1beta1.NodePublicIP{PrefixIDs: []string{prefixID}}, false),
+			Entry("prefixes with enabled false", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false), PrefixIDs: []string{prefixID}}, false),
+			Entry("two prefixes", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID, prefixID + "2"}}, false),
+			Entry("one IP tag with enabled true", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{routingPreferenceTag}}, true),
+			Entry("two IP tags with enabled true", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{routingPreferenceTag, {IPTagType: "FirstPartyUsage", Tag: "/Unprivileged"}}}, true),
+			Entry("IP tags with enabled omitted", &v1beta1.NodePublicIP{IPTags: []v1beta1.IPTag{routingPreferenceTag}}, false),
+			Entry("IP tags with enabled false", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false), IPTags: []v1beta1.IPTag{routingPreferenceTag}}, false),
+			Entry("IP tags with a prefix", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}, IPTags: []v1beta1.IPTag{routingPreferenceTag}}, false),
+			Entry("empty ipTagType", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "", Tag: "Internet"}}}, false),
+			Entry("empty tag", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: ""}}}, false),
+			Entry("256-character tag", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: strings.Repeat("a", 256)}}}, true),
+			Entry("257-character tag", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: strings.Repeat("a", 257)}}}, false),
+			Entry("duplicate IP tag", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{routingPreferenceTag, routingPreferenceTag}}, false),
+			Entry("five IP tags", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{
+				{IPTagType: "A", Tag: "1"}, {IPTagType: "A", Tag: "2"}, {IPTagType: "A", Tag: "3"}, {IPTagType: "A", Tag: "4"}, {IPTagType: "A", Tag: "5"},
+			}}, false),
+		)
+		DescribeTable("Should only accept a valid public IP prefix ID", func(prefixID string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					NodePublicIP: &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid prefix ID", prefixID, true),
+			// ARM returns resource IDs with inconsistent casing, so the pattern must be case-insensitive.
+			Entry("uppercase segments", strings.ToUpper(prefixID), true),
+			Entry("public IP address rather than prefix", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/publicIPAddresses/pip", false),
+			Entry("wrong provider namespace", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/publicIPPrefixes/prefix", false),
+			Entry("child resource of the prefix", prefixID+"/child/name", false),
+			Entry("not a resource ID", "prefix", false),
+			Entry("empty prefix ID", "", false),
+		)
+	})
 	Context("VnetSubnetID", func() {
 		DescribeTable("Should only accept valid VnetSubnetID", func(vnetSubnetID string, expected bool) {
 			nodeClass := &v1beta1.AKSNodeClass{

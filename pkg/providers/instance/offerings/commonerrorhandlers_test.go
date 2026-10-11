@@ -111,6 +111,20 @@ func defaultTestOfferingInfo(zone, capacityType string) offeringToCheck {
 	return offeringInformation(zone, capacityType, testInstanceName, testInstanceVMSize, testInstanceFamilyName, "2")
 }
 
+// allDefaultTestOfferingInfo covers every zone and capacity type of the default test instance type,
+// for errors that must not mark any offering unavailable.
+func allDefaultTestOfferingInfo() []offeringToCheck {
+	zoneValues := []string{testZone1, testZone2, testZone3, zones.Regional}
+	capacityTypes := []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot}
+	infos := make([]offeringToCheck, 0, len(zoneValues)*len(capacityTypes))
+	for _, zone := range zoneValues {
+		for _, capacityType := range capacityTypes {
+			infos = append(infos, defaultTestOfferingInfo(zone, capacityType))
+		}
+	}
+	return infos
+}
+
 func createTestSKU(name, size, family, cpuCount string) *skewer.SKU {
 	return &skewer.SKU{
 		Name:   &name,
