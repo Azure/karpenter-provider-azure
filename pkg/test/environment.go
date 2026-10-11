@@ -74,6 +74,7 @@ type Environment struct {
 	AzureResourceGraphAPI           *fake.AzureResourceGraphAPI
 	VirtualMachineExtensionsAPI     *fake.VirtualMachineExtensionsAPI
 	NetworkInterfacesAPI            *fake.NetworkInterfacesAPI
+	PublicIPAddressesAPI            *fake.PublicIPAddressesAPI
 	CommunityImageVersionsAPI       *fake.CommunityGalleryImageVersionsAPI
 	NodeImageVersionsAPI            *fake.NodeImageVersionsAPI
 	SKUsAPI                         *fake.ResourceSKUsAPI
@@ -153,6 +154,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{AuxiliaryTokenPolicy: auxTokenPolicy}
 
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
+	publicIPAddressesAPI := &fake.PublicIPAddressesAPI{}
 	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
 	pricingAPI := &fake.PricingAPI{}
 	skusAPI := &fake.ResourceSKUsAPI{Location: region}
@@ -257,6 +259,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		quotaCategoryVMFamilyMappingAPI,
 		skuMixPlacementScoresAPI,
 	)
+	azClient.PublicIPAddressesClient = publicIPAddressesAPI
 	capacityRecommendationProvider := capacityrecommendation.NewProvider(
 		skuMixPlacementScoresAPI,
 		capacityRecommendationCache,
@@ -340,6 +343,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		AzureResourceGraphAPI:           azureResourceGraphAPI,
 		VirtualMachineExtensionsAPI:     virtualMachinesExtensionsAPI,
 		NetworkInterfacesAPI:            networkInterfacesAPI,
+		PublicIPAddressesAPI:            publicIPAddressesAPI,
 		CommunityImageVersionsAPI:       communityImageVersionsAPI,
 		NodeImageVersionsAPI:            nodeImageVersionsAPI,
 		LoadBalancersAPI:                loadBalancersAPI,
@@ -400,6 +404,7 @@ func (env *Environment) Reset(ctx context.Context) {
 	env.AzureResourceGraphAPI.Reset()
 	env.VirtualMachineExtensionsAPI.Reset()
 	env.NetworkInterfacesAPI.Reset()
+	env.PublicIPAddressesAPI.Reset()
 	env.LoadBalancersAPI.Reset()
 	env.NetworkSecurityGroupAPI.Reset()
 	env.SubnetsAPI.Reset()

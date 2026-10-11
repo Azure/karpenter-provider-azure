@@ -59,8 +59,8 @@ const (
 	// the managed GPU experience but the provision mode cannot express the NVIDIA GPU profile.
 	ManagedGPUUnsupportedProvisionMode = "ManagedGPUUnsupportedProvisionMode"
 	// NodePublicIPUnsupportedProvisionMode is the condition reason set when a NodeClass enables
-	// node public IP but the provision mode cannot give nodes a public IP address. Only the AKS
-	// Machine API modes support it.
+	// node public IP settings unsupported by the provision mode. Prefixes and IP tags require
+	// an AKS Machine API mode.
 	NodePublicIPUnsupportedProvisionMode = "NodePublicIPUnsupportedProvisionMode"
 	// WindowsUnsupportedNetworkDataplane is the condition reason set when a Windows NodeClass is
 	// configured on a cluster that uses an unsupported network dataplane.
@@ -230,10 +230,11 @@ func (r *StaticValidationReconciler) validateManagedGPUProvisionMode(ctx context
 }
 
 func (r *StaticValidationReconciler) validateNodePublicIPProvisionMode(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
-	if nodeClass.IsNodePublicIPEnabled() && !options.FromContext(ctx).SupportsNodePublicIP() {
+	publicIPRequiresMachineAPI := len(nodeClass.GetNodePublicIPPrefixIDs()) > 0 || len(nodeClass.GetNodePublicIPTags()) > 0
+	if nodeClass.IsNodePublicIPEnabled() && (!options.FromContext(ctx).SupportsNodePublicIP() || (publicIPRequiresMachineAPI && !options.FromContext(ctx).IsAKSMachineAPIMode())) {
 		return fail(
 			NodePublicIPUnsupportedProvisionMode,
-			fmt.Sprintf("nodePublicIP.enabled requires an AKS Machine API provision mode (%q or %q); provision-mode %q is not supported", consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch, options.FromContext(ctx).ProvisionMode),
+			fmt.Sprintf("nodePublicIP configuration is not supported with provision-mode %q; prefixIDs and ipTags require an AKS Machine API mode (%q or %q)", options.FromContext(ctx).ProvisionMode, consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch),
 		), nil
 	}
 	return pass(), nil

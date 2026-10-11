@@ -19,6 +19,7 @@ package cloudprovider
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -61,6 +62,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	corestatus "github.com/awslabs/operatorpkg/status"
@@ -290,6 +292,102 @@ func vmNodeOverlayCapacityTestOptions() nodeOverlayCapacityTestOptions {
 	}
 }
 
+func runNodePublicIPTests(provisionModes ...string) {
+	for _, mode := range provisionModes {
+		Context("Node public IP "+mode, func() {
+			BeforeEach(func() {
+				testOptions.ProvisionMode = mode
+				ctx = options.ToContext(ctx, testOptions)
+				azureEnv = test.NewEnvironment(ctx, env)
+				balancer := test.MakeStandardLoadBalancer(testOptions.NodeResourceGroup, loadbalancer.SLBName, true)
+				azureEnv.LoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(balancer.ID), balancer)
+				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+				cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
+			})
+			DescribeTable("should honor explicit node public IP configuration", func(configuration *v1beta1.NodePublicIP, enabled bool) {
+				nodeClass.Spec.NodePublicIP = configuration
+				ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+				conditions := nodeClass.GetConditions()
+				for index := range conditions {
+					conditions[index].ObservedGeneration = nodeClass.Generation
+				}
+				nodeClass.SetConditions(conditions)
+				ExpectApplied(ctx, env.Client, nodeClass)
+				created, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				Expect(err).NotTo(HaveOccurred())
+				if mode == consts.ProvisionModeAKSMachineAPI || mode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+					input := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+					if enabled {
+						Expect(input.AKSMachine.Properties.Network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+					} else {
+						Expect(input.AKSMachine.Properties.Network.EnableNodePublicIP).To(BeNil())
+					}
+					Expect(azureEnv.PublicIPAddressesAPI.CreateBehavior.CalledWithInput.Len()).To(BeZero())
+					return
+				}
+				name := instance.GenerateResourceName(nodeClaim.Name)
+				nic, err := azureEnv.VMInstanceProvider.GetNic(ctx, testOptions.NodeResourceGroup, name)
+				Expect(err).NotTo(HaveOccurred())
+				outboundPoolID := fake.MakeBackendAddressPoolID(testOptions.NodeResourceGroup, loadbalancer.SLBName, loadbalancer.SLBOutboundBackendPoolName)
+				inboundPoolID := fake.MakeBackendAddressPoolID(testOptions.NodeResourceGroup, loadbalancer.SLBName, loadbalancer.SLBInboundBackendPoolName)
+				pools := nic.Properties.IPConfigurations[0].Properties.LoadBalancerBackendAddressPools
+				Expect(pools).To(ContainElement(HaveField("ID", Equal(lo.ToPtr(inboundPoolID)))))
+				if !enabled {
+					Expect(pools).To(ContainElement(HaveField("ID", Equal(lo.ToPtr(outboundPoolID)))))
+					Expect(nic.Properties.IPConfigurations[0].Properties.PublicIPAddress).To(BeNil())
+					Expect(azureEnv.PublicIPAddressesAPI.CreateBehavior.CalledWithInput.Len()).To(BeZero())
+					return
+				}
+				address, err := azureEnv.PublicIPAddressesAPI.Get(ctx, testOptions.NodeResourceGroup, name, nil)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(pools).NotTo(ContainElement(HaveField("ID", Equal(lo.ToPtr(outboundPoolID)))))
+				Expect(nic.Properties.NetworkSecurityGroup).NotTo(BeNil())
+				Expect(nic.Properties.IPConfigurations[0].Properties.PublicIPAddress.ID).To(Equal(address.ID))
+				_, err = CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(azureEnv.PublicIPAddressesAPI.CreateBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(cloudProvider.Delete(ctx, created)).To(Succeed())
+				_, err = azureEnv.PublicIPAddressesAPI.Get(ctx, testOptions.NodeResourceGroup, name, nil)
+				Expect(err).To(HaveOccurred())
+			},
+				Entry("omitted", nil, false),
+				Entry("disabled", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}, false),
+				Entry("enabled", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}, true),
+				Entry("empty block", &v1beta1.NodePublicIP{}, false),
+			)
+			if mode == consts.ProvisionModeAKSScriptless || mode == consts.ProvisionModeBootstrappingClient {
+				DescribeTable("should reject public IP prefixes and tags before creating VM resources", func(configuration *v1beta1.NodePublicIP) {
+					nodeClass.Spec.NodePublicIP = configuration
+					ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+					_, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("require an AKS Machine API"))
+					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+					Expect(azureEnv.PublicIPAddressesAPI.CreateBehavior.CalledWithInput.Len()).To(BeZero())
+					_, err = azureEnv.VMInstanceProvider.GetNic(ctx, testOptions.NodeResourceGroup, instance.GenerateResourceName(nodeClaim.Name))
+					Expect(err).To(HaveOccurred())
+				},
+					Entry("prefix", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"}}),
+					Entry("IP tags", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "Internet"}}}),
+				)
+				It("should clean the NIC and public IP after VM creation fails", func() {
+					nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+					azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(fmt.Errorf("test VM creation failure"))
+					ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+					_, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+					Expect(err).To(HaveOccurred())
+					Expect(azureEnv.PublicIPAddressesAPI.CreateBehavior.CalledWithInput.Len()).To(Equal(1))
+					Expect(azureEnv.PublicIPAddressesAPI.DeleteBehavior.CalledWithInput.Len()).To(Equal(1))
+					_, err = azureEnv.VMInstanceProvider.GetNic(ctx, testOptions.NodeResourceGroup, instance.GenerateResourceName(nodeClaim.Name))
+					Expect(err).To(HaveOccurred())
+				})
+			}
+		})
+	}
+}
+
 func runCapacityBufferTests(expectCreateCalls func(expectedCalls int)) {
 	Context("CapacityBuffer", func() {
 		It("should launch capacity for a PodTemplate-backed buffer", func() {
@@ -465,6 +563,8 @@ var _ = Describe("CloudProvider", func() {
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(expectedCalls))
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 		})
+
+		runNodePublicIPTests(consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient)
 
 		It("should reject managed GPU before creating a VM on an unsupported provision mode", func() {
 			nodeClass.Spec.GPU = &v1beta1.GPU{
