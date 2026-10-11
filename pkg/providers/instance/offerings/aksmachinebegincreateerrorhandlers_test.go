@@ -80,6 +80,11 @@ func (b *aksMachineBeginCreateErrorTestCaseBuilder) expectUnavailable(offerings 
 	return b
 }
 
+func (b *aksMachineBeginCreateErrorTestCaseBuilder) expectAvailable(offerings ...offeringToCheck) *aksMachineBeginCreateErrorTestCaseBuilder {
+	b.tc.expectedAvailableOfferingsInformation = offerings
+	return b
+}
+
 func (b *aksMachineBeginCreateErrorTestCaseBuilder) build() aksMachineBeginCreateErrorTestCase {
 	return b.tc
 }
@@ -100,6 +105,19 @@ type aksMachineBeginCreateErrorTestCase struct {
 
 func newTestAKSMachineBeginCreateErrorHandler() *AKSMachineBeginCreateErrorHandler {
 	return NewAKSMachineBeginCreateErrorHandler(cache.NewUnavailableOfferings())
+}
+
+// nodePublicIPBeginCreateErrorTestCase builds a case for an AKS rejection caused by the NodeClass's node
+// public IP settings. These are configuration errors, not capacity errors: they must stay unhandled,
+// so AKS's code and message reach the NodeClaim, and they must not mark any offering unavailable.
+func nodePublicIPBeginCreateErrorTestCase(name, code, message string) aksMachineBeginCreateErrorTestCase {
+	return newAKSMachineBeginCreateErrorTestCase(name+" - node public IP - not handled").
+		withInstanceType(zone1OnDemand, zone2Spot, zone3OnDemand, regionalSpot).
+		withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+		withHandlableError(code, message).
+		expectError(nil).
+		expectAvailable(allDefaultTestOfferingInfo()...).
+		build()
 }
 
 func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTestCase {
@@ -180,6 +198,13 @@ func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTest
 			withHandlableError("InternalServerError", "Azure service temporarily unavailable").
 			expectError(nil).
 			build(),
+
+		nodePublicIPBeginCreateErrorTestCase("LinkedAuthorizationFailed",
+			"LinkedAuthorizationFailed", "The client 'clientID' with object id 'objectID' has permission to perform action 'Microsoft.ContainerService/managedClusters/agentPools/machines/write' on scope 'machineID'; however, it does not have permission to perform action(s) 'Microsoft.Network/publicIPPrefixes/join/action' on the linked scope(s) 'prefixID' (respectively) or the linked scope(s) are invalid."),
+		nodePublicIPBeginCreateErrorTestCase("UnsupportedIPTagType",
+			"UnsupportedIPTagType", "IP tag type UnknownTagType is not supported. Supported values are FirstPartyUsage, NetworkDomain and RoutingPreference."),
+		nodePublicIPBeginCreateErrorTestCase("GetPublicIPPrefixByResourceIDError",
+			"GetPublicIPPrefixByResourceIDError", "Failed to get public IP prefix object by ID prefixID."),
 	}
 }
 

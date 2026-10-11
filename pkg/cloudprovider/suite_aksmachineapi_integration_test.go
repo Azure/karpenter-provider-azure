@@ -432,6 +432,79 @@ func runSharedAKSMachineAPITests() {
 			Expect(nodeClaim.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
 
+		Context("found in get, with node public IP settings", func() {
+			var firstNodeClaim *karpv1.NodeClaim
+
+			createFirstAKSMachine := func(nodePublicIP *v1beta1.NodePublicIP) {
+				nodeClass.Spec.NodePublicIP = nodePublicIP
+				ExpectApplied(ctx, env.Client, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				firstNodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
+					},
+					Spec: karpv1.NodeClaimSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
+							Group: object.GVK(nodeClass).Group,
+							Kind:  object.GVK(nodeClass).Kind,
+							Name:  nodeClass.Name,
+						},
+						Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+							{
+								Key:      v1.LabelTopologyZone,
+								Operator: v1.NodeSelectorOpIn,
+								Values:   []string{zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
+							},
+							{
+								Key:      v1.LabelInstanceTypeStable,
+								Operator: v1.NodeSelectorOpIn,
+								Values:   []string{"Standard_D2_v2"},
+							},
+						},
+					},
+				})
+				ExpectApplied(ctx, env.Client, nodePool, firstNodeClaim)
+				createdFirstNodeClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, firstNodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(createdFirstNodeClaim).ToNot(BeNil())
+
+				azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+				azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
+				azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Reset()
+			}
+
+			It("should reuse the AKS machine when the node public IP settings still match", func() {
+				createFirstAKSMachine(&v1beta1.NodePublicIP{
+					Enabled: lo.ToPtr(true),
+					IPTags:  []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "Internet"}},
+				})
+
+				reusedNodeClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, firstNodeClaim.DeepCopy())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(reusedNodeClaim).ToNot(BeNil())
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
+			})
+
+			It("should refuse to reuse an AKS machine without node public IP settings after the NodeClass enables it, and delete it", func() {
+				createFirstAKSMachine(nil)
+				nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+				ExpectApplied(ctx, env.Client, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				reusedNodeClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, firstNodeClaim.DeepCopy())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("has node public IP enabled=false, but the NodeClass now specifies enabled=true"))
+				Expect(reusedNodeClaim).To(BeNil())
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(1))
+				machineID := fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, firstNodeClaim.Name)
+				_, ok := azureEnv.AKSDataStorage.AKSMachines.Load(machineID)
+				Expect(ok).To(BeFalse())
+			})
+		})
+
 		It("should handle AKS machine create failures - not found in get, but somehow found during create, although with same configuration", func() {
 			// Create a fresh nodeClaim with explicit requirements so we know exactly what it will have
 			firstNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{

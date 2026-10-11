@@ -118,14 +118,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		Zones: zones.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
 			NodeImageVersion: lo.ToPtr(nodeImageVersion),
-			Network: &armcontainerservice.MachineNetworkProperties{
-				VnetSubnetID: nodeClass.Spec.VNETSubnetID, // AKS machine API take control, if nil
-				// As of the time of writing, the current version of AKS machine API support just that with nil. That is unlikely to change.
-				// PodSubnetID:          "",
-				// EnableNodePublicIP:   nil,
-				// NodePublicIPPrefixID: "",
-				// IPTags:               nil,
-			},
+			Network:          configureNetwork(nodeClass),
 			Hardware: &armcontainerservice.MachineHardwareProfile{
 				VMSize: lo.ToPtr(instanceType.Name),
 				// GPUInstanceProfile: nil,
@@ -176,6 +169,28 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			CapacityReservation: configureCapacityReservation(nodeClass),
 		},
 	}, nil
+}
+
+func configureNetwork(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.MachineNetworkProperties {
+	network := &armcontainerservice.MachineNetworkProperties{
+		VnetSubnetID: nodeClass.Spec.VNETSubnetID, // AKS machine API take control, if nil
+		// As of the time of writing, the current version of AKS machine API support just that with nil. That is unlikely to change.
+		// PodSubnetID: nil,
+	}
+	// Leave the public IP fields nil when the feature is disabled, so the request and the batch
+	// key for existing NodeClasses don't change.
+	if nodeClass.IsNodePublicIPEnabled() {
+		network.EnableNodePublicIP = lo.ToPtr(true)
+		if prefixIDs := nodeClass.GetNodePublicIPPrefixIDs(); len(prefixIDs) > 0 {
+			network.NodePublicIPPrefixID = lo.ToPtr(prefixIDs[0])
+		}
+		if ipTags := nodeClass.GetNodePublicIPTags(); len(ipTags) > 0 {
+			network.NodePublicIPTags = lo.Map(ipTags, func(t v1beta1.IPTag, _ int) *armcontainerservice.IPTag {
+				return &armcontainerservice.IPTag{IPTagType: lo.ToPtr(t.IPTagType), Tag: lo.ToPtr(t.Tag)}
+			})
+		}
+	}
+	return network
 }
 
 func configureCapacityReservation(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.CapacityReservation {
