@@ -825,6 +825,21 @@ func (env *Environment) ExpectLiveNodeClaimsForNodePool(ctx context.Context, g G
 	})
 }
 
+// EventuallyExpectRegisteredNodeClaimsForNodePoolWithTimeout waits for exactly count live,
+// registered NodeClaims with node names in the current test's NodePool, returning only those claims.
+func (env *Environment) EventuallyExpectRegisteredNodeClaimsForNodePoolWithTimeout(timeout time.Duration, nodePool *karpv1.NodePool, count int) []*karpv1.NodeClaim {
+	GinkgoHelper()
+	By(fmt.Sprintf("waiting for %d live registered NodeClaims for NodePool %s", count, nodePool.Name))
+	var claims []*karpv1.NodeClaim
+	Eventually(env.Context, func(g Gomega) {
+		claims = lo.Filter(env.ExpectLiveNodeClaimsForNodePool(env.Context, g, nodePool), func(nc *karpv1.NodeClaim, _ int) bool {
+			return nc.StatusConditions().IsTrue(karpv1.ConditionTypeRegistered) && nc.Status.NodeName != ""
+		})
+		g.Expect(claims).To(HaveLen(count), "expected %d live registered NodeClaims for NodePool %s, had %v", count, nodePool.Name, NodeClaimNames(claims))
+	}).WithTimeout(timeout).Should(Succeed())
+	return claims
+}
+
 func (env *Environment) EventuallyExpectLaunchedNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {
 	GinkgoHelper()
 	By(fmt.Sprintf("waiting for node claims to be %s to %d", comparator, count))

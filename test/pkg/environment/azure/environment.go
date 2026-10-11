@@ -238,6 +238,12 @@ func (env *Environment) IsAKSMachineAPIMode() bool {
 	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI || env.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 }
 
+// HasAKSAPIAccess reports whether tests can call the AKS API itself (ManagedClusters, Machines).
+// They can't in the AKS-managed E2E pipeline.
+func (env *Environment) HasAKSAPIAccess() bool {
+	return env.InClusterController
+}
+
 func (env *Environment) IsMachineModeOrNPS() bool {
 	// Assumption is if we're not in the cluster, we're in NPS mode. Ideally we would just check this via ProvisionMode, but
 	// we can't do that right now as depending on context we may not set provision mode for the tests
