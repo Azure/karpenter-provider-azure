@@ -37,11 +37,11 @@ has no cleanup of its own to do.
 The self-hosted default mode is `aksscriptless`, so most self-hosted installations must
 switch to an AKS Machine API mode before they can use this feature.
 
-In an unsupported mode, a NodeClass with `nodePublicIP.enabled: true` isn't ready. Its
-`ValidationSucceeded` condition is `False` with reason `NodePublicIPUnsupportedProvisionMode`,
-and no nodes are launched from it. Switching an existing installation from an AKS Machine API
-mode to a VM mode has the same effect: existing nodes keep running, but no new capacity is
-created.
+In an unsupported mode, a NodeClass with `nodePublicIP.enabled: true` will have its
+ValidationSucceeded condition report `False` with reason `NodePublicIPUnsupportedProvisionMode`,
+indicating you are not in a supported provisioning mode. Switching an existing installation from an AKS
+Machine API mode to a VM mode has the same effect: existing nodes keep running, but no new capacity
+is created.
 
 ## Limitations
 
@@ -79,10 +79,6 @@ Two identities need `Microsoft.Network/publicIPPrefixes/join/action` on the pref
   [AKS service permissions](https://learn.microsoft.com/azure/aks/aks-service-permissions).
   Without the permission, the node fails while it's being created, also with
   `LinkedAuthorizationFailed`.
-
-Both identities need join permission covering the prefix. If existing role assignments,
-including inherited permissions, don't provide it, grant the built-in `Network Contributor`
-role on the prefix. The kubelet identity needs no additional permissions for this feature.
 
 Role assignments take a few minutes to apply; launches that fail in the meantime are retried on
 their own.
