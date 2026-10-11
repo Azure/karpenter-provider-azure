@@ -24,6 +24,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -52,6 +53,10 @@ const (
 	// KataRequiresAzureLinux3 is the condition reason set when the Kubernetes version resolves
 	// imageFamily AzureLinux to Azure Linux 2, which does not publish a Kata image.
 	KataRequiresAzureLinux3 = "KataRequiresAzureLinux3"
+	// NodePublicIPUnsupportedProvisionMode is the condition reason set when a NodeClass enables
+	// node public IP but the provision mode cannot give nodes a public IP address. Only the AKS
+	// Machine API modes support it.
+	NodePublicIPUnsupportedProvisionMode = "NodePublicIPUnsupportedProvisionMode"
 )
 
 type ValidationReconciler struct {
@@ -69,6 +74,7 @@ func NewValidationReconciler(
 	}
 }
 
+//nolint:gocyclo // Keep ordered validation and condition handling together in this reconciler.
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 	if !validateFIPS(ctx, nodeClass) {
@@ -85,6 +91,14 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 			v1beta1.ConditionTypeValidationSucceeded,
 			KataPodSandboxingUnsupportedProvisionMode,
 			fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode),
+		)
+		return reconcile.Result{}, nil
+	}
+	if nodeClass.IsNodePublicIPEnabled() && !options.FromContext(ctx).SupportsNodePublicIP() {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			NodePublicIPUnsupportedProvisionMode,
+			fmt.Sprintf("nodePublicIP.enabled requires an AKS Machine API provision mode (%q or %q); provision-mode %q is not supported", consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch, options.FromContext(ctx).ProvisionMode),
 		)
 		return reconcile.Result{}, nil
 	}
