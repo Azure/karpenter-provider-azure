@@ -88,6 +88,9 @@ type NodePublicIP struct {
 	// addresses are allocated from. If omitted, each node gets a public IP address that
 	// isn't from a prefix. At most one prefix is supported, and it must be an IPv4 prefix
 	// in the cluster's subscription. Requires enabled to be true.
+	// A zonal prefix allocates addresses only for nodes in its zone; a zone-redundant
+	// prefix works for any node. Karpenter doesn't check this, so every NodePool using
+	// a zonal prefix must restrict topology.kubernetes.io/zone to the prefix's zone.
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=1
 	// +kubebuilder:validation:items:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/publicIPPrefixes\/[^\/]+$`
