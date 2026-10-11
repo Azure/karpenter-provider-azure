@@ -65,7 +65,7 @@ e2etests: ## Run the e2e suite against your local cluster
 		-timeout ${TEST_TIMEOUT} \
 		-v \
 		./suites/$(shell echo $(TEST_SUITE) | tr A-Z a-z)/... \
-		--ginkgo.focus="$(or ${FOCUS},Node Public IP)" \
+		--ginkgo.focus="${FOCUS}" \
 		$(if $(LABEL_FILTER),--ginkgo.label-filter="${LABEL_FILTER}",) \
 		--ginkgo.timeout=${TEST_TIMEOUT} \
 		--ginkgo.grace-period=3m \
