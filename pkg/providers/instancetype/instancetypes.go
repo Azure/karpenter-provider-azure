@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +31,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -47,7 +47,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 
 	"github.com/Azure/skewer"
-	"github.com/alecthomas/units"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
@@ -63,7 +62,8 @@ const (
 // struct; adding a new field here automatically incorporates it into the key.
 type instanceTypeParameters struct {
 	ImageFamily              string
-	OSDiskSizeGB             int32
+	OSDiskSizeGB             *int32 // nil means auto-sized per SKU
+	OSDiskType               v1beta1.OSDiskType
 	MaxPods                  int32
 	EncryptionAtHost         bool
 	TrustedLaunch            bool
@@ -71,6 +71,8 @@ type instanceTypeParameters struct {
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSRequired         bool
+	KubeReserved             map[string]string
+	EvictionHard             map[string]string
 	// These two carry only the static shape of the Capacity Reservation Group: which VM
 	// sizes and zones it can back. Reserved quantities and utilization are
 	// deliberately excluded, because they change on every launch and would invalidate the
@@ -160,11 +162,13 @@ func (p *DefaultProvider) List(
 		return nil, fmt.Errorf("no instance types found")
 	}
 
+	opts := options.FromContext(ctx)
 	// Compute fully initialized instance types hash key
 	instanceTypeParams := &instanceTypeParameters{
 		ImageFamily:              lo.FromPtr(nodeClass.Spec.ImageFamily),
-		OSDiskSizeGB:             lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
-		MaxPods:                  utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
+		OSDiskSizeGB:             nodeClass.Spec.OSDiskSizeGB,
+		OSDiskType:               lo.FromPtr(nodeClass.Spec.OSDiskType),
+		MaxPods:                  utils.GetMaxPods(nodeClass, opts.NetworkPlugin, opts.NetworkPluginMode),
 		EncryptionAtHost:         nodeClass.GetEncryptionAtHost(),
 		TrustedLaunch:            nodeClass.IsTrustedLaunchEnabled(),
 		GPUMode:                  nodeClass.GetGPUMode(),
@@ -176,6 +180,12 @@ func (p *DefaultProvider) List(
 		CapacityReservationGroupID: nodeClass.GetCapacityReservationGroupID(),
 		CapacityReservations:       p.capacityReservationPlacements(ctx, nodeClass),
 		KataEnabled:                nodeClass.IsKataEnabled(),
+	}
+	if nodeClass.Spec.Kubelet != nil {
+		// These values do not filter SKUs, but they change scheduling simulation by changing
+		// allocatable resources. Include them so NodeClasses cannot share incompatible cached results.
+		instanceTypeParams.KubeReserved = KubeReservedOverrides(nodeClass.Spec.Kubelet.KubeReserved)
+		instanceTypeParams.EvictionHard = evictionHardOverrides(nodeClass.Spec.Kubelet.EvictionHard)
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%016x", paramsHash)
@@ -191,7 +201,13 @@ func (p *DefaultProvider) List(
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
 		// so that modifications to the ordering of the data don't affect the original
-		return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
+		types := item.([]*cloudprovider.InstanceType)
+		if len(types) > 0 {
+			return slices.Clone(types), nil
+		}
+
+		// Ensure we never return nil
+		return []*cloudprovider.InstanceType{}, nil
 	}
 
 	result := p.buildInstanceTypes(ctx, instanceTypeParams)
@@ -199,6 +215,41 @@ func (p *DefaultProvider) List(
 	p.instanceTypesCache.SetDefault(key, result)
 	// Return a shallow copy, matching the cache-hit path, so a caller reordering its slice doesn't reorder the cached one.
 	return append([]*cloudprovider.InstanceType{}, result...), nil
+}
+
+// KubeReservedOverrides converts typed kube-reserved overrides to kubelet resource quantities.
+func KubeReservedOverrides(config *v1beta1.KubeReserved) map[string]string {
+	if config == nil {
+		return nil
+	}
+	overrides := map[string]string{}
+	if config.CPUMillicores != nil {
+		overrides[string(corev1.ResourceCPU)] = fmt.Sprintf("%dm", *config.CPUMillicores)
+	}
+	if config.MemoryMB != nil {
+		overrides[string(corev1.ResourceMemory)] = fmt.Sprintf("%dMi", *config.MemoryMB)
+	}
+	if len(overrides) == 0 {
+		return nil
+	}
+	return overrides
+}
+
+func evictionHardOverrides(config *v1beta1.EvictionThreshold) map[string]string {
+	if config == nil {
+		return nil
+	}
+	overrides := map[string]string{}
+	if config.MemoryAvailable != nil {
+		overrides[MemoryAvailable] = *config.MemoryAvailable
+	}
+	if config.NodeFsAvailable != nil {
+		overrides[NodeFSAvailable] = *config.NodeFsAvailable
+	}
+	if len(overrides) == 0 {
+		return nil
+	}
+	return overrides
 }
 
 func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instanceTypeParameters) []*cloudprovider.InstanceType {
@@ -340,7 +391,8 @@ func capacityReservationZones(params *instanceTypeParameters) map[string]sets.Se
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
 func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], capacityReservationGroupID string) cloudprovider.Offerings {
-	offerings := []*cloudprovider.Offering{}
+	offerings := make([]*cloudprovider.Offering, 0, 2*len(offeringZones))
+
 	// Availability is tracked separately per group, so a shortage of unreserved capacity
 	// does not suppress the reserved offering that exists to survive exactly that.
 	capacityReserved := capacityReservationGroupID != ""
@@ -466,6 +518,8 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	case imageFamily == v1beta1.AzureLinuxImageFamily:
 		return utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux") ||
 			utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux3")
+	case imageFamily == v1beta1.AzureContainerLinuxImageFamily:
+		return utils.IsGPUSKUSupportedOnOS(skuName, "azurecontainerlinux")
 	default:
 		return false
 	}
@@ -701,54 +755,6 @@ func (p *DefaultProvider) Reset() {
 	p.muInstanceTypesCache.Lock()
 	p.instanceTypesCache.Flush()
 	p.muInstanceTypesCache.Unlock()
-}
-
-func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
-	if sku == nil {
-		return 0, nil
-	}
-
-	if !sku.IsEphemeralOSDiskSupported() {
-		return 0, nil // ephemeral OS disk is not supported by this SKU
-	}
-
-	maxNVMeMiB, _ := nvmeDiskSizeInMiB(sku)
-
-	// Check NVMe disk first (highest priority)
-	if maxNVMeMiB > 0 && supportsNVMeEphemeralOSDisk(sku) {
-		return maxNVMeMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
-	}
-
-	maxCacheDiskBytes, _ := sku.MaxCachedDiskBytes()
-	if maxCacheDiskBytes > 0 {
-		return maxCacheDiskBytes / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
-	}
-
-	maxResourceDiskMiB, _ := sku.MaxResourceVolumeMB() // NOTE: MaxResourceVolumeMB is actually in MiBs
-	if maxResourceDiskMiB > 0 {
-		return maxResourceDiskMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
-	}
-
-	return 0, nil
-}
-
-func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
-	const ephemeralOSDiskPlacementCapability = "SupportedEphemeralOSDiskPlacements"
-	const nvme = "NvmeDisk"
-	return sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, nvme)
-}
-
-func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
-	if lo.FromPtr(nodeClass.Spec.OSDiskType) == v1beta1.OSDiskTypeManaged {
-		return false
-	}
-	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
-	return int64(*nodeClass.Spec.OSDiskSizeGB) <= sizeGB // use ephemeral disk if it is large enough
-}
-
-func nvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {
-	const selector = "NvmeDiskSizeInMiB"
-	return s.GetCapabilityIntegerQuantity(selector)
 }
 
 func ultraSSDOptions(sku *skewer.SKU, zone string) []string {

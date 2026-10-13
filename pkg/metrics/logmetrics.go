@@ -49,9 +49,8 @@ func (m *metric) Inc(ctx context.Context, msg string, values ...Value) {
 	logger := log.FromContext(ctx)
 
 	// Each metric should emit its own name, under the "metric" key.
-	fields := []any{
-		"metric", m.name,
-	}
+	fields := make([]any, 0, 2+len(values)*2)
+	fields = append(fields, "metric", m.name)
 
 	// Get and include the set of metrics key value pairs.
 	fields = append(fields, ValuesToKeyValuePairs(values...)...)

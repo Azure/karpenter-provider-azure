@@ -54,8 +54,9 @@ var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
-				UseSIG:        lo.ToPtr(true),
+				ProvisionMode:    lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
+				UseSIG:           lo.ToPtr(true),
+				NetworkDataplane: lo.ToPtr(consts.NetworkDataplaneAzure),
 			})
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -128,6 +129,69 @@ var _ = Describe("CloudProvider", func() {
 		// Mostly ported from VM test: "ImageReference" and "ImageProvider + Image Family"
 		// Note: AKS Machine API does not support Community Image Gallery (CIG)
 		Context("Create - ImageReference and ImageProvider + Image Family", func() {
+			DescribeTable("should provision AzureContainerLinux with explicit Trusted Launch",
+				func(provisionMode string, fipsMode *v1beta1.FIPSMode, definition string, withOverrides bool) {
+					testOptions.ProvisionMode = provisionMode
+					// Dispatch mode is captured when the provider is constructed, not read on each create.
+					azureEnv.Reset(ctx)
+					azureEnv = test.NewEnvironment(ctx, env)
+					cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+					cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+					coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
+					statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, testOptions.NetworkPolicy, testOptions.NetworkPlugin,
+						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+					nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+					nodeClass.Spec.FIPSMode = fipsMode
+					nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+					if withOverrides {
+						nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+							KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
+							EvictionHard:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi")},
+							EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
+							EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))},
+							EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
+						}
+					}
+					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+						Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{"Standard_D2_v5"},
+					})
+					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+					pod := coretest.UnschedulablePod(coretest.PodOptions{})
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+
+					Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					machine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+					Expect(machine.Properties.NodeImageVersion).To(Equal(lo.ToPtr("AKSAzureLinux-" + definition + "-202608.26.0")))
+					Expect(machine.Properties.OperatingSystem.OSSKU).To(Equal(lo.ToPtr(armcontainerservice.OSSKUAzureContainerLinux)))
+					Expect(machine.Properties.OperatingSystem.EnableFIPS).To(Equal(lo.ToPtr(lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS)))
+					Expect(machine.Properties.Security.EnableVTPM).To(Equal(lo.ToPtr(true)))
+					Expect(machine.Properties.Security.EnableSecureBoot).To(Equal(lo.ToPtr(true)))
+					if withOverrides {
+						kubeletConfig := machine.Properties.Kubernetes.KubeletConfig
+						Expect(kubeletConfig).ToNot(BeNil())
+						Expect(kubeletConfig.KubeReserved).ToNot(BeNil())
+						Expect(kubeletConfig.KubeReserved.CPUMillicores).To(Equal(lo.ToPtr(int32(250))))
+						Expect(kubeletConfig.KubeReserved.MemoryMB).To(Equal(lo.ToPtr(int32(1024))))
+						Expect(kubeletConfig.HardEvictionThreshold).ToNot(BeNil())
+						Expect(kubeletConfig.HardEvictionThreshold.MemoryAvailable).To(Equal(lo.ToPtr("333Mi")))
+						Expect(kubeletConfig.SoftEvictionThreshold).ToNot(BeNil())
+						Expect(kubeletConfig.SoftEvictionThreshold.MemoryAvailable).To(Equal(lo.ToPtr("500Mi")))
+						Expect(kubeletConfig.SoftEvictionGracePeriod).ToNot(BeNil())
+						Expect(kubeletConfig.SoftEvictionGracePeriod.MemoryAvailable).To(Equal(lo.ToPtr("90s")))
+						Expect(kubeletConfig.EvictionMaxPodGracePeriodInSeconds).To(Equal(lo.ToPtr(int32(120))))
+					}
+				},
+				Entry("Machine API default", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2TL", false),
+				Entry("Machine API FIPS", consts.ProvisionModeAKSMachineAPI, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", false),
+				Entry("batched Machine API default", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2TL", false),
+				Entry("batched Machine API FIPS", consts.ProvisionModeAKSMachineAPIHeaderBatch, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", false),
+				Entry("Machine API default with kubelet overrides", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2TL", true),
+				Entry("Machine API FIPS with kubelet overrides", consts.ProvisionModeAKSMachineAPI, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", true),
+				Entry("batched Machine API default with kubelet overrides", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2TL", true),
+				Entry("batched Machine API FIPS with kubelet overrides", consts.ProvisionModeAKSMachineAPIHeaderBatch, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", true),
+			)
 
 			// Ported from VM test: "should use shared image gallery images when options are set to UseSIG"
 			It("should use shared image gallery images", func() {
@@ -401,6 +465,145 @@ var _ = Describe("CloudProvider", func() {
 			})
 		})
 
+		// Managed NVIDIA GPU experience (gpu.nvidia.managementMode) on the AKS machine API path.
+		Context("Create - Managed NVIDIA GPU", func() {
+			scheduleGPUPod := func() {
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "managed-gpu",
+						Labels: map[string]string{"app": "managed-gpu"},
+					},
+					Image: "mcr.microsoft.com/azuredocs/samples-tf-mnist-demo:gpu",
+					ResourceRequirements: v1.ResourceRequirements{
+						Limits: v1.ResourceList{"nvidia.com/gpu": resource.MustParse("1")},
+					},
+					RestartPolicy: v1.RestartPolicy("OnFailure"),
+					Tolerations: []v1.Toleration{{
+						Key:      "sku",
+						Operator: v1.TolerationOpEqual,
+						Value:    "gpu",
+						Effect:   v1.TaintEffectNoSchedule,
+					}},
+				})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+			}
+
+			popCreatedMachine := func() armcontainerservice.Machine {
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+				Expect(aksMachine.Properties).ToNot(BeNil())
+				Expect(aksMachine.Properties.Hardware).ToNot(BeNil())
+				return aksMachine
+			}
+
+			It("should set GpuProfile.Nvidia.ManagementMode=Managed for a Managed NVIDIA GPU NodeClass", func() {
+				nodeClass.Spec.GPU = &v1beta1.GPU{
+					Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged)},
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				scheduleGPUPod()
+
+				aksMachine := popCreatedMachine()
+				Expect(utils.IsNvidiaEnabledSKU(lo.FromPtr(aksMachine.Properties.Hardware.VMSize))).To(BeTrue())
+				gpuProfile := aksMachine.Properties.Hardware.GpuProfile
+				Expect(gpuProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(gpuProfile.Driver)).To(Equal(armcontainerservice.GPUDriverInstall))
+				Expect(gpuProfile.Nvidia).ToNot(BeNil())
+				Expect(lo.FromPtr(gpuProfile.Nvidia.ManagementMode)).To(Equal(armcontainerservice.ManagementModeManaged))
+			})
+
+			It("should not set GpuProfile.Nvidia when management mode is unset (unmanaged default, non-breaking)", func() {
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				scheduleGPUPod()
+
+				aksMachine := popCreatedMachine()
+				Expect(utils.IsNvidiaEnabledSKU(lo.FromPtr(aksMachine.Properties.Hardware.VMSize))).To(BeTrue())
+				gpuProfile := aksMachine.Properties.Hardware.GpuProfile
+				Expect(gpuProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(gpuProfile.Driver)).To(Equal(armcontainerservice.GPUDriverInstall))
+				Expect(gpuProfile.Nvidia).To(BeNil())
+			})
+
+			It("should not set GpuProfile.Nvidia when management mode is explicitly Unmanaged", func() {
+				nodeClass.Spec.GPU = &v1beta1.GPU{
+					Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeUnmanaged)},
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				scheduleGPUPod()
+
+				aksMachine := popCreatedMachine()
+				gpuProfile := aksMachine.Properties.Hardware.GpuProfile
+				Expect(gpuProfile).ToNot(BeNil())
+				Expect(gpuProfile.Nvidia).To(BeNil())
+			})
+		})
+
+		Context("Create - Node Public IP", func() {
+			const prefixID = "/subscriptions/subscriptionID/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/node-prefix"
+
+			provisionAndPopNetwork := func() *armcontainerservice.MachineNetworkProperties {
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Properties).ToNot(BeNil())
+				Expect(aksMachine.Properties.Network).ToNot(BeNil())
+				return aksMachine.Properties.Network
+			}
+
+			It("should request a node public IP when enabled", func() {
+				nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+
+				network := provisionAndPopNetwork()
+				Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+				Expect(network.NodePublicIPPrefixID).To(BeNil())
+				Expect(network.NodePublicIPTags).To(BeNil())
+			})
+
+			It("should request a node public IP from the configured prefix", func() {
+				nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}}
+
+				network := provisionAndPopNetwork()
+				Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+				Expect(lo.FromPtr(network.NodePublicIPPrefixID)).To(Equal(prefixID))
+				Expect(network.NodePublicIPTags).To(BeNil())
+			})
+
+			It("should request a node public IP with the configured IP tags", func() {
+				nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "Internet"}}}
+
+				network := provisionAndPopNetwork()
+				Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+				Expect(network.NodePublicIPPrefixID).To(BeNil())
+				Expect(network.NodePublicIPTags).To(Equal([]*armcontainerservice.IPTag{{IPTagType: lo.ToPtr("RoutingPreference"), Tag: lo.ToPtr("Internet")}}))
+			})
+
+			DescribeTable("should not send node public IP fields when node public IP is not enabled",
+				func(nodePublicIP *v1beta1.NodePublicIP) {
+					nodeClass.Spec.NodePublicIP = nodePublicIP
+
+					network := provisionAndPopNetwork()
+					Expect(network.EnableNodePublicIP).To(BeNil())
+					Expect(network.NodePublicIPPrefixID).To(BeNil())
+					Expect(network.NodePublicIPTags).To(BeNil())
+				},
+				Entry("when omitted", nil),
+				Entry("when explicitly disabled", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}),
+			)
+		})
+
 		// Ported from VM test: Context "additional-tags"
 		Context("Create - Additional Tags", func() {
 			It("should add additional tags to the AKS machine", func() {
@@ -475,6 +678,79 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeEphemeral))
 			})
 
+			It("should use ephemeral disk when resource disk fits the default size", func() {
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_B20ms"},
+				})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				machine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(machine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
+				Expect(*machine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(int32(160)))
+				Expect(machine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
+				Expect(*machine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeEphemeral))
+			})
+
+			It("should use managed disk when Trusted Launch consumes an exact-fit cache boundary", func() {
+				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1600)
+				nodeClass.Spec.Security = &v1beta1.Security{
+					TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)},
+				}
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D64s_v3"},
+				})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				machine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(machine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
+				Expect(*machine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(int32(1600)))
+				Expect(machine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
+				Expect(*machine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeManaged))
+				Expect(machine.Properties.Security.EnableSecureBoot).ToNot(BeNil())
+				Expect(*machine.Properties.Security.EnableSecureBoot).To(BeTrue())
+			})
+
+			It("should use ephemeral disk when Trusted Launch has one GiB of headroom", func() {
+				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1599)
+				nodeClass.Spec.Security = &v1beta1.Security{
+					TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)},
+				}
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D64s_v3"},
+				})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				machine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(machine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
+				Expect(*machine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(int32(1599)))
+				Expect(machine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
+				Expect(*machine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeEphemeral))
+				Expect(machine.Properties.Security.EnableVTPM).ToNot(BeNil())
+				Expect(*machine.Properties.Security.EnableVTPM).To(BeTrue())
+				Expect(machine.Properties.Security.EnableSecureBoot).ToNot(BeNil())
+				Expect(*machine.Properties.Security.EnableSecureBoot).To(BeTrue())
+			})
+
 			// Ported from VM test: "should fail to provision if ephemeral disk ask for is too large"
 			It("should fail to provision if ephemeral disk ask for is too large", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
@@ -544,8 +820,9 @@ var _ = Describe("CloudProvider", func() {
 			// Ported from VM test: "should not use ephemeral disk if ephemeral is supported, but we don't have enough space"
 			It("should not use ephemeral disk if ephemeral is supported, but we don't have enough space", func() {
 				// Select Standard_D2s_v3 which supports ephemeral but has limited space
-				// Standard_D2s_V3 has 53GB Of CacheDisk space and 16GB of Temp Disk Space.
-				// With our rule of 128GB being the minimum OSDiskSize, this should fall back to managed disk
+				// Standard_D2s_V3 has 50GiB Of CacheDisk space and 16GiB of Temp Disk Space.
+				// The requested 128GB does not fit, so this should fall back to managed disk
+				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -553,6 +830,7 @@ var _ = Describe("CloudProvider", func() {
 				})
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
@@ -564,7 +842,30 @@ var _ = Describe("CloudProvider", func() {
 				Expect(aksMachine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
 				Expect(*aksMachine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeManaged))
 				Expect(aksMachine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
-				Expect(*aksMachine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(int32(128))) // Default size
+				Expect(*aksMachine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(int32(128)))
+			})
+			It("should auto-size the OS disk and send the resolved size when osDiskSizeGB is not set", func() {
+				// Standard_D64s_v3 has 1600GiB of CacheDisk space; with osDiskSizeGB unset, the
+				// machine gets an ephemeral OS disk auto-sized to the SKU-supported maximum
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D64s_v3"},
+				})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())
+				Expect(aksMachine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
+				Expect(*aksMachine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeEphemeral))
+				Expect(aksMachine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
+				Expect(*aksMachine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(int32(1600)))
 			})
 
 			It("should not use ephemeral disk if OSDiskType is Managed, even when there is enough space", func() {
@@ -598,6 +899,19 @@ var _ = Describe("CloudProvider", func() {
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 					FailSwapOn:                  lo.ToPtr(false),
+					KubeReserved:                &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
+					EvictionHard: &v1beta1.EvictionThreshold{
+						MemoryAvailable:  lo.ToPtr("333Mi"),
+						NodeFsAvailable:  lo.ToPtr("12%"),
+						NodeFsInodesFree: lo.ToPtr("7%"),
+					},
+					EvictionSoft: &v1beta1.EvictionThreshold{
+						MemoryAvailable: lo.ToPtr("500Mi"),
+					},
+					EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{
+						MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s")),
+					},
+					EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 
@@ -653,6 +967,15 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.ImageGcHighThreshold).To(Equal(int32(85)))
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.ImageGcLowThreshold).To(Equal(int32(80)))
 				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.KubeletConfig.FailSwapOn)).To(BeFalse())
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.KubeReserved.CPUMillicores).To(Equal(int32(250)))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.KubeReserved.MemoryMB).To(Equal(int32(1024)))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.NodeFsAvailable).To(Equal("12%"))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))
+
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.SoftEvictionThreshold.MemoryAvailable).To(Equal("500Mi"))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.SoftEvictionGracePeriod.MemoryAvailable).To(Equal("90s"))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.EvictionMaxPodGracePeriodInSeconds).To(Equal(int32(120)))
 
 				// Verify image family configuration
 				Expect(string(*aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(v1beta1.Ubuntu2204ImageFamily))

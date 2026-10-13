@@ -26,6 +26,7 @@ import (
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -92,6 +93,120 @@ var _ = Describe("CEL/Validation", func() {
 			},
 		}
 	})
+	Context("Kubelet overrides", func() {
+		DescribeTable("should validate kubeReserved", func(kubeReserved *v1beta1.KubeReserved, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{KubeReserved: kubeReserved},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid cpu and memory", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))}, true),
+			Entry("maximum int32 values", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(2147483647)), MemoryMB: lo.ToPtr(int32(2147483647))}, true),
+			Entry("cpu below minimum", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(139))}, false),
+			Entry("cpu at minimum", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(140))}, true),
+			Entry("memory below minimum", &v1beta1.KubeReserved{MemoryMB: lo.ToPtr(int32(749))}, false),
+			Entry("memory at minimum", &v1beta1.KubeReserved{MemoryMB: lo.ToPtr(int32(750))}, true),
+			Entry("zero cpu", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(0))}, false),
+			Entry("negative memory", &v1beta1.KubeReserved{MemoryMB: lo.ToPtr(int32(-1))}, false),
+		)
+
+		It("should reject kubeReserved values above int32 before typed decoding", func() {
+			nodeClass := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "karpenter.azure.com/v1beta1",
+				"kind":       "AKSNodeClass",
+				"metadata":   map[string]any{"name": strings.ToLower(randomdata.SillyName())},
+				"spec": map[string]any{"kubelet": map[string]any{
+					"kubeReserved": map[string]any{"cpuMillicores": int64(2147483648)},
+				}},
+			}}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		DescribeTable("should validate evictionHard", func(evictionHard *v1beta1.EvictionThreshold, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{EvictionHard: evictionHard},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid supported signals", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi"), NodeFsAvailable: lo.ToPtr("12%"), NodeFsInodesFree: lo.ToPtr("100000")}, true),
+			Entry("valid percentage boundary", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("100%")}, true),
+			Entry("invalid memory quantity", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("invalid")}, false),
+			Entry("node filesystem percentage above 100", &v1beta1.EvictionThreshold{NodeFsAvailable: lo.ToPtr("101%")}, false),
+			Entry("inode byte quantity", &v1beta1.EvictionThreshold{NodeFsInodesFree: lo.ToPtr("100Mi")}, false),
+		)
+
+		DescribeTable("should validate evictionSoft", func(evictionSoft *v1beta1.EvictionThreshold, gracePeriods *v1beta1.EvictionSoftGracePeriod, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{EvictionSoft: evictionSoft, EvictionSoftGracePeriod: gracePeriods},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid supported signals", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi"), NodeFsAvailable: lo.ToPtr("15%")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s")), NodeFsAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("2m"))}, true),
+			Entry("invalid quantity", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("invalid")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))}, false),
+			Entry("duration below minimum", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("1%")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("29s"))}, false),
+		)
+
+		It("should preserve supported fields", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{
+					KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(750))},
+					EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
+					EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))},
+					EvictionMaxPodGracePeriod: lo.ToPtr(int32(60)),
+				}},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			persisted := &v1beta1.AKSNodeClass{}
+			Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), persisted)).To(Succeed())
+			Expect(persisted.Spec.Kubelet.KubeReserved.CPUMillicores).To(Equal(lo.ToPtr(int32(250))))
+		})
+
+		It("should reject mismatched soft eviction and grace period signals", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{
+					EvictionSoft:            &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
+					EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{NodeFsAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))},
+				}},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		It("should reject malformed grace periods before typed decoding", func() {
+			nodeClass := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "karpenter.azure.com/v1beta1",
+				"kind":       "AKSNodeClass",
+				"metadata":   map[string]any{"name": strings.ToLower(randomdata.SillyName())},
+				"spec": map[string]any{"kubelet": map[string]any{
+					"evictionSoft":            map[string]any{"memoryAvailable": "500Mi"},
+					"evictionSoftGracePeriod": map[string]any{"memoryAvailable": "not-a-duration"},
+				}},
+			}}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
 	Context("CapacityReservation", func() {
 		DescribeTable("Should only accept a valid CapacityReservation GroupID", func(crgID string, expected bool) {
 			nodeClass := &v1beta1.AKSNodeClass{
@@ -118,6 +233,68 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("resource group ending with a dot", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/ends.with.dot./providers/Microsoft.Compute/capacityReservationGroups/crg", false),
 			Entry("not a resource ID", "crg", false),
 			Entry("empty group ID", "", false),
+		)
+	})
+	Context("NodePublicIP", func() {
+		const prefixID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/publicIPPrefixes/prefix"
+		routingPreferenceTag := v1beta1.IPTag{IPTagType: "RoutingPreference", Tag: "Internet"}
+
+		DescribeTable("Should only accept a valid nodePublicIP configuration", func(nodePublicIP *v1beta1.NodePublicIP, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					NodePublicIP: nodePublicIP,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("omitted", nil, true),
+			Entry("empty", &v1beta1.NodePublicIP{}, true),
+			Entry("enabled false", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}, true),
+			Entry("enabled true without prefixes", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}, true),
+			Entry("enabled true with one prefix", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}}, true),
+			Entry("prefixes with enabled omitted", &v1beta1.NodePublicIP{PrefixIDs: []string{prefixID}}, false),
+			Entry("prefixes with enabled false", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false), PrefixIDs: []string{prefixID}}, false),
+			Entry("two prefixes", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID, prefixID + "2"}}, false),
+			Entry("one IP tag with enabled true", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{routingPreferenceTag}}, true),
+			Entry("two IP tags with enabled true", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{routingPreferenceTag, {IPTagType: "FirstPartyUsage", Tag: "/Unprivileged"}}}, true),
+			Entry("IP tags with enabled omitted", &v1beta1.NodePublicIP{IPTags: []v1beta1.IPTag{routingPreferenceTag}}, false),
+			Entry("IP tags with enabled false", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false), IPTags: []v1beta1.IPTag{routingPreferenceTag}}, false),
+			Entry("IP tags with a prefix", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}, IPTags: []v1beta1.IPTag{routingPreferenceTag}}, false),
+			Entry("empty ipTagType", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "", Tag: "Internet"}}}, false),
+			Entry("empty tag", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: ""}}}, false),
+			Entry("256-character tag", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: strings.Repeat("a", 256)}}}, true),
+			Entry("257-character tag", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: strings.Repeat("a", 257)}}}, false),
+			Entry("duplicate IP tag", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{routingPreferenceTag, routingPreferenceTag}}, false),
+			Entry("five IP tags", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{
+				{IPTagType: "A", Tag: "1"}, {IPTagType: "A", Tag: "2"}, {IPTagType: "A", Tag: "3"}, {IPTagType: "A", Tag: "4"}, {IPTagType: "A", Tag: "5"},
+			}}, false),
+		)
+		DescribeTable("Should only accept a valid public IP prefix ID", func(prefixID string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					NodePublicIP: &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid prefix ID", prefixID, true),
+			// ARM returns resource IDs with inconsistent casing, so the pattern must be case-insensitive.
+			Entry("uppercase segments", strings.ToUpper(prefixID), true),
+			Entry("public IP address rather than prefix", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/publicIPAddresses/pip", false),
+			Entry("wrong provider namespace", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/publicIPPrefixes/prefix", false),
+			Entry("child resource of the prefix", prefixID+"/child/name", false),
+			Entry("not a resource ID", "prefix", false),
+			Entry("empty prefix ID", "", false),
 		)
 	})
 	Context("VnetSubnetID", func() {
@@ -756,7 +933,8 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("valid default size (128 GB)", lo.ToPtr(int32(128)), true),
 			Entry("valid large size (1024 GB)", lo.ToPtr(int32(1024)), true),
 			Entry("valid maximum size (2048 GB)", lo.ToPtr(int32(2048)), true),
-			Entry("nil value (uses default)", nil, true),
+			Entry("nil value (auto-sized)", nil, true),
+			Entry("zero is explicit and invalid (not auto)", lo.ToPtr(int32(0)), false),
 			Entry("below minimum (29 GB)", lo.ToPtr(int32(29)), false),
 			Entry("above maximum (2049 GB)", lo.ToPtr(int32(2049)), false),
 			Entry("well above maximum (4096 GB)", lo.ToPtr(int32(4096)), false),
@@ -815,12 +993,94 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("Windows2025 when FIPSMode is explicitly FIPS should succeed", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeFIPS, false, true),
 			Entry("Windows2025 when TrustedLaunch is enabled should succeed", v1beta1.Windows2025ImageFamily, nil, true, true),
 			Entry("Windows2025 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeFIPS, true, true),
+			Entry("AzureContainerLinux without security should fail", v1beta1.AzureContainerLinuxImageFamily, nil, false, false),
+			Entry("AzureContainerLinux with FIPS but without security should fail", v1beta1.AzureContainerLinuxImageFamily, &v1beta1.FIPSModeFIPS, false, false),
+			Entry("AzureContainerLinux with only vTPM should fail", v1beta1.AzureContainerLinuxImageFamily, nil, true, false),
+			Entry("AzureContainerLinux with FIPS and only vTPM should fail", v1beta1.AzureContainerLinuxImageFamily, &v1beta1.FIPSModeFIPS, true, false),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly Disabled should succeed", "", &v1beta1.FIPSModeDisabled, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1beta1.FIPSModeFIPS, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when TrustedLaunch is enabled should succeed", "", nil, true, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", "", &v1beta1.FIPSModeFIPS, true, true),
 		)
+
+		DescribeTable("should require explicit AzureContainerLinux security on create and update",
+			func(security *v1beta1.Security, valid bool) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						ImageFamily: lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
+						Security:    security,
+					},
+				}
+				if valid {
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+					Expect(nodeClass.IsVTPMEnabled()).To(BeTrue())
+					Expect(nodeClass.IsSecureBootEnabled()).To(BeTrue())
+				} else {
+					Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("to be explicitly set to true")))
+					nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+					nodeClass.Spec.Security = security
+					Expect(env.Client.Update(ctx, nodeClass)).To(MatchError(ContainSubstring("to be explicitly set to true")))
+				}
+			},
+			Entry("omitted security", nil, false),
+			Entry("empty security", &v1beta1.Security{}, false),
+			Entry("empty Trusted Launch", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{}}, false),
+			Entry("only vTPM enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}}, false),
+			Entry("only Secure Boot enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}}, false),
+			Entry("both enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, true),
+			Entry("vTPM disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false)}}, false),
+			Entry("Secure Boot disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(false)}}, false),
+			Entry("vTPM enabled but Secure Boot disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(false)}}, false),
+			Entry("Secure Boot enabled but vTPM disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(true)}}, false),
+		)
+
+		DescribeTable("should require at least a 60 GB OS disk for AzureContainerLinux", func(size *int32, valid bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:  lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
+					OSDiskSizeGB: size,
+					Security:     &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
+				},
+			}
+			if valid {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+				Expect(nodeClass.Spec.OSDiskSizeGB).To(Equal(size))
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("AzureContainerLinux requires an OS disk of at least 60 GB")))
+			}
+		},
+			Entry("below minimum", lo.ToPtr(int32(59)), false),
+			Entry("minimum", lo.ToPtr(int32(60)), true),
+			Entry("unset (auto-sized)", nil, true),
+		)
+
+		It("should accept AzureContainerLinux FIPS with explicit Secure Boot and vTPM", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
+					FIPSMode:    &v1beta1.FIPSModeFIPS,
+					Security:    &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should reject Kata with AzureContainerLinux", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:     lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
+					WorkloadRuntime: lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation),
+					Security:        &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("workloadRuntime KataVmIsolation requires imageFamily AzureLinux")))
+		})
 	})
 
 	Context("WorkloadRuntime and ImageFamily", func() {
@@ -1001,6 +1261,84 @@ var _ = Describe("CEL/Validation", func() {
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu.nvidia.managementMode set to Managed (default Driver mode)", func() {
+			managed := v1beta1.ManagementModeManaged
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu.nvidia.managementMode set to Unmanaged", func() {
+			unmanaged := v1beta1.ManagementModeUnmanaged
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &unmanaged},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu.nvidia.managementMode=Managed with mode explicitly Driver", func() {
+			managed := v1beta1.ManagementModeManaged
+			driverMode := v1beta1.GPUModeDriver
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode:   &driverMode,
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject gpu.nvidia.managementMode=Managed when mode is None", func() {
+			managed := v1beta1.ManagementModeManaged
+			noneMode := v1beta1.GPUModeNone
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode:   &noneMode,
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept gpu.nvidia.managementMode=Unmanaged with mode None", func() {
+			unmanaged := v1beta1.ManagementModeUnmanaged
+			noneMode := v1beta1.GPUModeNone
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode:   &noneMode,
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &unmanaged},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject invalid gpu.nvidia.managementMode value", func() {
+			invalid := v1beta1.ManagementMode("Invalid")
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &invalid},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 		})
 	})
 
@@ -1277,6 +1615,60 @@ var _ = Describe("CEL/Validation", func() {
 				"accelerator": "test",
 			}
 			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+	})
+
+	Context("Taints", func() {
+		It("should allow the kubernetes.azure.com/scalesetpriority taint", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: v1beta1.AKSLabelScaleSetPriority, Value: "spot", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject kubernetes.azure.com/scalesetpriority taint with non-spot value", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: v1beta1.AKSLabelScaleSetPriority, Value: "regular", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should allow the kubernetes.azure.com/scalesetpriority startup taint", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{Key: v1beta1.AKSLabelScaleSetPriority, Value: "spot", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should allow taints with non-restricted domains", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "example.com/my-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject taints with restricted kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/some-other-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject startup taints with restricted kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/some-other-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
 		})
 	})
 

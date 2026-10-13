@@ -117,12 +117,21 @@ spec:
                 type: object
               imageFamily:
                 default: Ubuntu
-                description: imageFamily is the image family that instances use.
+                description: |-
+                  imageFamily is the image family that instances use.
+                  AzureContainerLinux requires an AKS Machine API provision mode with shared image gallery (SIG) access.
+                  Windows node support for the Windows2022 and Windows2025 image families is in preview and
+                  isn't meant for production. Support is best effort, and changes to APIs or behavior may result
+                  in unstable clusters or downtime. For details, see
+                  https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
                 - Ubuntu2404
                 - AzureLinux
+                - Windows2022
+                - Windows2025
+                - AzureContainerLinux
                 type: string
               kubelet:
                 description: |-
@@ -172,6 +181,107 @@ spec:
                     - none
                     - static
                     type: string
+                  evictionHard:
+                    description: |-
+                      evictionHard configures hard eviction thresholds and overrides Karpenter's computed defaults per field.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+                    properties:
+                      memoryAvailable:
+                        description: memoryAvailable is the available-memory threshold
+                          as an integer Ki, Mi, or Gi quantity or percentage of total
+                          node memory capacity.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsAvailable:
+                        description: nodeFsAvailable is the available-node-filesystem
+                          threshold as an integer Ki, Mi, or Gi quantity or percentage
+                          of total node filesystem capacity.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsInodesFree:
+                        description: nodeFsInodesFree is the free-inodes threshold
+                          as an integer count or percentage of total node filesystem
+                          inodes.
+                        maxLength: 20
+                        pattern: ^([0-9]+|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                    type: object
+                  evictionMaxPodGracePeriod:
+                    description: |-
+                      evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  evictionSoft:
+                    description: |-
+                      evictionSoft configures soft eviction thresholds and overrides Karpenter's computed defaults per field.
+                      Each configured threshold must have a matching field in evictionSoftGracePeriod.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+                    properties:
+                      memoryAvailable:
+                        description: memoryAvailable is the available-memory threshold
+                          as an integer Ki, Mi, or Gi quantity or percentage of total
+                          node memory capacity.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsAvailable:
+                        description: nodeFsAvailable is the available-node-filesystem
+                          threshold as an integer Ki, Mi, or Gi quantity or percentage
+                          of total node filesystem capacity.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsInodesFree:
+                        description: nodeFsInodesFree is the free-inodes threshold
+                          as an integer count or percentage of total node filesystem
+                          inodes.
+                        maxLength: 20
+                        pattern: ^([0-9]+|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                    type: object
+                  evictionSoftGracePeriod:
+                    description: |-
+                      evictionSoftGracePeriod configures grace periods for soft eviction signals.
+                      Each configured grace period must have a matching field in evictionSoft.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+                    properties:
+                      memoryAvailable:
+                        description: memoryAvailable is the grace period for the memoryAvailable
+                          signal.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: memoryAvailable must be a valid duration of at
+                            least 30s
+                          rule: duration(self) >= duration('30s')
+                      nodeFsAvailable:
+                        description: nodeFsAvailable is the grace period for the nodeFsAvailable
+                          signal.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: nodeFsAvailable must be a valid duration of at
+                            least 30s
+                          rule: duration(self) >= duration('30s')
+                      nodeFsInodesFree:
+                        description: nodeFsInodesFree is the grace period for the
+                          nodeFsInodesFree signal.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: nodeFsInodesFree must be a valid duration of at
+                            least 30s
+                          rule: duration(self) >= duration('30s')
+                    type: object
                   failSwapOn:
                     description: |-
                       failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
@@ -200,6 +310,26 @@ spec:
                     maximum: 100
                     minimum: 0
                     type: integer
+                  kubeReserved:
+                    description: |-
+                      kubeReserved configures resources reserved for Kubernetes system daemons and overrides Karpenter's computed defaults per field.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+                    properties:
+                      cpuMillicores:
+                        description: cpuMillicores is the CPU reservation in millicores.
+                        format: int32
+                        maximum: 2147483647
+                        minimum: 140
+                        type: integer
+                      memoryMB:
+                        description: memoryMB is the memory reservation in MiB.
+                        format: int32
+                        maximum: 2147483647
+                        minimum: 750
+                        type: integer
+                    type: object
                   podPidsLimit:
                     description: |-
                       podPidsLimit is the maximum number of PIDs in any pod.
@@ -230,6 +360,21 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+                - message: evictionSoft.memoryAvailable and evictionSoftGracePeriod.memoryAvailable
+                    must be configured together
+                  rule: 'has(self.evictionSoft) && has(self.evictionSoft.memoryAvailable)
+                    ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.memoryAvailable)
+                    : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.memoryAvailable)'
+                - message: evictionSoft.nodeFsAvailable and evictionSoftGracePeriod.nodeFsAvailable
+                    must be configured together
+                  rule: 'has(self.evictionSoft) && has(self.evictionSoft.nodeFsAvailable)
+                    ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.nodeFsAvailable)
+                    : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.nodeFsAvailable)'
+                - message: evictionSoft.nodeFsInodesFree and evictionSoftGracePeriod.nodeFsInodesFree
+                    must be configured together
+                  rule: 'has(self.evictionSoft) && has(self.evictionSoft.nodeFsInodesFree)
+                    ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.nodeFsInodesFree)
+                    : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.nodeFsInodesFree)'
               linuxOSConfig:
                 description: |-
                   linuxOSConfig specifies OS settings for Linux agent nodes.
@@ -753,9 +898,84 @@ spec:
                 maximum: 250
                 minimum: 10
                 type: integer
+              nodePublicIP:
+                description: |-
+                  nodePublicIP configures an instance-level public IP address for each node
+                  provisioned by this NodeClass.
+                properties:
+                  enabled:
+                    description: |-
+                      enabled requests a dedicated public IP address for each node.
+                      If omitted or false, nodes don't get a public IP address.
+                      Node public IP is supported only in the AKS Machine API provision modes
+                      (aksmachineapi and aksmachineapiheaderbatch). In other provision modes, setting
+                      enabled to true makes the NodeClass not ready, with the ValidationSucceeded
+                      condition reporting the reason.
+                    type: boolean
+                  ipTags:
+                    description: |-
+                      ipTags are the IP tags set on each node's public IP address, for example
+                      {ipTagType: RoutingPreference, tag: Internet}. They aren't Azure resource tags, and they
+                      can't be changed on an existing address. Requires enabled to be true, and can't be
+                      combined with prefixIDs.
+                    items:
+                      description: IPTag is an IP tag on a public IP address.
+                      properties:
+                        ipTagType:
+                          description: ipTagType is the type of the IP tag, for example
+                            RoutingPreference.
+                          maxLength: 256
+                          minLength: 1
+                          type: string
+                        tag:
+                          description: tag is the value of the IP tag, for example
+                            Internet.
+                          maxLength: 256
+                          minLength: 1
+                          type: string
+                      required:
+                      - ipTagType
+                      - tag
+                      type: object
+                    maxItems: 4
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                    x-kubernetes-validations:
+                    - message: nodePublicIP.ipTags entries must be unique
+                      rule: self.all(t, self.exists_one(u, u.ipTagType == t.ipTagType
+                        && u.tag == t.tag))
+                  prefixIDs:
+                    description: |-
+                      prefixIDs are the ARM resource IDs of the public IP prefixes that node public IP
+                      addresses are allocated from. If omitted, each node gets a public IP address that
+                      isn't from a prefix. At most one prefix is supported, and it must be an IPv4 prefix
+                      in the cluster's subscription. Requires enabled to be true.
+                      A zonal prefix allocates addresses only for nodes in its zone; a zone-redundant
+                      prefix works for any node. Karpenter doesn't check this, so every NodePool using
+                      a zonal prefix must restrict topology.kubernetes.io/zone to the prefix's zone.
+                    items:
+                      pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/publicIPPrefixes\/[^\/]+$
+                      type: string
+                    maxItems: 1
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
+                x-kubernetes-validations:
+                - message: nodePublicIP.prefixIDs requires nodePublicIP.enabled to
+                    be true
+                  rule: '!has(self.prefixIDs) || (has(self.enabled) && self.enabled)'
+                - message: nodePublicIP.ipTags requires nodePublicIP.enabled to be
+                    true
+                  rule: '!has(self.ipTags) || (has(self.enabled) && self.enabled)'
+                - message: nodePublicIP.ipTags can't be combined with nodePublicIP.prefixIDs
+                  rule: '!has(self.ipTags) || !has(self.prefixIDs)'
               osDiskSizeGB:
-                default: 128
-                description: osDiskSizeGB is the size of the OS disk in GB.
+                description: |-
+                  osDiskSizeGB is the size of the OS disk in GB.
+                  If not specified, it is auto-sized per instance type: an ephemeral OS disk at the largest
+                  SKU-supported size (max 2040 GB) when possible, otherwise a managed OS disk sized by vCPU count.
                 format: int32
                 maximum: 2048
                 minimum: 30
@@ -784,12 +1004,14 @@ spec:
                       provisioned nodes.
                     properties:
                       secureBoot:
-                        description: secureBoot specifies whether Secure Boot should
-                          be enabled for provisioned nodes.
+                        description: |-
+                          secureBoot specifies whether Secure Boot should be enabled for provisioned nodes.
+                          AzureContainerLinux requires this field to be explicitly set to true.
                         type: boolean
                       vtpm:
-                        description: vtpm specifies whether virtual TPM should be
-                          enabled for provisioned nodes.
+                        description: |-
+                          vtpm specifies whether virtual TPM should be enabled for provisioned nodes.
+                          AzureContainerLinux requires this field to be explicitly set to true.
                         type: boolean
                     type: object
                 type: object
@@ -858,14 +1080,45 @@ spec:
             - message: FIPS is not yet supported for Ubuntu2404
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2404'') : true'
-            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
-                and Ubuntu2204
+            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu,
+                Ubuntu2204, Windows2025, and AzureContainerLinux
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
                 && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
-                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204'')
+                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''
+                || self.imageFamily == ''Windows2025'' || self.imageFamily == ''AzureContainerLinux'')
                 : true'
+            - message: FIPS is not supported for Windows2022
+              rule: '!has(self.fipsMode) || self.fipsMode != ''FIPS'' || !has(self.imageFamily)
+                || self.imageFamily != ''Windows2022'''
+            - message: fipsMode must be FIPS or omitted for Windows2025
+              rule: '!has(self.imageFamily) || self.imageFamily != ''Windows2025''
+                || !has(self.fipsMode) || self.fipsMode == ''FIPS'''
+            - message: TrustedLaunch is not supported for Windows2022
+              rule: '!has(self.imageFamily) || self.imageFamily != ''Windows2022''
+                || !has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot))'
+            - message: linuxOSConfig is not supported for Windows image families
+              rule: '!has(self.linuxOSConfig) || !has(self.imageFamily) || !(self.imageFamily
+                in [''Windows2022'',''Windows2025''])'
+            - message: artifactStreaming is not supported for Windows image families
+              rule: '!has(self.artifactStreaming) || !has(self.artifactStreaming.enabled)
+                || self.artifactStreaming.enabled == false || !has(self.imageFamily)
+                || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
+            - message: localDNS is not supported for Windows image families
+              rule: '!has(self.localDNS) || self.localDNS.mode == ''Disabled'' ||
+                !has(self.imageFamily) || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
+            - message: AzureContainerLinux requires security.trustedLaunch.vtpm and
+                security.trustedLaunch.secureBoot to be explicitly set to true
+              rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
+                || (has(self.security) && has(self.security.trustedLaunch) && has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm && has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot)'
+            - message: AzureContainerLinux requires an OS disk of at least 60 GB
+              rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
+                || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
@@ -1235,10 +1488,45 @@ spec:
                     - Driver
                     - None
                     type: string
+                  nvidia:
+                    description: |-
+                      nvidia contains NVIDIA-specific GPU settings, such as the managed GPU
+                      experience. Ignored for non-NVIDIA VM sizes.
+                    properties:
+                      managementMode:
+                        description: |-
+                          managementMode toggles the managed GPU experience for NVIDIA GPUs.
+                          When set to Managed, AKS installs additional components (e.g. DCGM metrics
+                          and the NVIDIA device plugin) on top of the GPU driver. When set to
+                          Unmanaged (or not specified), only the GPU driver is installed and managing
+                          the device plugin/metrics is the user's responsibility.
+                          Managed requires gpu.mode to be Driver (driver installation enabled) and is
+                          only supported on NVIDIA GPU SKUs running Linux.
+                          The managed experience requires an AKS Machine API provision mode
+                          (aksmachineapi or aksmachineapiheaderbatch); other provision modes report a
+                          NodeClass validation failure.
+                          For more details of what is installed, see aka.ms/aks/managed-gpu.
+                        enum:
+                        - Managed
+                        - Unmanaged
+                        type: string
+                    type: object
                 type: object
+                x-kubernetes-validations:
+                - message: gpu.nvidia.managementMode 'Managed' requires gpu.mode to
+                    be 'Driver' (the managed GPU experience requires driver installation)
+                  rule: '!(has(self.nvidia) && has(self.nvidia.managementMode) &&
+                    self.nvidia.managementMode == ''Managed'' && has(self.mode) &&
+                    self.mode == ''None'')'
               imageFamily:
                 default: Ubuntu
-                description: imageFamily is the image family that instances use.
+                description: |-
+                  imageFamily is the image family that instances use.
+                  AzureContainerLinux requires an AKS Machine API provision mode with shared image gallery (SIG) access.
+                  Windows node support for the Windows2022 and Windows2025 image families is in preview and
+                  isn't meant for production. Support is best effort, and changes to APIs or behavior may result
+                  in unstable clusters or downtime. For details, see
+                  https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
@@ -1246,6 +1534,7 @@ spec:
                 - AzureLinux
                 - Windows2022
                 - Windows2025
+                - AzureContainerLinux
                 type: string
               kubelet:
                 description: |-
@@ -1295,6 +1584,107 @@ spec:
                     - none
                     - static
                     type: string
+                  evictionHard:
+                    description: |-
+                      evictionHard configures hard eviction thresholds and overrides Karpenter's computed defaults per field.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+                    properties:
+                      memoryAvailable:
+                        description: memoryAvailable is the available-memory threshold
+                          as an integer Ki, Mi, or Gi quantity or percentage of total
+                          node memory capacity.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsAvailable:
+                        description: nodeFsAvailable is the available-node-filesystem
+                          threshold as an integer Ki, Mi, or Gi quantity or percentage
+                          of total node filesystem capacity.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsInodesFree:
+                        description: nodeFsInodesFree is the free-inodes threshold
+                          as an integer count or percentage of total node filesystem
+                          inodes.
+                        maxLength: 20
+                        pattern: ^([0-9]+|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                    type: object
+                  evictionMaxPodGracePeriod:
+                    description: |-
+                      evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  evictionSoft:
+                    description: |-
+                      evictionSoft configures soft eviction thresholds and overrides Karpenter's computed defaults per field.
+                      Each configured threshold must have a matching field in evictionSoftGracePeriod.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+                    properties:
+                      memoryAvailable:
+                        description: memoryAvailable is the available-memory threshold
+                          as an integer Ki, Mi, or Gi quantity or percentage of total
+                          node memory capacity.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsAvailable:
+                        description: nodeFsAvailable is the available-node-filesystem
+                          threshold as an integer Ki, Mi, or Gi quantity or percentage
+                          of total node filesystem capacity.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsInodesFree:
+                        description: nodeFsInodesFree is the free-inodes threshold
+                          as an integer count or percentage of total node filesystem
+                          inodes.
+                        maxLength: 20
+                        pattern: ^([0-9]+|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                    type: object
+                  evictionSoftGracePeriod:
+                    description: |-
+                      evictionSoftGracePeriod configures grace periods for soft eviction signals.
+                      Each configured grace period must have a matching field in evictionSoft.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+                    properties:
+                      memoryAvailable:
+                        description: memoryAvailable is the grace period for the memoryAvailable
+                          signal.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: memoryAvailable must be a valid duration of at
+                            least 30s
+                          rule: duration(self) >= duration('30s')
+                      nodeFsAvailable:
+                        description: nodeFsAvailable is the grace period for the nodeFsAvailable
+                          signal.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: nodeFsAvailable must be a valid duration of at
+                            least 30s
+                          rule: duration(self) >= duration('30s')
+                      nodeFsInodesFree:
+                        description: nodeFsInodesFree is the grace period for the
+                          nodeFsInodesFree signal.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: nodeFsInodesFree must be a valid duration of at
+                            least 30s
+                          rule: duration(self) >= duration('30s')
+                    type: object
                   failSwapOn:
                     description: |-
                       failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
@@ -1323,6 +1713,26 @@ spec:
                     maximum: 100
                     minimum: 0
                     type: integer
+                  kubeReserved:
+                    description: |-
+                      kubeReserved configures resources reserved for Kubernetes system daemons and overrides Karpenter's computed defaults per field.
+                      Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+                      and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+                      https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+                    properties:
+                      cpuMillicores:
+                        description: cpuMillicores is the CPU reservation in millicores.
+                        format: int32
+                        maximum: 2147483647
+                        minimum: 140
+                        type: integer
+                      memoryMB:
+                        description: memoryMB is the memory reservation in MiB.
+                        format: int32
+                        maximum: 2147483647
+                        minimum: 750
+                        type: integer
+                    type: object
                   podPidsLimit:
                     description: |-
                       podPidsLimit is the maximum number of PIDs in any pod.
@@ -1353,6 +1763,21 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+                - message: evictionSoft.memoryAvailable and evictionSoftGracePeriod.memoryAvailable
+                    must be configured together
+                  rule: 'has(self.evictionSoft) && has(self.evictionSoft.memoryAvailable)
+                    ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.memoryAvailable)
+                    : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.memoryAvailable)'
+                - message: evictionSoft.nodeFsAvailable and evictionSoftGracePeriod.nodeFsAvailable
+                    must be configured together
+                  rule: 'has(self.evictionSoft) && has(self.evictionSoft.nodeFsAvailable)
+                    ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.nodeFsAvailable)
+                    : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.nodeFsAvailable)'
+                - message: evictionSoft.nodeFsInodesFree and evictionSoftGracePeriod.nodeFsInodesFree
+                    must be configured together
+                  rule: 'has(self.evictionSoft) && has(self.evictionSoft.nodeFsInodesFree)
+                    ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.nodeFsInodesFree)
+                    : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.nodeFsInodesFree)'
               linuxOSConfig:
                 description: |-
                   linuxOSConfig specifies OS settings for Linux agent nodes.
@@ -1876,9 +2301,84 @@ spec:
                 maximum: 250
                 minimum: 10
                 type: integer
+              nodePublicIP:
+                description: |-
+                  nodePublicIP configures an instance-level public IP address for each node
+                  provisioned by this NodeClass.
+                properties:
+                  enabled:
+                    description: |-
+                      enabled requests a dedicated public IP address for each node.
+                      If omitted or false, nodes don't get a public IP address.
+                      Node public IP is supported only in the AKS Machine API provision modes
+                      (aksmachineapi and aksmachineapiheaderbatch). In other provision modes, setting
+                      enabled to true makes the NodeClass not ready, with the ValidationSucceeded
+                      condition reporting the reason.
+                    type: boolean
+                  ipTags:
+                    description: |-
+                      ipTags are the IP tags set on each node's public IP address, for example
+                      {ipTagType: RoutingPreference, tag: Internet}. They aren't Azure resource tags, and they
+                      can't be changed on an existing address. Requires enabled to be true, and can't be
+                      combined with prefixIDs.
+                    items:
+                      description: IPTag is an IP tag on a public IP address.
+                      properties:
+                        ipTagType:
+                          description: ipTagType is the type of the IP tag, for example
+                            RoutingPreference.
+                          maxLength: 256
+                          minLength: 1
+                          type: string
+                        tag:
+                          description: tag is the value of the IP tag, for example
+                            Internet.
+                          maxLength: 256
+                          minLength: 1
+                          type: string
+                      required:
+                      - ipTagType
+                      - tag
+                      type: object
+                    maxItems: 4
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                    x-kubernetes-validations:
+                    - message: nodePublicIP.ipTags entries must be unique
+                      rule: self.all(t, self.exists_one(u, u.ipTagType == t.ipTagType
+                        && u.tag == t.tag))
+                  prefixIDs:
+                    description: |-
+                      prefixIDs are the ARM resource IDs of the public IP prefixes that node public IP
+                      addresses are allocated from. If omitted, each node gets a public IP address that
+                      isn't from a prefix. At most one prefix is supported, and it must be an IPv4 prefix
+                      in the cluster's subscription. Requires enabled to be true.
+                      A zonal prefix allocates addresses only for nodes in its zone; a zone-redundant
+                      prefix works for any node. Karpenter doesn't check this, so every NodePool using
+                      a zonal prefix must restrict topology.kubernetes.io/zone to the prefix's zone.
+                    items:
+                      pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/publicIPPrefixes\/[^\/]+$
+                      type: string
+                    maxItems: 1
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
+                x-kubernetes-validations:
+                - message: nodePublicIP.prefixIDs requires nodePublicIP.enabled to
+                    be true
+                  rule: '!has(self.prefixIDs) || (has(self.enabled) && self.enabled)'
+                - message: nodePublicIP.ipTags requires nodePublicIP.enabled to be
+                    true
+                  rule: '!has(self.ipTags) || (has(self.enabled) && self.enabled)'
+                - message: nodePublicIP.ipTags can't be combined with nodePublicIP.prefixIDs
+                  rule: '!has(self.ipTags) || !has(self.prefixIDs)'
               osDiskSizeGB:
-                default: 128
-                description: osDiskSizeGB is the size of the OS disk in GB.
+                description: |-
+                  osDiskSizeGB is the size of the OS disk in GB.
+                  If not specified, it is auto-sized per instance type: an ephemeral OS disk at the largest
+                  SKU-supported size (max 2040 GB) when possible, otherwise a managed OS disk sized by vCPU count.
                 format: int32
                 maximum: 2048
                 minimum: 30
@@ -1907,12 +2407,14 @@ spec:
                       provisioned nodes.
                     properties:
                       secureBoot:
-                        description: secureBoot specifies whether Secure Boot should
-                          be enabled for provisioned nodes.
+                        description: |-
+                          secureBoot specifies whether Secure Boot should be enabled for provisioned nodes.
+                          AzureContainerLinux requires this field to be explicitly set to true.
                         type: boolean
                       vtpm:
-                        description: vtpm specifies whether virtual TPM should be
-                          enabled for provisioned nodes.
+                        description: |-
+                          vtpm specifies whether virtual TPM should be enabled for provisioned nodes.
+                          AzureContainerLinux requires this field to be explicitly set to true.
                         type: boolean
                     type: object
                 type: object
@@ -1982,13 +2484,14 @@ spec:
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2404'') : true'
             - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu,
-                Ubuntu2204, and Windows2025
+                Ubuntu2204, Windows2025, and AzureContainerLinux
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
                 && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
                 || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''
-                || self.imageFamily == ''Windows2025'') : true'
+                || self.imageFamily == ''Windows2025'' || self.imageFamily == ''AzureContainerLinux'')
+                : true'
             - message: FIPS is not supported for Windows2022
               rule: '!has(self.fipsMode) || self.fipsMode != ''FIPS'' || !has(self.imageFamily)
                 || self.imageFamily != ''Windows2022'''
@@ -2010,6 +2513,15 @@ spec:
             - message: localDNS is not supported for Windows image families
               rule: '!has(self.localDNS) || self.localDNS.mode == ''Disabled'' ||
                 !has(self.imageFamily) || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
+            - message: AzureContainerLinux requires security.trustedLaunch.vtpm and
+                security.trustedLaunch.secureBoot to be explicitly set to true
+              rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
+                || (has(self.security) && has(self.security.trustedLaunch) && has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm && has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot)'
+            - message: AzureContainerLinux requires an OS disk of at least 60 GB
+              rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
+                || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
