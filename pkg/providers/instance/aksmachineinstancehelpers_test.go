@@ -928,7 +928,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		It("should configure supported reservation and eviction overrides", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+				KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
 				EvictionHard: &v1beta1.EvictionThreshold{
 					MemoryAvailable:  lo.ToPtr("333Mi"),
 					NodeFsAvailable:  lo.ToPtr("12%"),
@@ -950,7 +950,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			config := configureKubeletConfig(nodeClass)
 
 			Expect(*config.KubeReserved.CPUMillicores).To(Equal(int32(250)))
-			Expect(*config.KubeReserved.MemoryMB).To(Equal(int32(512)))
+			Expect(*config.KubeReserved.MemoryMB).To(Equal(int32(1024)))
 			Expect(*config.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
 			Expect(*config.HardEvictionThreshold.NodeFsAvailable).To(Equal("12%"))
 			Expect(*config.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))

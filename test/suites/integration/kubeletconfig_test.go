@@ -33,7 +33,7 @@ import (
 var _ = Describe("KubeletConfig", func() {
 	It("should apply kubeReserved, evictionHard, and evictionSoft overrides to the node", func() {
 		nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-			KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+			KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
 			EvictionHard: &v1beta1.EvictionThreshold{
 				MemoryAvailable:  lo.ToPtr("333Mi"),
 				NodeFsAvailable:  lo.ToPtr("12%"),
@@ -61,7 +61,7 @@ var _ = Describe("KubeletConfig", func() {
 		flags := env.EventuallyGetPodLogs(verifyPod)
 		Expect(flags).To(ContainSubstring("--kube-reserved="))
 		Expect(flags).To(ContainSubstring("cpu=250m"))
-		Expect(flags).To(ContainSubstring("memory=512Mi"))
+		Expect(flags).To(ContainSubstring("memory=1024Mi"))
 		Expect(flags).To(ContainSubstring("--eviction-hard="))
 		Expect(flags).To(ContainSubstring("memory.available<333Mi"))
 		Expect(flags).To(ContainSubstring("nodefs.available<12%"))
