@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,8 +32,8 @@ import (
 
 var _ = Describe("KubeletConfig", func() {
 	It("should apply kubeReserved, evictionHard, and evictionSoft overrides to the node", func() {
-		if reason := kubeletOverrideE2ESkipReason(env); reason != "" {
-			Skip(reason)
+		if !env.IsAKSMachineAPIMode() {
+			Skip("this E2E requires an AKS Machine API provision mode")
 		}
 
 		nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
@@ -78,13 +77,6 @@ var _ = Describe("KubeletConfig", func() {
 		Expect(flags).To(ContainSubstring("--eviction-max-pod-grace-period=120"))
 	})
 })
-
-func kubeletOverrideE2ESkipReason(testEnv *azure.Environment) string {
-	if testEnv.IsAKSMachineAPIMode() {
-		return ""
-	}
-	return "this E2E requires aksmachineapi or aksmachineapiheaderbatch"
-}
 
 func createKubeletFlagsVerificationPod(nodeName string) *corev1.Pod {
 	pod := env.Pod(coretest.PodOptions{
