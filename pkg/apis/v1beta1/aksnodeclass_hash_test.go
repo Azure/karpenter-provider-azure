@@ -104,7 +104,7 @@ var _ = Describe("Hash", func() {
 		Entry("ImageFamily", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
 		Entry("Kubelet.KubeReserved.CPUMillicores", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250))}}}}),
-		Entry("Kubelet.KubeReserved.MemoryMB", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{MemoryMB: lo.ToPtr(int32(512))}}}}),
+		Entry("Kubelet.KubeReserved.MemoryMB", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{MemoryMB: lo.ToPtr(int32(1024))}}}}),
 		Entry("Kubelet.EvictionHard.MemoryAvailable", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")}}}}),
 		Entry("Kubelet.EvictionHard.NodeFsAvailable", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{NodeFsAvailable: lo.ToPtr("15%")}}}}),
 		Entry("Kubelet.EvictionHard.NodeFsInodesFree", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{NodeFsInodesFree: lo.ToPtr("5%")}}}}),

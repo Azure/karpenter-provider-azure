@@ -1709,7 +1709,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// AKSNodeClass without opting in to hardening.
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 					EvictionHard: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi")},
-					KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+					KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
 				}
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1727,7 +1727,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).To(ContainSubstring("pid.available<2000"))
 				// Customer kube-reserved values win per key; pid inherits from
 				// Karpenter's baseline (KubeReservedPIDs).
-				ExpectKubeReservedResources(customData, "cpu=250m", "memory=512Mi", "pid=1000")
+				ExpectKubeReservedResources(customData, "cpu=250m", "memory=1024Mi", "pid=1000")
 			})
 
 			It("should let AKSNodeClass.spec.kubelet overrides win over node hardening defaults", func() {
@@ -1745,7 +1745,7 @@ var _ = Describe("InstanceType Provider", func() {
 					EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("444Mi")},
 					EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))},
 					EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
-					KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+					KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
 				}
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1763,7 +1763,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).To(ContainSubstring("enforce-node-allocatable=pods,kube-reserved,system-reserved"))
 				// Customer kube-reserved values win per key; hardening omits the
 				// legacy PID reservation.
-				ExpectKubeReservedResources(customData, "cpu=250m", "memory=512Mi")
+				ExpectKubeReservedResources(customData, "cpu=250m", "memory=1024Mi")
 			})
 		})
 
@@ -3463,13 +3463,13 @@ var _ = Describe("InstanceType Provider", func() {
 					nodeFsPercentage float32
 					capacity         string
 				}{
-					{name: "auto-sized", cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "1600G"},
-					{name: "explicit size", diskSizeGB: lo.ToPtr[int32](128), cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "128G"},
-					{name: "managed default", diskType: lo.ToPtr(v1beta1.OSDiskTypeManaged), cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "1024G"},
-					{name: "Trusted Launch auto-sized", security: &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "1599G"},
+					{name: "auto-sized", cpuMillicores: 250, memoryMB: 1024, nodeFsPercentage: 12, capacity: "1600G"},
+					{name: "explicit size", diskSizeGB: lo.ToPtr[int32](128), cpuMillicores: 250, memoryMB: 1024, nodeFsPercentage: 12, capacity: "128G"},
+					{name: "managed default", diskType: lo.ToPtr(v1beta1.OSDiskTypeManaged), cpuMillicores: 250, memoryMB: 1024, nodeFsPercentage: 12, capacity: "1024G"},
+					{name: "Trusted Launch auto-sized", security: &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, cpuMillicores: 250, memoryMB: 1024, nodeFsPercentage: 12, capacity: "1599G"},
 					{name: "reservation overrides changed", cpuMillicores: 500, memoryMB: 1024, nodeFsPercentage: 12, capacity: "1600G"},
-					{name: "eviction override changed", cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 15, capacity: "1600G"},
-					{name: "original cache entry reused", cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "1600G"},
+					{name: "eviction override changed", cpuMillicores: 250, memoryMB: 1024, nodeFsPercentage: 15, capacity: "1600G"},
+					{name: "original cache entry reused", cpuMillicores: 250, memoryMB: 1024, nodeFsPercentage: 12, capacity: "1600G"},
 				}
 				for _, entry := range cases {
 					By(entry.name)
