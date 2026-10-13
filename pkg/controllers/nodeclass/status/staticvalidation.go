@@ -244,55 +244,41 @@ func (r *StaticValidationReconciler) validateNodePublicIPProvisionMode(ctx conte
 	return pass(), nil
 }
 
+//nolint:gocyclo // Keep the required leaf-pointer checks local and deterministically ordered.
 func (r *StaticValidationReconciler) validateKubeletOverrideProvisionMode(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
-	fields := configuredKubeletOverrideFields(nodeClass.Spec.Kubelet)
-	providerOptions := options.FromContext(ctx)
-	if len(fields) == 0 || providerOptions.SupportsKubeletResourceAndEvictionOverrides() {
+	kubelet := nodeClass.Spec.Kubelet
+	if kubelet == nil || options.FromContext(ctx).IsAKSMachineAPIMode() {
 		return pass(), nil
 	}
-	return fail(
-		KubeletOverridesUnsupportedProvisionMode,
-		fmt.Sprintf(
-			"kubelet override fields [%s] are not supported with provision-mode %q",
-			strings.Join(fields, ", "),
-			providerOptions.ProvisionMode,
-		),
-	), nil
-}
 
-func configuredKubeletOverrideFields(kubelet *v1beta1.KubeletConfiguration) []string {
-	if kubelet == nil {
-		return nil
-	}
 	fields := make([]string, 0, 5)
-	if hasConfiguredKubeReserved(kubelet.KubeReserved) {
+	if kubelet.KubeReserved != nil && (kubelet.KubeReserved.CPUMillicores != nil || kubelet.KubeReserved.MemoryMB != nil) {
 		fields = append(fields, "spec.kubelet.kubeReserved")
 	}
-	if hasConfiguredEvictionThreshold(kubelet.EvictionHard) {
+	if kubelet.EvictionHard != nil && (kubelet.EvictionHard.MemoryAvailable != nil || kubelet.EvictionHard.NodeFsAvailable != nil || kubelet.EvictionHard.NodeFsInodesFree != nil) {
 		fields = append(fields, "spec.kubelet.evictionHard")
 	}
-	if hasConfiguredEvictionThreshold(kubelet.EvictionSoft) {
+	if kubelet.EvictionSoft != nil && (kubelet.EvictionSoft.MemoryAvailable != nil || kubelet.EvictionSoft.NodeFsAvailable != nil || kubelet.EvictionSoft.NodeFsInodesFree != nil) {
 		fields = append(fields, "spec.kubelet.evictionSoft")
 	}
-	if hasConfiguredEvictionSoftGracePeriod(kubelet.EvictionSoftGracePeriod) {
+	if kubelet.EvictionSoftGracePeriod != nil && (kubelet.EvictionSoftGracePeriod.MemoryAvailable != nil || kubelet.EvictionSoftGracePeriod.NodeFsAvailable != nil || kubelet.EvictionSoftGracePeriod.NodeFsInodesFree != nil) {
 		fields = append(fields, "spec.kubelet.evictionSoftGracePeriod")
 	}
 	if kubelet.EvictionMaxPodGracePeriod != nil {
 		fields = append(fields, "spec.kubelet.evictionMaxPodGracePeriod")
 	}
-	return fields
-}
+	if len(fields) == 0 {
+		return pass(), nil
+	}
 
-func hasConfiguredKubeReserved(kubeReserved *v1beta1.KubeReserved) bool {
-	return kubeReserved != nil && (kubeReserved.CPUMillicores != nil || kubeReserved.MemoryMB != nil)
-}
-
-func hasConfiguredEvictionThreshold(threshold *v1beta1.EvictionThreshold) bool {
-	return threshold != nil && (threshold.MemoryAvailable != nil || threshold.NodeFsAvailable != nil || threshold.NodeFsInodesFree != nil)
-}
-
-func hasConfiguredEvictionSoftGracePeriod(gracePeriod *v1beta1.EvictionSoftGracePeriod) bool {
-	return gracePeriod != nil && (gracePeriod.MemoryAvailable != nil || gracePeriod.NodeFsAvailable != nil || gracePeriod.NodeFsInodesFree != nil)
+	return fail(
+		KubeletOverridesUnsupportedProvisionMode,
+		fmt.Sprintf(
+			"kubelet override fields [%s] are not supported with provision-mode %q",
+			strings.Join(fields, ", "),
+			options.FromContext(ctx).ProvisionMode,
+		),
+	), nil
 }
 
 func (r *StaticValidationReconciler) validateKataImageFamily(_ context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {

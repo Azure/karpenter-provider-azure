@@ -46,10 +46,3 @@ func (o *Options) SupportsWorkloadRuntime() bool {
 func (o *Options) SupportsNodePublicIP() bool {
 	return o.IsAKSMachineAPIMode()
 }
-
-// SupportsKubeletResourceAndEvictionOverrides reports whether the configured provision mode carries
-// kubelet resource and eviction overrides. Scriptless renders them as kubelet flags, and the AKS
-// machine API carries them in its kubelet profile; the bootstrapping client omits these fields.
-func (o *Options) SupportsKubeletResourceAndEvictionOverrides() bool {
-	return o.ProvisionMode == consts.ProvisionModeAKSScriptless || o.IsAKSMachineAPIMode()
-}
