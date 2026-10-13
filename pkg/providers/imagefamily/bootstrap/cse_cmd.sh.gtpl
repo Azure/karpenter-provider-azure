@@ -154,5 +154,6 @@ IS_KATA="{{.IsKata}}"
 MCR_REPOSITORY_BASE="mcr.microsoft.com"
 ENABLE_IMDS_RESTRICTION=false
 INSERT_IMDS_RESTRICTION_RULE_TO_MANGLE_TABLE=false
+ENABLE_KUBELET_SERVING_CERTIFICATE_ROTATION=true
 CSE_TIMEOUT=15m
 /usr/bin/nohup /bin/bash -c "/bin/bash /opt/azure/containers/provision_start.sh"
