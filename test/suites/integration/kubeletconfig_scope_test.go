@@ -24,31 +24,21 @@ import (
 )
 
 func TestKubeletOverrideE2ESkipReason(t *testing.T) {
-	const unsupportedModeReason = "this E2E requires an explicitly resolved provision mode that supports kubelet resource and eviction overrides"
+	const unsupportedModeReason = "this E2E requires aksmachineapi or aksmachineapiheaderbatch"
 
 	tests := []struct {
-		name                       string
-		provisionMode              string
-		provisionModeExplicitlySet bool
-		expectedReason             string
+		provisionMode  string
+		expectedReason string
 	}{
-		{name: "explicit AKS Scriptless", provisionMode: consts.ProvisionModeAKSScriptless, provisionModeExplicitlySet: true},
-		{name: "AKS Machine API", provisionMode: consts.ProvisionModeAKSMachineAPI, provisionModeExplicitlySet: true},
-		{name: "AKS Machine API header batch", provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, provisionModeExplicitlySet: true},
-		{name: "BootstrappingClient", provisionMode: consts.ProvisionModeBootstrappingClient, provisionModeExplicitlySet: true, expectedReason: unsupportedModeReason},
-		{name: "unresolved defaulted AKS Scriptless", provisionMode: consts.ProvisionModeAKSScriptless, expectedReason: unsupportedModeReason},
-		{name: "unresolved AKS Machine API", provisionMode: consts.ProvisionModeAKSMachineAPI, expectedReason: unsupportedModeReason},
-		{name: "unresolved AKS Machine API header batch", provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, expectedReason: unsupportedModeReason},
-		{name: "empty", provisionMode: "", expectedReason: unsupportedModeReason},
-		{name: "unknown", provisionMode: "unknown", provisionModeExplicitlySet: true, expectedReason: unsupportedModeReason},
+		{provisionMode: consts.ProvisionModeAKSMachineAPI, expectedReason: ""},
+		{provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, expectedReason: ""},
+		{provisionMode: consts.ProvisionModeBootstrappingClient, expectedReason: unsupportedModeReason},
+		{provisionMode: consts.ProvisionModeAKSScriptless, expectedReason: unsupportedModeReason},
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			testEnv := &azure.Environment{
-				ProvisionMode:              test.provisionMode,
-				ProvisionModeExplicitlySet: test.provisionModeExplicitlySet,
-			}
+		t.Run(test.provisionMode, func(t *testing.T) {
+			testEnv := &azure.Environment{ProvisionMode: test.provisionMode}
 			if reason := kubeletOverrideE2ESkipReason(testEnv); reason != test.expectedReason {
 				t.Fatalf("expected skip reason %q, got %q", test.expectedReason, reason)
 			}
