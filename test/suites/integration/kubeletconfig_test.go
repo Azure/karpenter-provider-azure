@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
@@ -80,10 +81,11 @@ var _ = Describe("KubeletConfig", func() {
 })
 
 func kubeletOverrideE2ESkipReason(testEnv *azure.Environment) string {
-	if testEnv.IsAKSMachineAPIMode() {
+	if testEnv.ProvisionModeExplicitlySet &&
+		(testEnv.ProvisionMode == consts.ProvisionModeAKSScriptless || testEnv.IsAKSMachineAPIMode()) {
 		return ""
 	}
-	return "this E2E requires aksmachineapi or aksmachineapiheaderbatch"
+	return "this E2E requires an explicitly resolved provision mode that supports kubelet resource and eviction overrides"
 }
 
 func createKubeletFlagsVerificationPod(nodeName string) *corev1.Pod {

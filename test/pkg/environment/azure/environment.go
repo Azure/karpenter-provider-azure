@@ -79,6 +79,9 @@ type Environment struct {
 	ClusterResourceGroup string
 	CloudConfig          cloud.Configuration
 	ProvisionMode        string
+	// ProvisionModeExplicitlySet distinguishes an explicitly configured scriptless mode from the
+	// scriptless default applied when a runner omits PROVISION_MODE.
+	ProvisionModeExplicitlySet bool
 
 	tracker *azure.Tracker
 
@@ -124,6 +127,14 @@ func readEnvOptional(name string) string {
 	return value
 }
 
+func (env *Environment) setProvisionModeFromEnvironment(value string) {
+	env.ProvisionMode = value
+	env.ProvisionModeExplicitlySet = value != ""
+	if !env.ProvisionModeExplicitlySet {
+		env.ProvisionMode = consts.ProvisionModeAKSScriptless
+	}
+}
+
 func getCloudEnvironment() *auth.Environment {
 	cfg := auth.Config{}
 	lo.Must0(cfg.Build(), "Failed to build cloud environment")
@@ -146,11 +157,11 @@ func NewEnvironment(t *testing.T) *Environment {
 		ClusterName:          readEnvRequired("AZURE_CLUSTER_NAME"),
 		ClusterResourceGroup: readEnvRequired("AZURE_RESOURCE_GROUP"),
 		ACRName:              readEnvRequired("AZURE_ACR_NAME"),
-		ProvisionMode:        readEnvOptional("PROVISION_MODE"),
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 		CloudConfig:          cloudEnv.Cloud,
 		tracker:              azure.NewTracker(),
 	}
+	azureEnv.setProvisionModeFromEnvironment(readEnvOptional("PROVISION_MODE"))
 
 	defaultNodeRG := fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region)
 	azureEnv.VNETResourceGroup = lo.Ternary(os.Getenv("VNET_RESOURCE_GROUP") == "", defaultNodeRG, os.Getenv("VNET_RESOURCE_GROUP"))
@@ -187,13 +198,6 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
 	subscriptionsClient := lo.Must(armsubscriptions.NewClient(cred, nil))
 	azureEnv.zoneProvider = zone.NewProvider(subscriptionsClient, clock.RealClock{}, azureEnv.SubscriptionID)
-	// If ProvisionMode wasn't set, default to scriptless, though note that this is
-	// actually defaulted dynamically based on the value of a toggle in AKS which means
-	// assuming we're always in ProvisionMode Scriptless here is incorrect at times, though OK
-	// for our current usage.
-	if azureEnv.ProvisionMode == "" {
-		azureEnv.ProvisionMode = consts.ProvisionModeAKSScriptless
-	}
 	// Default to reserved managed machine agentpool name for NAP
 	azureEnv.MachineAgentPoolName = "aksmanagedap"
 	if azureEnv.InClusterController {
