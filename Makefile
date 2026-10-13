@@ -136,7 +136,7 @@ codegen-prod: codegen-pricing codegen-allazuresku ## Generate codegen data used 
 
 codegen-test: codegen-locations codegen-skugen ## Generate codegen test data
 
-codegen-pricing: ## Generate pricing data
+codegen-pricing: ## Generate pricing data -- if regenerating, all subs should have same view as the API used is not per-sub
 	./hack/codegen.sh pricing
 
 codegen-locations: ## Generate locations data
