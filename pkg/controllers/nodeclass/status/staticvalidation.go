@@ -19,6 +19,7 @@ package status
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -55,6 +56,9 @@ const (
 	// KataRequiresAzureLinux3 is the condition reason set when the Kubernetes version resolves
 	// imageFamily AzureLinux to Azure Linux 2, which does not publish a Kata image.
 	KataRequiresAzureLinux3 = "KataRequiresAzureLinux3"
+	// KubeletOverridesUnsupportedProvisionMode is the condition reason set when a NodeClass configures
+	// kubelet resource or eviction overrides that the active provision mode cannot carry.
+	KubeletOverridesUnsupportedProvisionMode = "KubeletOverridesUnsupportedProvisionMode"
 	// ManagedGPUUnsupportedProvisionMode is the condition reason set when a NodeClass requests
 	// the managed GPU experience but the provision mode cannot express the NVIDIA GPU profile.
 	ManagedGPUUnsupportedProvisionMode = "ManagedGPUUnsupportedProvisionMode"
@@ -125,6 +129,7 @@ func (r *StaticValidationReconciler) Reconcile(ctx context.Context, nodeClass *v
 		r.validateKataProvisionMode,
 		r.validateManagedGPUProvisionMode,
 		r.validateNodePublicIPProvisionMode,
+		r.validateKubeletOverrideProvisionMode,
 		r.validateKataImageFamily,
 		r.validateDiskEncryptionSetRBAC,
 	}
@@ -237,6 +242,57 @@ func (r *StaticValidationReconciler) validateNodePublicIPProvisionMode(ctx conte
 		), nil
 	}
 	return pass(), nil
+}
+
+func (r *StaticValidationReconciler) validateKubeletOverrideProvisionMode(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
+	fields := configuredKubeletOverrideFields(nodeClass.Spec.Kubelet)
+	providerOptions := options.FromContext(ctx)
+	if len(fields) == 0 || providerOptions.SupportsKubeletResourceAndEvictionOverrides() {
+		return pass(), nil
+	}
+	return fail(
+		KubeletOverridesUnsupportedProvisionMode,
+		fmt.Sprintf(
+			"kubelet override fields [%s] are not supported with provision-mode %q",
+			strings.Join(fields, ", "),
+			providerOptions.ProvisionMode,
+		),
+	), nil
+}
+
+func configuredKubeletOverrideFields(kubelet *v1beta1.KubeletConfiguration) []string {
+	if kubelet == nil {
+		return nil
+	}
+	fields := make([]string, 0, 5)
+	if hasConfiguredKubeReserved(kubelet.KubeReserved) {
+		fields = append(fields, "spec.kubelet.kubeReserved")
+	}
+	if hasConfiguredEvictionThreshold(kubelet.EvictionHard) {
+		fields = append(fields, "spec.kubelet.evictionHard")
+	}
+	if hasConfiguredEvictionThreshold(kubelet.EvictionSoft) {
+		fields = append(fields, "spec.kubelet.evictionSoft")
+	}
+	if hasConfiguredEvictionSoftGracePeriod(kubelet.EvictionSoftGracePeriod) {
+		fields = append(fields, "spec.kubelet.evictionSoftGracePeriod")
+	}
+	if kubelet.EvictionMaxPodGracePeriod != nil {
+		fields = append(fields, "spec.kubelet.evictionMaxPodGracePeriod")
+	}
+	return fields
+}
+
+func hasConfiguredKubeReserved(kubeReserved *v1beta1.KubeReserved) bool {
+	return kubeReserved != nil && (kubeReserved.CPUMillicores != nil || kubeReserved.MemoryMB != nil)
+}
+
+func hasConfiguredEvictionThreshold(threshold *v1beta1.EvictionThreshold) bool {
+	return threshold != nil && (threshold.MemoryAvailable != nil || threshold.NodeFsAvailable != nil || threshold.NodeFsInodesFree != nil)
+}
+
+func hasConfiguredEvictionSoftGracePeriod(gracePeriod *v1beta1.EvictionSoftGracePeriod) bool {
+	return gracePeriod != nil && (gracePeriod.MemoryAvailable != nil || gracePeriod.NodeFsAvailable != nil || gracePeriod.NodeFsInodesFree != nil)
 }
 
 func (r *StaticValidationReconciler) validateKataImageFamily(_ context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
