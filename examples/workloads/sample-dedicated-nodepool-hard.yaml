@@ -1,0 +1,58 @@
+# HARD: Run only on a dedicated node pool.
+# Use case: workload isolation (noisy neighbor), licensing, compliance, or predictable performance.
+#
+# Common pattern:
+# - Dedicated node pool nodes are labeled (e.g., example.com/nodepool=payments)
+# - And tainted so only explicitly tolerated pods can land there:
+#     example.com/dedicated=payments:NoSchedule
+#
+# Tradeoffs:
+# - Hard constraints improve isolation but increase the risk of Pending pods if the pool is undersized.
+# - If Karpenter is provisioning capacity, this may trigger scale-up of only that pool/class.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-dedicated-nodepool-hard
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: sample-dedicated-nodepool-hard
+  template:
+    metadata:
+      labels:
+        app: sample-dedicated-nodepool-hard
+    spec:
+      # Required toleration to schedule onto tainted dedicated nodes.
+      tolerations:
+      - key: "example.com/dedicated"
+        operator: "Equal"
+        value: "payments"
+        effect: "NoSchedule"
+
+      affinity:
+        nodeAffinity:
+          # HARD: only schedule to nodes labeled as the dedicated pool/class.
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: example.com/nodepool
+                operator: In
+                values: ["payments"]
+
+      # Optional: best-effort spread across zones *within* the dedicated pool.
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: sample-dedicated-nodepool-hard
+
+      containers:
+      - name: api
+        image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "256Mi"
