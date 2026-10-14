@@ -798,9 +798,8 @@ type SysctlConfiguration struct {
 	// fsFileMax specifies the maximum number of file handles the kernel will allocate.
 	// Maps to fs.file-max.
 	// +kubebuilder:validation:Minimum=8192
-	// +kubebuilder:validation:Maximum=12000500
 	// +optional
-	FsFileMax *int32 `json:"fsFileMax,omitempty"`
+	FsFileMax *int64 `json:"fsFileMax,omitempty"`
 	// fsInotifyMaxUserWatches specifies the maximum number of inotify watches per user.
 	// Maps to fs.inotify.max_user_watches.
 	// +kubebuilder:validation:Minimum=781250

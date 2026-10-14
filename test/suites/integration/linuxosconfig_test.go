@@ -18,6 +18,7 @@ package integration_test
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -72,7 +73,7 @@ var _ = Describe("LinuxOSConfig", func() {
 		nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
 			Sysctls: &v1beta1.SysctlConfiguration{
 				FsAioMaxNr:                     lo.ToPtr[int32](131072),
-				FsFileMax:                      lo.ToPtr[int32](12000),
+				FsFileMax:                      lo.ToPtr[int64](math.MaxInt64),
 				FsInotifyMaxUserWatches:        lo.ToPtr[int32](781250),
 				FsNrOpen:                       lo.ToPtr[int32](2097152),
 				KernelThreadsMax:               lo.ToPtr[int32](100000),

@@ -806,7 +806,7 @@ func (in *SysctlConfiguration) DeepCopyInto(out *SysctlConfiguration) {
 	}
 	if in.FsFileMax != nil {
 		in, out := &in.FsFileMax, &out.FsFileMax
-		*out = new(int32)
+		*out = new(int64)
 		**out = **in
 	}
 	if in.FsInotifyMaxUserWatches != nil {

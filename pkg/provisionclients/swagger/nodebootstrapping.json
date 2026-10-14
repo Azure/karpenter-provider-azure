@@ -626,7 +626,7 @@
         },
         "fsFileMax": {
           "type": "integer",
-          "format": "int32",
+          "format": "int64",
           "x-nullable": true
         },
         "fsAioMaxNr": {

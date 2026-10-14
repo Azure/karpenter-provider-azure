@@ -36,7 +36,7 @@ type SysctlConfig struct {
 	FsAioMaxNr *int32 `json:"fsAioMaxNr,omitempty"`
 
 	// fs file max
-	FsFileMax *int32 `json:"fsFileMax,omitempty"`
+	FsFileMax *int64 `json:"fsFileMax,omitempty"`
 
 	// fs inotify max user watches
 	FsInotifyMaxUserWatches *int32 `json:"fsInotifyMaxUserWatches,omitempty"`

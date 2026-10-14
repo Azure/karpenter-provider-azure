@@ -405,8 +405,7 @@ spec:
                         description: |-
                           fsFileMax specifies the maximum number of file handles the kernel will allocate.
                           Maps to fs.file-max.
-                        format: int32
-                        maximum: 12000500
+                        format: int64
                         minimum: 8192
                         type: integer
                       fsInotifyMaxUserWatches:
@@ -1808,8 +1807,7 @@ spec:
                         description: |-
                           fsFileMax specifies the maximum number of file handles the kernel will allocate.
                           Maps to fs.file-max.
-                        format: int32
-                        maximum: 12000500
+                        format: int64
                         minimum: 8192
                         type: integer
                       fsInotifyMaxUserWatches:

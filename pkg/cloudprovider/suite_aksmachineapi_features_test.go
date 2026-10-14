@@ -18,6 +18,7 @@ package cloudprovider
 
 import (
 	"fmt"
+	"math"
 
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	. "github.com/onsi/ginkgo/v2"
@@ -1235,7 +1236,7 @@ var _ = Describe("CloudProvider", func() {
 					TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledAlways),
 					Sysctls: &v1beta1.SysctlConfiguration{
 						FsAioMaxNr:                     lo.ToPtr(int32(65536)),
-						FsFileMax:                      lo.ToPtr(int32(12000)),
+						FsFileMax:                      lo.ToPtr(int64(math.MaxInt64)),
 						FsInotifyMaxUserWatches:        lo.ToPtr(int32(781250)),
 						FsNrOpen:                       lo.ToPtr(int32(8192)),
 						KernelThreadsMax:               lo.ToPtr(int32(30000)),
@@ -1292,7 +1293,7 @@ var _ = Describe("CloudProvider", func() {
 				// Verify sysctl fields
 				Expect(linuxOSConfig.Sysctls).ToNot(BeNil())
 				Expect(lo.FromPtr(linuxOSConfig.Sysctls.FsAioMaxNr)).To(Equal(int32(65536)))
-				Expect(lo.FromPtr(linuxOSConfig.Sysctls.FsFileMax)).To(Equal(int32(12000)))
+				Expect(lo.FromPtr(linuxOSConfig.Sysctls.FsFileMax)).To(Equal(int64(math.MaxInt64)))
 				Expect(lo.FromPtr(linuxOSConfig.Sysctls.FsInotifyMaxUserWatches)).To(Equal(int32(781250)))
 				Expect(lo.FromPtr(linuxOSConfig.Sysctls.FsNrOpen)).To(Equal(int32(8192)))
 				Expect(lo.FromPtr(linuxOSConfig.Sysctls.KernelThreadsMax)).To(Equal(int32(30000)))

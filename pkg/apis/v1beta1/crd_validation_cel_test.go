@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1_test
 
 import (
+	"math"
 	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -1737,6 +1738,20 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 	Context("LinuxOSConfig sysctl cross-field validation", func() {
+		It("should accept the Linux int64 maximum for fsFileMax", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							FsFileMax: lo.ToPtr(int64(math.MaxInt64)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
 		It("should reject rmemDefault > rmemMax", func() {
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
