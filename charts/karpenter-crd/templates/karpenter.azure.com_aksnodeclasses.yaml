@@ -321,13 +321,13 @@ spec:
                         description: cpuMillicores is the CPU reservation in millicores.
                         format: int32
                         maximum: 2147483647
-                        minimum: 1
+                        minimum: 140
                         type: integer
                       memoryMB:
                         description: memoryMB is the memory reservation in MiB.
                         format: int32
                         maximum: 2147483647
-                        minimum: 1
+                        minimum: 750
                         type: integer
                     type: object
                   podPidsLimit:
@@ -1724,13 +1724,13 @@ spec:
                         description: cpuMillicores is the CPU reservation in millicores.
                         format: int32
                         maximum: 2147483647
-                        minimum: 1
+                        minimum: 140
                         type: integer
                       memoryMB:
                         description: memoryMB is the memory reservation in MiB.
                         format: int32
                         maximum: 2147483647
-                        minimum: 1
+                        minimum: 750
                         type: integer
                     type: object
                   podPidsLimit:

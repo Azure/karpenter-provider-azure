@@ -1431,7 +1431,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 					statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
-						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace)
 					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 					pod := coretest.UnschedulablePod()
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -1457,7 +1457,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 					statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
-						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace)
 					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 					pod := coretest.UnschedulablePod()
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -1709,7 +1709,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// AKSNodeClass without opting in to hardening.
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 					EvictionHard: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi")},
-					KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+					KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
 				}
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1727,7 +1727,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).To(ContainSubstring("pid.available<2000"))
 				// Customer kube-reserved values win per key; pid inherits from
 				// Karpenter's baseline (KubeReservedPIDs).
-				ExpectKubeReservedResources(customData, "cpu=250m", "memory=512Mi", "pid=1000")
+				ExpectKubeReservedResources(customData, "cpu=250m", "memory=1024Mi", "pid=1000")
 			})
 
 			It("should let AKSNodeClass.spec.kubelet overrides win over node hardening defaults", func() {
@@ -1745,7 +1745,7 @@ var _ = Describe("InstanceType Provider", func() {
 					EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("444Mi")},
 					EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))},
 					EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
-					KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+					KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
 				}
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1763,7 +1763,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).To(ContainSubstring("enforce-node-allocatable=pods,kube-reserved,system-reserved"))
 				// Customer kube-reserved values win per key; hardening omits the
 				// legacy PID reservation.
-				ExpectKubeReservedResources(customData, "cpu=250m", "memory=512Mi")
+				ExpectKubeReservedResources(customData, "cpu=250m", "memory=1024Mi")
 			})
 		})
 
@@ -1932,7 +1932,7 @@ var _ = Describe("InstanceType Provider", func() {
 				})
 				ctx = options.ToContext(ctx)
 				statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID, options.NetworkPolicy, options.NetworkPlugin,
-					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, options.SystemNamespace)
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -1982,7 +1982,7 @@ var _ = Describe("InstanceType Provider", func() {
 				})
 				ctx = options.ToContext(ctx)
 				statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID, options.NetworkPolicy, options.NetworkPlugin,
-					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, options.SystemNamespace)
 
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -2015,7 +2015,7 @@ var _ = Describe("InstanceType Provider", func() {
 			DescribeTable("should select the right image for a given instance type",
 				func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
 					statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
-						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace)
 					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelInstanceTypeStable,
@@ -2647,7 +2647,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should return error when instance type resolution fails", func() {
 				// Create and set up the status controller
 				statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
-					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace)
 
 				// Set NodeClass to Ready
 				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
@@ -3463,13 +3463,13 @@ var _ = Describe("InstanceType Provider", func() {
 					nodeFsPercentage float32
 					capacity         string
 				}{
-					{name: "auto-sized", cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "1600G"},
-					{name: "explicit size", diskSizeGB: lo.ToPtr[int32](128), cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "128G"},
-					{name: "managed default", diskType: lo.ToPtr(v1beta1.OSDiskTypeManaged), cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "1024G"},
-					{name: "Trusted Launch auto-sized", security: &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "1599G"},
+					{name: "auto-sized", cpuMillicores: 250, memoryMB: 1024, nodeFsPercentage: 12, capacity: "1600G"},
+					{name: "explicit size", diskSizeGB: lo.ToPtr[int32](128), cpuMillicores: 250, memoryMB: 1024, nodeFsPercentage: 12, capacity: "128G"},
+					{name: "managed default", diskType: lo.ToPtr(v1beta1.OSDiskTypeManaged), cpuMillicores: 250, memoryMB: 1024, nodeFsPercentage: 12, capacity: "1024G"},
+					{name: "Trusted Launch auto-sized", security: &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, cpuMillicores: 250, memoryMB: 1024, nodeFsPercentage: 12, capacity: "1599G"},
 					{name: "reservation overrides changed", cpuMillicores: 500, memoryMB: 1024, nodeFsPercentage: 12, capacity: "1600G"},
-					{name: "eviction override changed", cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 15, capacity: "1600G"},
-					{name: "original cache entry reused", cpuMillicores: 250, memoryMB: 512, nodeFsPercentage: 12, capacity: "1600G"},
+					{name: "eviction override changed", cpuMillicores: 250, memoryMB: 1024, nodeFsPercentage: 15, capacity: "1600G"},
+					{name: "original cache entry reused", cpuMillicores: 250, memoryMB: 1024, nodeFsPercentage: 12, capacity: "1600G"},
 				}
 				for _, entry := range cases {
 					By(entry.name)
@@ -3757,7 +3757,7 @@ var _ = Describe("InstanceType Provider", func() {
 						nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
 						nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 						nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "Test", "force image refresh")
-						imageReconciler := status.NewNodeImageReconciler(azureEnvBootstrap.ImageProvider, env.KubernetesInterface)
+						imageReconciler := status.NewNodeImageReconciler(azureEnvBootstrap.ImageProvider, env.KubernetesInterface, options.FromContext(ctx).SystemNamespace)
 						_, err := imageReconciler.Reconcile(ctx, nodeClass)
 						Expect(err).ToNot(HaveOccurred())
 						return ctx

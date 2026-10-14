@@ -41,6 +41,7 @@ import (
 	instancetypecontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	quotacontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/quota"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -79,7 +80,7 @@ func NewControllers(
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
 		nodeclassstatus.NewController(kubeClient, subscriptionID, location, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, managedKubernetesInterface, managedDynamicInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID, networkPolicy, networkPlugin,
-			capacityReservationGroupsClient, capacityReservationsClient, instanceTypesProvider, unavailableOfferings),
+			capacityReservationGroupsClient, capacityReservationsClient, instanceTypesProvider, unavailableOfferings, options.FromContext(ctx).SystemNamespace),
 		nodeclasstermination.NewController(kubeClient, recorder),
 
 		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider, clk),

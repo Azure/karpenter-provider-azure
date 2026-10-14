@@ -19,7 +19,6 @@ package status
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -70,9 +69,8 @@ type NodeImageReconciler struct {
 func NewNodeImageReconciler(
 	provider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
+	systemNamespace string,
 ) *NodeImageReconciler {
-	systemNamespace := strings.TrimSpace(os.Getenv("SYSTEM_NAMESPACE"))
-
 	return &NodeImageReconciler{
 		nodeImageProvider:            provider,
 		inClusterKubernetesInterface: inClusterKubernetesInterface,
