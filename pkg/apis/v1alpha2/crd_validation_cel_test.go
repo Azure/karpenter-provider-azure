@@ -107,8 +107,12 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("valid cpu and memory", &v1alpha2.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))}, true),
+			Entry("valid cpu and memory", &v1alpha2.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))}, true),
 			Entry("maximum int32 values", &v1alpha2.KubeReserved{CPUMillicores: lo.ToPtr(int32(2147483647)), MemoryMB: lo.ToPtr(int32(2147483647))}, true),
+			Entry("cpu below minimum", &v1alpha2.KubeReserved{CPUMillicores: lo.ToPtr(int32(139))}, false),
+			Entry("cpu at minimum", &v1alpha2.KubeReserved{CPUMillicores: lo.ToPtr(int32(140))}, true),
+			Entry("memory below minimum", &v1alpha2.KubeReserved{MemoryMB: lo.ToPtr(int32(749))}, false),
+			Entry("memory at minimum", &v1alpha2.KubeReserved{MemoryMB: lo.ToPtr(int32(750))}, true),
 			Entry("zero cpu", &v1alpha2.KubeReserved{CPUMillicores: lo.ToPtr(int32(0))}, false),
 			Entry("negative memory", &v1alpha2.KubeReserved{MemoryMB: lo.ToPtr(int32(-1))}, false),
 		)

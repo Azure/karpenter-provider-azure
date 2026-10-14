@@ -618,12 +618,12 @@ type KubeletConfiguration struct {
 // KubeReserved defines resources reserved for Kubernetes system daemons.
 type KubeReserved struct {
 	// cpuMillicores is the CPU reservation in millicores.
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=140
 	// +kubebuilder:validation:Maximum=2147483647
 	// +optional
 	CPUMillicores *int32 `json:"cpuMillicores,omitempty"`
 	// memoryMB is the memory reservation in MiB.
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=750
 	// +kubebuilder:validation:Maximum=2147483647
 	// +optional
 	MemoryMB *int32 `json:"memoryMB,omitempty"`

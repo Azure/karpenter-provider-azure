@@ -145,7 +145,7 @@ var _ = Describe("CloudProvider", func() {
 					nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
 					if withOverrides {
 						nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-							KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+							KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
 							EvictionHard:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi")},
 							EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
 							EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))},
@@ -173,7 +173,7 @@ var _ = Describe("CloudProvider", func() {
 						Expect(kubeletConfig).ToNot(BeNil())
 						Expect(kubeletConfig.KubeReserved).ToNot(BeNil())
 						Expect(kubeletConfig.KubeReserved.CPUMillicores).To(Equal(lo.ToPtr(int32(250))))
-						Expect(kubeletConfig.KubeReserved.MemoryMB).To(Equal(lo.ToPtr(int32(512))))
+						Expect(kubeletConfig.KubeReserved.MemoryMB).To(Equal(lo.ToPtr(int32(1024))))
 						Expect(kubeletConfig.HardEvictionThreshold).ToNot(BeNil())
 						Expect(kubeletConfig.HardEvictionThreshold.MemoryAvailable).To(Equal(lo.ToPtr("333Mi")))
 						Expect(kubeletConfig.SoftEvictionThreshold).ToNot(BeNil())
@@ -899,7 +899,7 @@ var _ = Describe("CloudProvider", func() {
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 					FailSwapOn:                  lo.ToPtr(false),
-					KubeReserved:                &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+					KubeReserved:                &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
 					EvictionHard: &v1beta1.EvictionThreshold{
 						MemoryAvailable:  lo.ToPtr("333Mi"),
 						NodeFsAvailable:  lo.ToPtr("12%"),
@@ -968,7 +968,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.ImageGcLowThreshold).To(Equal(int32(80)))
 				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.KubeletConfig.FailSwapOn)).To(BeFalse())
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.KubeReserved.CPUMillicores).To(Equal(int32(250)))
-				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.KubeReserved.MemoryMB).To(Equal(int32(512)))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.KubeReserved.MemoryMB).To(Equal(int32(1024)))
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.NodeFsAvailable).To(Equal("12%"))
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))
