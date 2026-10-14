@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 )
@@ -68,6 +69,20 @@ func (env *Environment) GetNetworkInterface(nicName string) armnetwork.Interface
 	nic, err := env.interfacesClient.Get(env.Context, env.NodeResourceGroup, nicName, nil)
 	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Failed to get NIC %s in resource group %s", nicName, env.NodeResourceGroup))
 	return nic.Interface
+}
+
+func (env *Environment) GetNodeNetworkInterface(nodeName string) armnetwork.Interface {
+	GinkgoHelper()
+	vm := env.GetVM(nodeName)
+	Expect(vm.Properties).ToNot(BeNil())
+	Expect(vm.Properties.NetworkProfile).ToNot(BeNil())
+	interfaces := vm.Properties.NetworkProfile.NetworkInterfaces
+	Expect(interfaces).To(HaveLen(1), "expected one NIC on node %s", nodeName)
+	Expect(interfaces[0]).ToNot(BeNil())
+	Expect(interfaces[0].ID).To(HaveValue(Not(BeEmpty())))
+	nicID, err := arm.ParseResourceID(*interfaces[0].ID)
+	Expect(err).ToNot(HaveOccurred(), "failed to parse NIC ID for node %s", nodeName)
+	return env.GetNetworkInterface(nicID.Name)
 }
 
 func (env *Environment) GetClusterVNET() *armnetwork.VirtualNetwork {

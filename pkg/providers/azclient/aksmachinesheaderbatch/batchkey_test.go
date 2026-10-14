@@ -243,6 +243,15 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 				},
 			}
 		}},
+		{"node public IP enabled", func(p *armcontainerservice.MachineProperties) { p.Network.EnableNodePublicIP = lo.ToPtr(true) }},
+		{"node public IP from a prefix", func(p *armcontainerservice.MachineProperties) {
+			p.Network.EnableNodePublicIP = lo.ToPtr(true)
+			p.Network.NodePublicIPPrefixID = lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix")
+		}},
+		{"node public IP tags", func(p *armcontainerservice.MachineProperties) {
+			p.Network.EnableNodePublicIP = lo.ToPtr(true)
+			p.Network.NodePublicIPTags = []*armcontainerservice.IPTag{{IPTagType: lo.ToPtr("RoutingPreference"), Tag: lo.ToPtr("Internet")}}
+		}},
 	}
 
 	for _, tt := range tests {

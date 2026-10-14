@@ -284,6 +284,51 @@ var _ = Describe("CloudProvider", func() {
 				})
 			})
 
+			Context("Static fields - Node Public IP", func() {
+				// stampNodeClassHash records the current NodeClass hash on both objects, as if the
+				// NodeClaim had been launched from the current NodeClass.
+				stampNodeClassHash := func() {
+					ExpectNodeClassHashUpdated(ctx, env.Client, nodeClass)
+					nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
+						v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
+						v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
+					})
+				}
+
+				updateNodeClassNodePublicIP := func(nodePublicIP *v1beta1.NodePublicIP) {
+					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+					nodeClass.Spec.NodePublicIP = nodePublicIP
+					ExpectApplied(ctx, env.Client, nodeClass)
+					ExpectNodeClassHashUpdated(ctx, env.Client, nodeClass)
+				}
+
+				BeforeEach(func() {
+					stampNodeClassHash()
+				})
+
+				It("should not drift when nothing changes", func() {
+					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(BeEmpty())
+				})
+
+				It("should drift when node public IP is enabled", func() {
+					updateNodeClassNodePublicIP(&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)})
+
+					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(Equal(NodeClassDrift))
+				})
+
+				It("should not drift when node public IP is explicitly disabled", func() {
+					updateNodeClassNodePublicIP(&v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)})
+
+					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(BeEmpty())
+				})
+			})
+
 		})
 
 		Context("Windows Drift", func() {

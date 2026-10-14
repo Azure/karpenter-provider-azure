@@ -121,6 +121,36 @@ func TestLoadBalancerBackendPools_DoesNotReturnIPBasedPools(t *testing.T) {
 	g.Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
 }
 
+func TestBackendAddressPools_WithoutKubernetesInboundPools(t *testing.T) {
+	g := NewWithT(t)
+	pools := &loadbalancer.BackendAddressPools{
+		IPv4PoolIDs: []string{
+			fake.MakeBackendAddressPoolID(resourceGroup, loadbalancer.SLBName, loadbalancer.SLBInboundBackendPoolName),
+			fake.MakeBackendAddressPoolID(resourceGroup, loadbalancer.SLBName, loadbalancer.SLBOutboundBackendPoolName),
+			fake.MakeBackendAddressPoolID(resourceGroup, loadbalancer.InternalSLBName, loadbalancer.SLBInboundBackendPoolName),
+			fake.MakeBackendAddressPoolID(resourceGroup, loadbalancer.SLBName, "custom"),
+			"not-a-resource-id",
+		},
+		IPv6PoolIDs: []string{
+			fake.MakeBackendAddressPoolID(resourceGroup, loadbalancer.SLBNameIPv6, loadbalancer.SLBInboundBackendPoolNameIPv6),
+		},
+	}
+
+	filtered := pools.WithoutKubernetesInboundPools()
+
+	// Ensure the filtered pools are filtered
+	g.Expect(filtered.IPv4PoolIDs).To(ConsistOf(
+		fake.MakeBackendAddressPoolID(resourceGroup, loadbalancer.SLBName, loadbalancer.SLBOutboundBackendPoolName),
+		fake.MakeBackendAddressPoolID(resourceGroup, loadbalancer.SLBName, "custom"),
+		"not-a-resource-id",
+	))
+	g.Expect(filtered.IPv6PoolIDs).To(BeEmpty())
+
+	// Ensure the original pools are unchanged
+	g.Expect(pools.IPv4PoolIDs).To(HaveLen(5))
+	g.Expect(pools.IPv6PoolIDs).To(HaveLen(1))
+}
+
 func TestRefreshBackendPools_RefreshesWhenGenerationMatchesCurrentCache(t *testing.T) {
 	g := NewWithT(t)
 	f := newTestFixture(t)
@@ -132,6 +162,7 @@ func TestRefreshBackendPools_RefreshesWhenGenerationMatchesCurrentCache(t *testi
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(pools.IPv4PoolIDs).To(HaveLen(2))
 	g.Expect(f.api.NewListPagerBehavior.Calls()).To(Equal(1))
+	pools = pools.WithoutKubernetesInboundPools()
 
 	// Simulate LB deletion
 	f.api.LoadBalancers.Clear()

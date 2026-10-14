@@ -121,6 +121,136 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 		Entry("when the NodeClass drops its group after the Machine was created", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", "", true),
 	)
 
+	DescribeTable("validateExistingAKSMachineNodePublicIP",
+		func(network *armcontainerservice.MachineNetworkProperties, nodePublicIP *v1beta1.NodePublicIP, wantError bool) {
+			machine := &armcontainerservice.Machine{
+				Properties: &armcontainerservice.MachineProperties{Network: network},
+			}
+			nodeClass.Spec.NodePublicIP = nodePublicIP
+
+			err := validateExistingAKSMachineNodePublicIP(machine, nodeClass)
+
+			if wantError {
+				Expect(err).To(HaveOccurred())
+			} else {
+				Expect(err).ToNot(HaveOccurred())
+			}
+		},
+		Entry("when neither enables node public IP", &armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(false)}, nil, false),
+		Entry("when the Machine has no network settings and the NodeClass disables node public IP", nil, &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}, false),
+		Entry("when the Machine doesn't report enablement and the NodeClass omits node public IP", &armcontainerservice.MachineNetworkProperties{}, nil, false),
+		Entry("when both enable node public IP without a prefix", &armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true)}, &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}, false),
+		Entry("when the prefixes match",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPPrefixID: lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix")},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"}},
+			false),
+		Entry("when ARM changes prefix ID casing",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPPrefixID: lo.ToPtr("/SUBSCRIPTIONS/SUB/RESOURCEGROUPS/RG/PROVIDERS/MICROSOFT.NETWORK/PUBLICIPPREFIXES/PREFIX")},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"}},
+			false),
+		Entry("when the NodeClass enables node public IP after the Machine was created", &armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(false)}, &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}, true),
+		Entry("when the NodeClass enables node public IP and the Machine has no network settings", nil, &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}, true),
+		Entry("when the NodeClass disables node public IP after the Machine was created", &armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true)}, &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}, true),
+		Entry("when the NodeClass adds a prefix",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true)},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"}},
+			true),
+		Entry("when the NodeClass drops its prefix",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPPrefixID: lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix")},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)},
+			true),
+		Entry("when the NodeClass changes prefixes",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPPrefixID: lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/old")},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/new"}},
+			true),
+		Entry("when the IP tags match in a different order",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPTags: []*armcontainerservice.IPTag{
+				{IPTagType: lo.ToPtr("FirstPartyUsage"), Tag: lo.ToPtr("/Unprivileged")},
+				{IPTagType: lo.ToPtr("RoutingPreference"), Tag: lo.ToPtr("Internet")},
+			}},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "Internet"}, {IPTagType: "FirstPartyUsage", Tag: "/Unprivileged"}}},
+			false),
+		Entry("when the Machine reports an empty IP tag list and the NodeClass has none",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPTags: []*armcontainerservice.IPTag{}},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)},
+			false),
+		Entry("when the NodeClass adds an IP tag",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true)},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "Internet"}}},
+			true),
+		Entry("when the NodeClass changes an IP tag value",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPTags: []*armcontainerservice.IPTag{{IPTagType: lo.ToPtr("RoutingPreference"), Tag: lo.ToPtr("Internet")}}},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "MicrosoftNetwork"}}},
+			true),
+		Entry("when the IP tag casing differs",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPTags: []*armcontainerservice.IPTag{{IPTagType: lo.ToPtr("RoutingPreference"), Tag: lo.ToPtr("Internet")}}},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "internet"}}},
+			true),
+	)
+
+	Context("configureNetwork", func() {
+		const prefixID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"
+
+		DescribeTable("should leave the public IP fields unset when node public IP is disabled",
+			func(nodePublicIP *v1beta1.NodePublicIP) {
+				nodeClass.Spec.NodePublicIP = nodePublicIP
+
+				network := configureNetwork(nodeClass)
+
+				Expect(network).ToNot(BeNil())
+				Expect(network.EnableNodePublicIP).To(BeNil())
+				Expect(network.NodePublicIPPrefixID).To(BeNil())
+				Expect(network.NodePublicIPTags).To(BeNil())
+			},
+			Entry("when omitted", nil),
+			Entry("when empty", &v1beta1.NodePublicIP{}),
+			Entry("when explicitly disabled", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}),
+		)
+
+		It("should keep the subnet", func() {
+			subnetID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"
+			nodeClass.Spec.VNETSubnetID = lo.ToPtr(subnetID)
+
+			Expect(lo.FromPtr(configureNetwork(nodeClass).VnetSubnetID)).To(Equal(subnetID))
+		})
+
+		It("should enable node public IP without a prefix", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+
+			network := configureNetwork(nodeClass)
+
+			Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+			Expect(network.NodePublicIPPrefixID).To(BeNil())
+			Expect(network.NodePublicIPTags).To(BeNil())
+		})
+
+		It("should enable node public IP from a prefix", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}}
+
+			network := configureNetwork(nodeClass)
+
+			Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+			Expect(lo.FromPtr(network.NodePublicIPPrefixID)).To(Equal(prefixID))
+			Expect(network.NodePublicIPTags).To(BeNil())
+		})
+
+		It("should set IP tags in spec order", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{
+				{IPTagType: "RoutingPreference", Tag: "Internet"},
+				{IPTagType: "FirstPartyUsage", Tag: "/Unprivileged"},
+			}}
+
+			network := configureNetwork(nodeClass)
+
+			Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+			Expect(network.NodePublicIPPrefixID).To(BeNil())
+			Expect(network.NodePublicIPTags).To(Equal([]*armcontainerservice.IPTag{
+				{IPTagType: lo.ToPtr("RoutingPreference"), Tag: lo.ToPtr("Internet")},
+				{IPTagType: lo.ToPtr("FirstPartyUsage"), Tag: lo.ToPtr("/Unprivileged")},
+			}))
+		})
+	})
+
 	Context("configureOSSKUAndFIPs", func() {
 		Context("Ubuntu2204 Image Family", func() {
 			BeforeEach(func() {
@@ -169,6 +299,22 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ossku).ToNot(BeNil())
 				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureLinux))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeFalse())
+			})
+		})
+
+		Context("AzureContainerLinux Image Family", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+			})
+
+			It("should configure AzureContainerLinux", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.34.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureContainerLinux))
 				Expect(enableFIPs).ToNot(BeNil())
 				Expect(*enableFIPs).To(BeFalse())
 			})
@@ -779,6 +925,44 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			Expect(config.ContainerLogMaxFiles).To(BeNil())
 			Expect(config.PodMaxPids).To(BeNil())
 		})
+
+		It("should configure supported reservation and eviction overrides", func() {
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
+				EvictionHard: &v1beta1.EvictionThreshold{
+					MemoryAvailable:  lo.ToPtr("333Mi"),
+					NodeFsAvailable:  lo.ToPtr("12%"),
+					NodeFsInodesFree: lo.ToPtr("7%"),
+				},
+				EvictionSoft: &v1beta1.EvictionThreshold{
+					MemoryAvailable:  lo.ToPtr("500Mi"),
+					NodeFsAvailable:  lo.ToPtr("15%"),
+					NodeFsInodesFree: lo.ToPtr("10%"),
+				},
+				EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{
+					MemoryAvailable:  lo.ToPtr(karpv1.MustParseNillableDuration("90s")),
+					NodeFsAvailable:  lo.ToPtr(karpv1.MustParseNillableDuration("2m")),
+					NodeFsInodesFree: lo.ToPtr(karpv1.MustParseNillableDuration("120s")),
+				},
+				EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
+			}
+
+			config := configureKubeletConfig(nodeClass)
+
+			Expect(*config.KubeReserved.CPUMillicores).To(Equal(int32(250)))
+			Expect(*config.KubeReserved.MemoryMB).To(Equal(int32(1024)))
+			Expect(*config.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
+			Expect(*config.HardEvictionThreshold.NodeFsAvailable).To(Equal("12%"))
+			Expect(*config.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))
+			Expect(*config.SoftEvictionThreshold.MemoryAvailable).To(Equal("500Mi"))
+			Expect(*config.SoftEvictionThreshold.NodeFsAvailable).To(Equal("15%"))
+			Expect(*config.SoftEvictionThreshold.NodeFsInodesFree).To(Equal("10%"))
+			Expect(*config.SoftEvictionGracePeriod.MemoryAvailable).To(Equal("90s"))
+			Expect(*config.SoftEvictionGracePeriod.NodeFsAvailable).To(Equal("2m"))
+			Expect(*config.SoftEvictionGracePeriod.NodeFsInodesFree).To(Equal("120s"))
+			Expect(*config.EvictionMaxPodGracePeriodInSeconds).To(Equal(int32(120)))
+		})
+
 	})
 
 	Context("parseVMImageID", func() {
