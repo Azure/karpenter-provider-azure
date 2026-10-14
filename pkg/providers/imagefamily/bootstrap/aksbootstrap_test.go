@@ -147,6 +147,39 @@ func TestGetCredentialProviderURL(t *testing.T) {
 	}
 }
 
+func TestCSEConfigFilepaths(t *testing.T) {
+	g := NewWithT(t)
+	customData, err := getCustomDataFromNodeBootstrapVars(getStaticNodeBootstrapVars())
+	g.Expect(err).ToNot(HaveOccurred())
+
+	tests := []struct {
+		variable string
+		path     string
+	}{
+		{"CSE_CONFIG_GPU_FILEPATH", "/opt/azure/containers/provision_configs_gpu.sh"},
+		{"CSE_CONFIG_LOCALDNS_FILEPATH", "/opt/azure/containers/provision_configs_localdns.sh"},
+		{"CSE_CONFIG_KUBELET_FILEPATH", "/opt/azure/containers/provision_configs_kubelet.sh"},
+		{"CSE_CONFIG_NETWORK_FILEPATH", "/opt/azure/containers/provision_configs_network.sh"},
+		{"CSE_CONFIG_ADDONS_FILEPATH", "/opt/azure/containers/provision_configs_addons.sh"},
+		{"CSE_CONFIG_CHRONY_FILEPATH", "/opt/azure/containers/provision_configs_chrony.sh"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.variable, func(t *testing.T) {
+			NewWithT(t).Expect(customData).To(ContainSubstring(fmt.Sprintf(`%s="%s"`, tt.variable, tt.path)))
+		})
+	}
+}
+
+func TestBaseKubeletFlagsHardEviction(t *testing.T) {
+	g := NewWithT(t)
+	g.Expect(strings.Split(getBaseKubeletFlags()["--eviction-hard"], ",")).To(ConsistOf(
+		"memory.available<100Mi",
+		"nodefs.available<10%",
+		"nodefs.inodesFree<5%",
+	))
+}
+
 func TestKubeletConfigMap(t *testing.T) {
 	kubeletConfiguration := KubeletConfiguration{
 		KubeletConfiguration: v1beta1.KubeletConfiguration{

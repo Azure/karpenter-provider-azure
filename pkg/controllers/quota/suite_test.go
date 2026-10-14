@@ -28,9 +28,12 @@ import (
 	clock "k8s.io/utils/clock/testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	quotacontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/quota"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
@@ -146,5 +149,43 @@ var _ = Describe("Quota Controller", func() {
 		Expect(err).To(HaveOccurred())
 		found, _ = azureEnv.QuotaProvider.GetUsage("standardDSv3Family")
 		Expect(found).To(BeFalse(), "stale data should be cleared after MaxStaleness")
+	})
+
+	It("should honor quota category (general purpose) and fail open when it becomes stale", func() {
+		sku := fake.MakeSKU("Standard_D4s_v3")
+		familyName := sku.GetFamilyName()
+		azureEnv.UsageAPI.Usages.Append(
+			&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(familyName)},
+				CurrentValue: lo.ToPtr[int32](0),
+				Limit:        lo.ToPtr[int64](100),
+			},
+			&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(quota.GeneralPurposeCategory)},
+				CurrentValue: lo.ToPtr[int32](98),
+				Limit:        lo.ToPtr[int64](100),
+			},
+		)
+		azureEnv.QuotaCategoryVMFamilyMappingAPI.VMFamilies.Append(&armcomputelimit.VMFamily{
+			Name: lo.ToPtr(familyName),
+			Properties: &armcomputelimit.VMFamilyProperties{
+				Category:          lo.ToPtr(quota.GeneralPurposeCategory),
+				ProvisioningState: lo.ToPtr(armcomputelimit.ResourceProvisioningStateSucceeded),
+			},
+		})
+
+		// general category doesn't have room, and we're using it, so we don't have quota
+		ExpectSingletonReconciled(ctx, controller)
+		Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+
+		azureEnv.QuotaCategoryVMFamilyMappingAPI.Error = fmt.Errorf("simulated QuotaCategoryVMFamilyMapping API failure")
+		err := ExpectSingletonReconcileFailed(ctx, controller)
+		Expect(err).To(HaveOccurred())
+		Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+
+		fakeClock.Step(quotacontroller.MaxStaleness + time.Minute)
+		err = ExpectSingletonReconcileFailed(ctx, controller)
+		Expect(err).To(HaveOccurred())
+		Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
 	})
 })

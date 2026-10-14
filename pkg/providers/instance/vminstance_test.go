@@ -17,17 +17,50 @@ limitations under the License.
 package instance
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
+
+func TestVMFIPS1403EncryptionPayload(t *testing.T) {
+	for _, fips := range []bool{false, true} {
+		for _, ultraSSD := range []bool{false, true} {
+			g := NewWithT(t)
+			vm := newVMObject(&createVMOptions{
+				Zone:            "eastus2-1",
+				NodeClass:       &v1beta1.AKSNodeClass{},
+				InstanceType:    &cloudprovider.InstanceType{Name: "Standard_D4s_v5"},
+				LaunchTemplate:  &launchtemplate.Template{EnableFIPS1403Encryption: fips},
+				UltraSSDEnabled: ultraSSD,
+			})
+			payload, err := json.Marshal(vm)
+			g.Expect(err).ToNot(HaveOccurred())
+			var decoded map[string]interface{}
+			g.Expect(json.Unmarshal(payload, &decoded)).To(Succeed())
+			properties := decoded["properties"].(map[string]interface{})
+			if !fips && !ultraSSD {
+				g.Expect(properties).ToNot(HaveKey("additionalCapabilities"))
+				continue
+			}
+			capabilities := properties["additionalCapabilities"].(map[string]interface{})
+			g.Expect(capabilities["enableFips1403Encryption"] == true).To(Equal(fips))
+			g.Expect(capabilities["ultraSSDEnabled"] == true).To(Equal(ultraSSD))
+		}
+	}
+}
 
 func TestResolveUltraSSDRequested(t *testing.T) {
 	t.Parallel()
@@ -165,6 +198,120 @@ func TestGetManagedExtensionNames(t *testing.T) {
 			result := GetManagedExtensionNames(tt.provisionMode, tt.env)
 
 			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestSetVMPropertiesCapacityReservation(t *testing.T) {
+	t.Parallel()
+
+	const groupID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/crg-rg/providers/Microsoft.Compute/capacityReservationGroups/crg"
+
+	tests := []struct {
+		name      string
+		nodeClass *v1beta1.AKSNodeClass
+		expected  *string
+	}{
+		{
+			name:      "no group configured leaves the VM unassociated",
+			nodeClass: &v1beta1.AKSNodeClass{},
+			expected:  nil,
+		},
+		{
+			name: "configured group is passed through to ARM",
+			nodeClass: &v1beta1.AKSNodeClass{
+				Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}},
+			},
+			expected: lo.ToPtr(groupID),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			properties := &armcompute.VirtualMachineProperties{}
+			setVMPropertiesCapacityReservation(properties, tt.nodeClass)
+
+			if tt.expected == nil {
+				g.Expect(properties.CapacityReservation).To(BeNil())
+				return
+			}
+			g.Expect(properties.CapacityReservation.CapacityReservationGroup.ID).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestValidateExistingCapacityReservation(t *testing.T) {
+	t.Parallel()
+
+	const groupID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/crg-rg/providers/Microsoft.Compute/capacityReservationGroups/crg"
+	const otherGroupID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/crg-rg/providers/Microsoft.Compute/capacityReservationGroups/other"
+
+	vmInGroup := func(id string) *armcompute.VirtualMachine {
+		vm := &armcompute.VirtualMachine{Name: lo.ToPtr("aks-test"), Properties: &armcompute.VirtualMachineProperties{}}
+		if id != "" {
+			vm.Properties.CapacityReservation = &armcompute.CapacityReservationProfile{
+				CapacityReservationGroup: &armcompute.SubResource{ID: lo.ToPtr(id)},
+			}
+		}
+		return vm
+	}
+
+	tests := []struct {
+		name      string
+		vm        *armcompute.VirtualMachine
+		nodeClass *v1beta1.AKSNodeClass
+		wantErr   bool
+	}{
+		{
+			name:      "neither is reserved",
+			vm:        vmInGroup(""),
+			nodeClass: &v1beta1.AKSNodeClass{},
+		},
+		{
+			name:      "same group",
+			vm:        vmInGroup(groupID),
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}}},
+		},
+		{
+			name:      "same group, different casing as ARM echoes it",
+			vm:        vmInGroup(strings.ToUpper(groupID)),
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}}},
+		},
+		{
+			name:      "the NodeClass changed groups since the VM was created",
+			vm:        vmInGroup(groupID),
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(otherGroupID)}}},
+			wantErr:   true,
+		},
+		{
+			name:      "the NodeClass gained a group since the VM was created",
+			vm:        vmInGroup(""),
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}}},
+			wantErr:   true,
+		},
+		{
+			name:      "the NodeClass dropped its group since the VM was created",
+			vm:        vmInGroup(groupID),
+			nodeClass: &v1beta1.AKSNodeClass{},
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			err := validateExistingCapacityReservation(tt.vm, tt.nodeClass)
+
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
 		})
 	}
 }

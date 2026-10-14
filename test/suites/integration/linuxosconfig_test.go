@@ -17,19 +17,14 @@ limitations under the License.
 package integration_test
 
 import (
-	"bytes"
-	"context"
 	"fmt"
-	"io"
 	"strings"
-	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -149,7 +144,7 @@ var _ = Describe("LinuxOSConfig", func() {
 		env.ExpectCreated(verifyPod)
 		defer env.ExpectDeleted(verifyPod)
 
-		logs := eventuallyGetPodLogs(verifyPod)
+		logs := env.EventuallyGetPodLogs(verifyPod)
 		By(fmt.Sprintf("Sysctl verification output:\n%s", logs))
 
 		Expect(logs).To(ContainSubstring("fs.aio-max-nr = 131072"))
@@ -201,7 +196,7 @@ var _ = Describe("LinuxOSConfig", func() {
 		env.ExpectCreated(verifyPod)
 		defer env.ExpectDeleted(verifyPod)
 
-		logs := eventuallyGetPodLogs(verifyPod)
+		logs := env.EventuallyGetPodLogs(verifyPod)
 		By(fmt.Sprintf("Transparent huge page verification output:\n%s", logs))
 
 		// The kernel shows the active setting in brackets, e.g.: always [madvise] never
@@ -232,7 +227,7 @@ var _ = Describe("LinuxOSConfig", func() {
 		env.ExpectCreated(verifyPod)
 		defer env.ExpectDeleted(verifyPod)
 
-		logs := eventuallyGetPodLogs(verifyPod)
+		logs := env.EventuallyGetPodLogs(verifyPod)
 		By(fmt.Sprintf("Swap verification output:\n%s", logs))
 
 		// Swap should be enabled. Parse total swap from /proc/meminfo.
@@ -243,15 +238,6 @@ var _ = Describe("LinuxOSConfig", func() {
 		Expect(logs).ToNot(ContainSubstring("SwapTotal:           0 kB"))
 	})
 })
-
-// =========================================================================
-// CONSTANTS
-// =========================================================================
-
-const (
-	// podLogTimeout is the maximum time to wait for pod logs to become available
-	podLogTimeout = 3 * time.Minute
-)
 
 // =========================================================================
 // HELPER FUNCTIONS
@@ -340,33 +326,4 @@ func createSwapVerificationPod(nodeName string) *corev1.Pod {
 		Privileged: lo.ToPtr(true),
 	}
 	return pod
-}
-
-// eventuallyGetPodLogs waits for the pod to be running/succeeded and returns its logs.
-func eventuallyGetPodLogs(pod *corev1.Pod) string {
-	var logs string
-	Eventually(func(g Gomega) {
-		var currentPod corev1.Pod
-		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(pod), &currentPod)).To(Succeed())
-		g.Expect(currentPod.Status.Phase).To(
-			Or(Equal(corev1.PodRunning), Equal(corev1.PodSucceeded)),
-			"Pod should be running or completed",
-		)
-
-		req := env.KubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
-			Container: pod.Spec.Containers[0].Name,
-		})
-		podLogs, err := req.Stream(context.Background())
-		g.Expect(err).To(Succeed())
-		defer podLogs.Close()
-
-		buf := new(bytes.Buffer)
-		_, err = io.Copy(buf, podLogs)
-		g.Expect(err).To(Succeed())
-
-		logs = buf.String()
-		g.Expect(logs).ToNot(BeEmpty(), "Pod logs should not be empty")
-	}).WithTimeout(podLogTimeout).Should(Succeed())
-
-	return logs
 }

@@ -9,6 +9,7 @@
 Table of contents:
 - [Features Overview](#features-overview)
 - [Node Auto Provisioning (NAP) vs. Self-hosted](#node-auto-provisioning-nap-vs-self-hosted)
+- [Node memory reservations](#node-memory-reservations)
 - [Known limitations](#known-limitations)
 - [Installation (self-hosted)](#installation-self-hosted)
   - [Install utilities](#install-utilities)
@@ -19,6 +20,7 @@ Table of contents:
   - [Create NodePool](#create-nodepool)
   - [Scale up deployment](#scale-up-deployment)
   - [Scale down deployment](#scale-down-deployment)
+  - [Maintain spare capacity](#maintain-spare-capacity)
   - [Delete Karpenter nodes manually](#delete-karpenter-nodes-manually)
 - [Cleanup (self-hosted)](#cleanup-self-hosted)
   - [Delete the cluster](#delete-the-cluster)
@@ -48,10 +50,28 @@ Karpenter provider for AKS can be used in two modes:
   * node image upgrades (Linux)
 * **Self-hosted mode**: Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment, use custom Helm charts, or integrate non-standard workflows. Self-hosted mode requires users to directly manage upgrades, token rotation, and helm charts.
 
+## Node memory reservations
+
+All provisioning modes (`aksscriptless`, `bootstrappingclient`, `aksmachineapi`,
+and `aksmachineapiheaderbatch`) use the same memory reservation policy for
+non-hardened nodes: `min(20 * maxPods + 50, totalMemoryMiB / 4)` MiB of
+kube-reserved memory and a 100 MiB hard-eviction threshold. `totalMemoryMiB`
+is the nominal SKU memory in MiB. This policy applies without a Kubernetes
+version gate and follows the
+[AKS node resource reservations documentation](https://learn.microsoft.com/azure/aks/node-resource-reservations).
+
+Scriptless provisioning uses these values both for scheduling estimates and for
+the generated kubelet configuration on newly created nodes. Other provisioning
+modes retain their AKS-owned bootstrap defaults; the provider's estimates align
+with those defaults. Existing nodes are not reconfigured by this change.
+
+Node-hardening reservations, CPU and system reservations, storage thresholds,
+and the separate `VM_MEMORY_OVERHEAD_PERCENT` safety margin remain unchanged.
+
 ## Known limitations
 
 The following AKS features are not supported:
-* Windows nodes.
+* Windows nodes require the AKS Machine API provision mode. This mode is used by Node Auto Provisioning and can also be used with self-hosted Karpenter; the scriptless and bootstrapping-client provision modes do not support Windows. Windows2025 requires Kubernetes 1.32 or newer and AKS Windows2025 availability for the subscription and region.
 * Kubenet and Calico.
 * IPv6 clusters.
 * [Service Principal](https://learn.microsoft.com/azure/aks/kubernetes-service-principal) based clusters. A system-assigned or user-assigned managed identity must be used.
@@ -325,6 +345,10 @@ Now, delete the deployment. After a short amount of time, Karpenter should termi
 kubectl delete deployment inflate
 kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
+
+### Maintain spare capacity
+
+The alpha CapacityBuffer feature can maintain schedulable headroom for workload spikes. It is disabled by default for self-hosted installations and has explicit cost, ownership, and workload-shape limits. See the [CapacityBuffer guide](docs/capacity-buffer.md) and [bounded example](examples/v1/capacity-buffer.yaml).
 
 ### Delete Karpenter nodes manually
 
