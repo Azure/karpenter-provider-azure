@@ -53,6 +53,7 @@ type Template struct {
 	StorageProfileIsEphemeral bool
 	StorageProfilePlacement   armcompute.DiffDiskPlacement
 	StorageProfileSizeGB      int32
+	EncryptionAtHost          *bool
 }
 
 type Provider struct {
@@ -135,6 +136,9 @@ func (p *Provider) GetTemplate(
 	}
 
 	launchTemplate.Tags = Tags(options.FromContext(ctx), nodeClass, nodeClaim)
+	if nodeClass.Spec.Security != nil {
+		launchTemplate.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
+	}
 
 	return launchTemplate, nil
 }
