@@ -69,6 +69,7 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 	var linuxOSConfig *v1beta1.LinuxOSConfiguration  // to test with nil
 	var vTPMEnabled *bool                            // to test with nil
 	var secureBootEnabled *bool                      // to test with nil
+	var workloadRuntime *v1beta1.WorkloadRuntime     // default OCIContainer
 
 	bootstrapper := azureLinux3.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -80,6 +81,7 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 		storageProfile,
 		nodeBootstrappingClient,
 		fipsMode,
+		workloadRuntime,
 		localDNS,
 		artifactStreaming,
 		linuxOSConfig,
@@ -122,4 +124,28 @@ func TestAzureLinux3_Name(t *testing.T) {
 	g := NewWithT(t)
 	azureLinux3 := imagefamily.AzureLinux3{}
 	g.Expect(azureLinux3.Name()).To(Equal("AzureLinux3"))
+}
+
+func TestAzureLinux3_DefaultImages_Kata(t *testing.T) {
+	g := NewWithT(t)
+	azureLinux3 := imagefamily.AzureLinux3{}
+
+	// Kata: only the dedicated Pod Sandboxing image variant (amd64 + gen2) is returned.
+	kataImages := azureLinux3.DefaultImages(true, nil, false, true)
+	g.Expect(kataImages).To(HaveLen(1))
+	g.Expect(kataImages[0].ImageDefinition).To(Equal(imagefamily.AzureLinux3Gen2KataImageDefinition))
+	g.Expect(kataImages[0].Distro).To(Equal("aks-azurelinux-v3-gen2-kata"))
+	g.Expect(kataImages[0].Requirements.Get(v1.LabelArchStable).Values()).To(ConsistOf(karpv1.ArchitectureAmd64))
+	g.Expect(kataImages[0].Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV2))
+
+	// Non-Kata: standard images, and never the Kata variant.
+	stdImages := azureLinux3.DefaultImages(true, nil, false, false)
+	for _, img := range stdImages {
+		g.Expect(img.ImageDefinition).ToNot(Equal(imagefamily.AzureLinux3Gen2KataImageDefinition))
+	}
+
+	// FIPS+Kata is unsatisfiable (no FIPS Kata image): return no images rather than
+	// silently dropping the FIPS guarantee.
+	fipsMode := v1beta1.FIPSModeFIPS
+	g.Expect(azureLinux3.DefaultImages(true, &fipsMode, false, true)).To(BeEmpty())
 }

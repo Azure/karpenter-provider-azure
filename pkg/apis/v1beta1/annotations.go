@@ -19,4 +19,5 @@ package v1beta1
 // Annotations
 var (
 	AnnotationInPlaceUpdateHash = Group + "/in-place-update-hash"
+	AnnotationAKSMachineVMState = Group + "/aks-machine-vm-state"
 )

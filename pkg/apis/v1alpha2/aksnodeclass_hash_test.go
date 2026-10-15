@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha2_test
 
 import (
+	"strings"
 	"time"
 
 	"dario.cat/mergo"
@@ -70,6 +71,7 @@ var _ = Describe("Hash", func() {
 
 		// Static fields, expect changed hash from base
 		Entry("VNETSubnetID", "13971920214979852468", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
+		Entry("OSDiskType", "10944184826674581697", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskType: lo.ToPtr(v1alpha2.OSDiskTypeManaged)}}),
 		Entry("OSDiskSizeGB", "7816855636861645563", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
 		Entry("ImageFamily", "15616969746300892810", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", "33638514539106194", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
@@ -80,6 +82,10 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", "11008649797056761238", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", "4895720480850206885", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("30m")}}}}}),
 		Entry("ArtifactStreaming.Enabled", "15355387647114481444", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ArtifactStreaming: &v1alpha2.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
+		// A disabled nodePublicIP block must hash the same as the pre-feature base, so writing it
+		// doesn't drift existing nodes.
+		Entry("NodePublicIP empty pre-feature compatibility", staticHash, v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{NodePublicIP: &v1alpha2.NodePublicIP{}}}),
+		Entry("NodePublicIP.Enabled false pre-feature compatibility", staticHash, v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{NodePublicIP: &v1alpha2.NodePublicIP{Enabled: lo.ToPtr(false)}}}),
 	)
 	It("should match static hash when reordering tags", func() {
 		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}
@@ -92,6 +98,7 @@ var _ = Describe("Hash", func() {
 		Expect(hash).ToNot(Equal(updatedHash))
 	},
 		Entry("VNETSubnetID", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
+		Entry("OSDiskType", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskType: lo.ToPtr(v1alpha2.OSDiskTypeManaged)}}),
 		Entry("OSDiskSizeGB", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
 		Entry("ImageFamily", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
@@ -102,7 +109,99 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("2h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 		Entry("ArtifactStreaming.Enabled", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ArtifactStreaming: &v1alpha2.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
+		Entry("NodePublicIP.Enabled", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{NodePublicIP: &v1alpha2.NodePublicIP{Enabled: lo.ToPtr(true)}}}),
 	)
+	Context("NodePublicIP", func() {
+		const (
+			prefixID      = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"
+			otherPrefixID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/other"
+		)
+		var (
+			routingPreferenceTag = v1alpha2.IPTag{IPTagType: "RoutingPreference", Tag: "Internet"}
+			firstPartyUsageTag   = v1alpha2.IPTag{IPTagType: "FirstPartyUsage", Tag: "/Unprivileged"}
+		)
+
+		It("should hash an empty prefix list the same as an omitted one", func() {
+			nodeClass.Spec.NodePublicIP = &v1alpha2.NodePublicIP{Enabled: lo.ToPtr(true)}
+			hash := nodeClass.Hash()
+
+			nodeClass.Spec.NodePublicIP.PrefixIDs = []string{}
+			Expect(nodeClass.Hash()).To(Equal(hash))
+		})
+		It("should change hash when the prefix is added, changed, or removed", func() {
+			nodeClass.Spec.NodePublicIP = &v1alpha2.NodePublicIP{Enabled: lo.ToPtr(true)}
+			noPrefixHash := nodeClass.Hash()
+
+			nodeClass.Spec.NodePublicIP.PrefixIDs = []string{prefixID}
+			prefixHash := nodeClass.Hash()
+			Expect(prefixHash).ToNot(Equal(noPrefixHash))
+
+			nodeClass.Spec.NodePublicIP.PrefixIDs = []string{otherPrefixID}
+			Expect(nodeClass.Hash()).ToNot(Equal(prefixHash))
+			Expect(nodeClass.Hash()).ToNot(Equal(noPrefixHash))
+
+			nodeClass.Spec.NodePublicIP.PrefixIDs = nil
+			Expect(nodeClass.Hash()).To(Equal(noPrefixHash))
+		})
+		It("should not change hash when prefix ID casing changes", func() {
+			nodeClass.Spec.NodePublicIP = &v1alpha2.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}}
+			hash := nodeClass.Hash()
+
+			nodeClass.Spec.NodePublicIP.PrefixIDs = []string{strings.ToUpper(prefixID)}
+			Expect(nodeClass.Hash()).To(Equal(hash))
+		})
+		It("should hash an empty IP tag list the same as an omitted one", func() {
+			nodeClass.Spec.NodePublicIP = &v1alpha2.NodePublicIP{Enabled: lo.ToPtr(true)}
+			hash := nodeClass.Hash()
+
+			nodeClass.Spec.NodePublicIP.IPTags = []v1alpha2.IPTag{}
+			Expect(nodeClass.Hash()).To(Equal(hash))
+		})
+		It("should not change hash when IP tags are reordered", func() {
+			nodeClass.Spec.NodePublicIP = &v1alpha2.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1alpha2.IPTag{routingPreferenceTag, firstPartyUsageTag}}
+			hash := nodeClass.Hash()
+
+			nodeClass.Spec.NodePublicIP.IPTags = []v1alpha2.IPTag{firstPartyUsageTag, routingPreferenceTag}
+			Expect(nodeClass.Hash()).To(Equal(hash))
+		})
+		It("should change hash when an IP tag is added, changed, or removed", func() {
+			nodeClass.Spec.NodePublicIP = &v1alpha2.NodePublicIP{Enabled: lo.ToPtr(true)}
+			noTagsHash := nodeClass.Hash()
+
+			nodeClass.Spec.NodePublicIP.IPTags = []v1alpha2.IPTag{routingPreferenceTag}
+			oneTagHash := nodeClass.Hash()
+			Expect(oneTagHash).ToNot(Equal(noTagsHash))
+
+			nodeClass.Spec.NodePublicIP.IPTags = []v1alpha2.IPTag{routingPreferenceTag, firstPartyUsageTag}
+			twoTagsHash := nodeClass.Hash()
+			Expect(twoTagsHash).ToNot(Equal(oneTagHash))
+			Expect(twoTagsHash).ToNot(Equal(noTagsHash))
+
+			nodeClass.Spec.NodePublicIP.IPTags = []v1alpha2.IPTag{{IPTagType: "RoutingPreference", Tag: "MicrosoftNetwork"}}
+			Expect(nodeClass.Hash()).ToNot(Equal(oneTagHash))
+			Expect(nodeClass.Hash()).ToNot(Equal(noTagsHash))
+
+			// Tag values aren't normalized, so a casing change is a change.
+			nodeClass.Spec.NodePublicIP.IPTags = []v1alpha2.IPTag{{IPTagType: "RoutingPreference", Tag: "internet"}}
+			Expect(nodeClass.Hash()).ToNot(Equal(oneTagHash))
+
+			nodeClass.Spec.NodePublicIP.IPTags = nil
+			Expect(nodeClass.Hash()).To(Equal(noTagsHash))
+		})
+		It("should not mutate node public IP settings while hashing", func() {
+			nodeClass.Spec.NodePublicIP = &v1alpha2.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{strings.ToUpper(prefixID)}, IPTags: []v1alpha2.IPTag{}}
+			original := nodeClass.DeepCopy()
+
+			_ = nodeClass.Hash()
+			Expect(nodeClass).To(Equal(original))
+
+			nodeClass.Spec.NodePublicIP.Enabled = lo.ToPtr(false)
+			original = nodeClass.DeepCopy()
+
+			_ = nodeClass.Hash()
+			Expect(nodeClass).To(Equal(original))
+		})
+	})
 	It("should not change hash when tags are changed", func() {
 		hash := nodeClass.Hash()
 		nodeClass.Spec.Tags = map[string]string{"keyTag-3": "valueTag-3"}
@@ -114,6 +213,21 @@ var _ = Describe("Hash", func() {
 			Spec: nodeClass.Spec,
 		}
 		Expect(nodeClass.Hash()).To(Equal(otherNodeClass.Hash()))
+	})
+	// See the v1beta1 equivalent: the OCIContainer default must be hash-neutral so the field can
+	// carry a server-side default without bumping AKSNodeClassHashVersion.
+	It("should not change hash when workloadRuntime is explicitly set to the OCIContainer default", func() {
+		Expect(nodeClass.Spec.WorkloadRuntime).To(BeNil())
+		hash := nodeClass.Hash()
+
+		nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1alpha2.WorkloadRuntimeOCIContainer)
+		Expect(nodeClass.Hash()).To(Equal(hash))
+	})
+	It("should change hash when workloadRuntime is KataVmIsolation", func() {
+		hash := nodeClass.Hash()
+
+		nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1alpha2.WorkloadRuntimeKataVMIsolation)
+		Expect(nodeClass.Hash()).ToNot(Equal(hash))
 	})
 	// This test is a sanity check to update the hashing version if the algorithm has been updated.
 	// Note: this will only catch a missing version update, if the staticHash hasn't been updated yet.

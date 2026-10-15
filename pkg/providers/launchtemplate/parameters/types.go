@@ -61,6 +61,7 @@ type Parameters struct {
 	ScriptlessCustomData           bootstrap.Bootstrapper
 	CustomScriptsNodeBootstrapping customscriptsbootstrap.Bootstrapper
 	ImageID                        string
+	EnableFIPS1403Encryption       bool
 	StorageProfileDiskType         string
 	StorageProfileIsEphemeral      bool
 	StorageProfilePlacement        armcompute.DiffDiskPlacement

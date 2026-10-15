@@ -134,7 +134,7 @@ spec:
               value: "{{ join "," . }}"
           {{- end }}
             - name: FEATURE_GATES
-              value: "ReservedCapacity={{ .Values.settings.featureGates.reservedCapacity }},SpotToSpotConsolidation={{ .Values.settings.featureGates.spotToSpotConsolidation }},NodeRepair={{ .Values.settings.featureGates.nodeRepair }},NodeOverlay={{ .Values.settings.featureGates.nodeOverlay }},StaticCapacity={{ .Values.settings.featureGates.staticCapacity }}"
+              value: "CapacityBuffer={{ dig "capacityBuffer" false .Values.settings.featureGates }},ReservedCapacity={{ dig "reservedCapacity" false .Values.settings.featureGates }},SpotToSpotConsolidation={{ dig "spotToSpotConsolidation" false .Values.settings.featureGates }},NodeRepair={{ dig "nodeRepair" false .Values.settings.featureGates }},NodeOverlay={{ dig "nodeOverlay" false .Values.settings.featureGates }},StaticCapacity={{ dig "staticCapacity" false .Values.settings.featureGates }}"
           {{- with .Values.settings.batchMaxDuration }}
             - name: BATCH_MAX_DURATION
               value: "{{ . }}"
@@ -243,10 +243,13 @@ spec:
       initContainers:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.nodeSelector }}
+      {{- /* The Karpenter controller is a Linux-only component. Always pin it to Linux
+             nodes so it is never scheduled onto Windows nodes in hybrid clusters, while
+             still honoring any additional user-provided nodeSelector entries. */}}
       nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- $nodeSelector := merge (dict) (.Values.nodeSelector | default dict) }}
+        {{- $_ := set $nodeSelector "kubernetes.io/os" "linux" }}
+        {{- toYaml $nodeSelector | nindent 8 }}
       {{- with .Values.affinity }}
       # The template below patches the .Values.affinity to add a default label selector where not specified
       {{- $_ := include "karpenter.patchAffinity" $ }}

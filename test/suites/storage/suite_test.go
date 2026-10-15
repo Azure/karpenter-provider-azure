@@ -488,6 +488,40 @@ var _ = Describe("Ephemeral Storage", func() {
 		env.EventuallyExpectHealthy(pod)
 		env.ExpectCreatedNodeCount("==", 1)
 	})
+	It("should not advertise more ephemeral storage than the registered node", func() {
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceEphemeralStorage: resource.MustParse("1Gi"),
+				},
+			},
+		}})
+
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+		node := env.GetNode(pods[0].Spec.NodeName)
+
+		Eventually(func(g Gomega) {
+			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClaim), nodeClaim)).To(Succeed())
+			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(node), node)).To(Succeed())
+
+			modeledCapacity := nodeClaim.Status.Capacity[corev1.ResourceEphemeralStorage]
+			actualCapacity := node.Status.Capacity[corev1.ResourceEphemeralStorage]
+			modeledAllocatable := nodeClaim.Status.Allocatable[corev1.ResourceEphemeralStorage]
+			actualAllocatable := node.Status.Allocatable[corev1.ResourceEphemeralStorage]
+			g.Expect(modeledCapacity.IsZero()).To(BeFalse())
+			g.Expect(actualCapacity.IsZero()).To(BeFalse())
+			g.Expect(modeledAllocatable.IsZero()).To(BeFalse())
+			g.Expect(actualAllocatable.IsZero()).To(BeFalse())
+			quantities := fmt.Sprintf(
+				"modeled-capacity=%d actual-capacity=%d modeled-allocatable=%d actual-allocatable=%d",
+				modeledCapacity.Value(), actualCapacity.Value(), modeledAllocatable.Value(), actualAllocatable.Value(),
+			)
+			g.Expect(modeledCapacity.Cmp(actualCapacity)).To(BeNumerically("<=", 0), quantities)
+			g.Expect(modeledAllocatable.Cmp(actualAllocatable)).To(BeNumerically("<=", 0), quantities)
+		}).Should(Succeed())
+	})
 	It("should run a pod with ephemeral storage that uses memory-backed emptyDir", func() {
 		// Use a direct pod because the test exercises pod-local emptyDir storage directly.
 		pod := env.Pod(test.PodOptions{})

@@ -19,6 +19,7 @@ package instancetype_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -107,7 +108,7 @@ var _ = Describe("InstanceType Controller", func() {
 		Expect(instanceTypes).ToNot(ContainElement(HaveField("Name", Equal("Standard_D64s_v6"))))
 
 		// create a copy of the slice so we can revert it to its old state afterwards
-		copy := append([]compute.ResourceSku{}, fake.ResourceSkus[fake.Region]...)
+		copy := slices.Clone(fake.ResourceSkus[fake.Region])
 		fake.ResourceSkus[fake.Region] = append(fake.ResourceSkus[fake.Region],
 			compute.ResourceSku{
 				Name:         lo.ToPtr("Standard_D64s_v6"),

@@ -44,8 +44,9 @@ func init() {
 	karpv1.WellKnownValuesForRequirements[AKSLabelMode] = sets.New(ModeSystem, ModeUser)
 	karpv1.WellKnownValuesForRequirements[AKSLabelScaleSetPriority] = sets.New(ScaleSetPriorityRegular, ScaleSetPrioritySpot)
 	karpv1.WellKnownValuesForRequirements[AKSLabelPriority] = sets.New(PriorityRegular, PrioritySpot)
-	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux)
+	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux, OSSKUWindows2022, OSSKUWindows2025, OSSKUAzureContainerLinux)
 	karpv1.WellKnownValuesForRequirements[AKSLabelFIPSEnabled] = sets.New("true")
+	karpv1.WellKnownValuesForRequirements[AKSLabelKataVMIsolation] = sets.New("true")
 }
 
 var (
@@ -111,6 +112,7 @@ var (
 		AKSLabelPriority,
 		AKSLabelOSSKU,
 		AKSLabelFIPSEnabled,
+		AKSLabelKataVMIsolation,
 	)
 
 	AllowUndefinedWellKnownAndRestrictedLabels = func(options *scheduling.CompatibilityOptions) {
@@ -130,7 +132,7 @@ var (
 	LabelSKUVersion = Group + "/sku-version" // numerical (without v), with 1 backfilled
 
 	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
-	LabelSKUMemory = Group + "/sku-memory" // sku.MemoryGB
+	LabelSKUMemory = Group + "/sku-memory" // sku memory in MiB
 	// AKS domain.
 	AKSLabelCPU    = AKSLabelDomain + "/sku-cpu"    // Same value as sku-cpu.
 	AKSLabelMemory = AKSLabelDomain + "/sku-memory" // Same value as sku-memory.
@@ -139,7 +141,7 @@ var (
 	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
 
 	LabelSKUStoragePremiumCapable     = Group + "/sku-storage-premium-capable"     // sku.IsPremiumIO
-	LabelSKUStorageEphemeralOSMaxSize = Group + "/sku-storage-ephemeralos-maxsize" // calculated as max(sku.CachedDiskBytes, sku.MaxResourceVolumeMB)
+	LabelSKUStorageEphemeralOSMaxSize = Group + "/sku-storage-ephemeralos-maxsize" // maximum eligible ephemeral OS disk capacity in integer decimal GB
 	LabelUltraSSD                     = Group + "/sku-storage-ultra-ssd"           // sku.IsUltraSSD
 
 	// GPU labels
@@ -157,11 +159,12 @@ var (
 
 	AKSLabelCluster                 = AKSLabelDomain + "/cluster"
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
-	AKSLabelMode                    = AKSLabelDomain + "/mode"             // "system" or "user"
-	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority" // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
-	AKSLabelPriority                = AKSLabelDomain + "/priority"         // "spot" or "regular".
-	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"           // "Ubuntu" or "AzureLinux"
-	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"     // "true" or not specified
+	AKSLabelMode                    = AKSLabelDomain + "/mode"              // "system" or "user"
+	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority"  // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
+	AKSLabelPriority                = AKSLabelDomain + "/priority"          // "spot" or "regular".
+	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"            // "Ubuntu" or "AzureLinux"
+	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"      // "true" or not specified
+	AKSLabelKataVMIsolation         = AKSLabelDomain + "/kata-vm-isolation" // "true" or not specified
 
 	AKSLabelOSSKUEffective = AKSLabelDomain + "/os-sku-effective" // "Ubuntu2204", "Ubuntu2404", "AzureLinux2", "AzureLinux3"
 	AKSLabelOSSKURequested = AKSLabelDomain + "/os-sku-requested" // "Ubuntu", "Ubuntu2204", or "AzureLinux" (We don't currently allow users to explicitly request AzureLinux3 but if we did that would show up here too)
@@ -191,15 +194,28 @@ const (
 )
 
 const (
-	UbuntuImageFamily     = "Ubuntu"
-	Ubuntu2204ImageFamily = "Ubuntu2204"
-	Ubuntu2404ImageFamily = "Ubuntu2404"
-	AzureLinuxImageFamily = "AzureLinux"
+	UbuntuImageFamily              = "Ubuntu"
+	Ubuntu2204ImageFamily          = "Ubuntu2204"
+	Ubuntu2404ImageFamily          = "Ubuntu2404"
+	AzureLinuxImageFamily          = "AzureLinux"
+	AzureContainerLinuxImageFamily = "AzureContainerLinux"
+
+	Windows2022ImageFamily = "Windows2022"
+	Windows2025ImageFamily = "Windows2025"
 )
 
 const (
-	OSSKUUbuntu     = "Ubuntu"
-	OSSKUAzureLinux = "AzureLinux"
+	OSSKUUbuntu              = "Ubuntu"
+	OSSKUAzureLinux          = "AzureLinux"
+	OSSKUAzureContainerLinux = "AzureContainerLinux"
+
+	OSSKUWindows2022 = "Windows2022"
+	OSSKUWindows2025 = "Windows2025"
+)
+
+const (
+	OSLinux   = "linux"
+	OSWindows = "windows"
 )
 
 const (
@@ -218,13 +234,22 @@ var UbuntuFamilies = sets.New(
 	Ubuntu2404ImageFamily,
 )
 
+// WindowsFamilies is the set of imageFamily spec values that provision Windows nodes.
+var WindowsFamilies = sets.New(
+	Windows2022ImageFamily,
+	Windows2025ImageFamily,
+)
+
 // imageFamilyToOSSKU maps imageFamily spec values to os-sku label values.
 // These values match what AKS writes for kubernetes.azure.com/os-sku.
 var imageFamilyToOSSKU = map[string]string{
-	UbuntuImageFamily:     OSSKUUbuntu,
-	Ubuntu2204ImageFamily: OSSKUUbuntu,
-	Ubuntu2404ImageFamily: OSSKUUbuntu,
-	AzureLinuxImageFamily: OSSKUAzureLinux,
+	UbuntuImageFamily:              OSSKUUbuntu,
+	Ubuntu2204ImageFamily:          OSSKUUbuntu,
+	Ubuntu2404ImageFamily:          OSSKUUbuntu,
+	AzureLinuxImageFamily:          OSSKUAzureLinux,
+	Windows2022ImageFamily:         OSSKUWindows2022,
+	Windows2025ImageFamily:         OSSKUWindows2025,
+	AzureContainerLinuxImageFamily: OSSKUAzureContainerLinux,
 }
 
 // GetOSSKUFromImageFamily returns the kuberentes.azure.com/os-sku label value for the given imageFamily.
@@ -242,4 +267,24 @@ func GetOSSKUFromImageFamily(imageFamily string) string {
 
 func IsAKSLabel(label string) bool {
 	return strings.HasPrefix(label, AKSLabelDomain+"/") || aksLegacyLabels.Has(label)
+}
+
+// IsWindowsImageFamily reports whether the given imageFamily provisions Windows nodes.
+// The comparison is case-insensitive for robustness; canonical values (enforced by the
+// AKSNodeClass imageFamily CEL enum) are the Windows*ImageFamily constants.
+func IsWindowsImageFamily(imageFamily string) bool {
+	for family := range WindowsFamilies {
+		if strings.EqualFold(imageFamily, family) {
+			return true
+		}
+	}
+	return false
+}
+
+// GetOSForImageFamily returns the kubernetes.io/os value for the given imageFamily.
+func GetOSForImageFamily(imageFamily string) string {
+	if IsWindowsImageFamily(imageFamily) {
+		return OSWindows
+	}
+	return OSLinux
 }

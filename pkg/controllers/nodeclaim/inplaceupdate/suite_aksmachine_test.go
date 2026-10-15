@@ -400,6 +400,37 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(Equal(1))
 		})
 
+		It("should preserve the capacity reservation when updating an AKS machine", func() {
+			groupID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"
+			aksMachine.Properties.CapacityReservation = &armcontainerservice.CapacityReservation{
+				CapacityReservationGroup: &armcontainerservice.CapacityReservationGroup{
+					ID: lo.ToPtr(groupID),
+				},
+			}
+			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+			ctx = options.ToContext(
+				ctx,
+				test.Options(
+					test.OptionsFields{
+						ManageExistingAKSMachines: lo.ToPtr(true),
+						AdditionalTags: map[string]string{
+							"test-tag": "my-tag",
+						},
+					}))
+
+			ExpectApplied(ctx, env.Client, nodeClaim)
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+
+			updatedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updatedAKSMachine.Properties.Tags).To(HaveKeyWithValue("test-tag", lo.ToPtr("my-tag")))
+			Expect(updatedAKSMachine.Properties.CapacityReservation).ToNot(BeNil())
+			Expect(updatedAKSMachine.Properties.CapacityReservation.CapacityReservationGroup).ToNot(BeNil())
+			Expect(lo.FromPtr(updatedAKSMachine.Properties.CapacityReservation.CapacityReservationGroup.ID)).To(Equal(groupID))
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(Equal(1))
+		})
+
 		It("should handle missing ETag gracefully (backward compatibility)", func() {
 			// Setup machine without ETag
 			aksMachine.Properties.ETag = nil
