@@ -80,6 +80,7 @@ var _ = Describe("Options", func() {
 		"PROVIDER_BATCH_MAX_DURATION",
 		"PROVIDER_BATCH_MAX_SIZE",
 		"COMPUTE_RECOMMENDATION_MODE",
+		"SYSTEM_NAMESPACE",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -140,6 +141,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("PROVIDER_BATCH_IDLE_DURATION", "1500ms")
 			os.Setenv("PROVIDER_BATCH_MAX_DURATION", "6s")
 			os.Setenv("PROVIDER_BATCH_MAX_SIZE", "42")
+			os.Setenv("SYSTEM_NAMESPACE", " kube-system ")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -175,8 +177,10 @@ var _ = Describe("Options", func() {
 				ProviderBatchIdleDuration:      lo.ToPtr(1500 * time.Millisecond),
 				ProviderBatchMaxDuration:       lo.ToPtr(6 * time.Second),
 				ProviderBatchMaxSize:           lo.ToPtr(42),
+				SystemNamespace:                lo.ToPtr("kube-system"),
 			})
 			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
+			Expect(fs.Lookup("system-namespace")).To(BeNil())
 		})
 	})
 	Context("Validation", func() {

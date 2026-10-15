@@ -87,6 +87,7 @@ type Options struct {
 	KubeletIdentityClientID string   `json:"kubeletIdentityClientID,omitempty"` // => Flows to bootstrap and used in drift
 	VnetGUID                string   `json:"vnetGuid,omitempty"`                // resource guid used by azure cni for identifying the right vnet
 	SubnetID                string   `json:"subnetId,omitempty"`                // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
+	SystemNamespace         string   `json:"systemNamespace,omitempty"`
 	setFlags                map[string]bool
 
 	ProvisionMode              string            `json:"provisionMode,omitempty"`
@@ -155,6 +156,11 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.BoolVar(&o.EnableAzureSDKLogging, "enable-azure-sdk-logging", env.WithDefaultBool("ENABLE_AZURE_SDK_LOGGING", true), "If set to false then Azure SDK middleware logging is disabled for debugging, and won't be logging all HTTP requests/responses to Azure APIs.")
 }
 
+// LoadFromEnvironment loads options that are intentionally not exposed as command-line flags.
+func (o *Options) LoadFromEnvironment() {
+	o.SystemNamespace = strings.TrimSpace(os.Getenv("SYSTEM_NAMESPACE"))
+}
+
 // IsAKSMachineAPIMode returns true if the current provision mode creates instances via the AKS Machine API.
 func (o *Options) IsAKSMachineAPIMode() bool {
 	return o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
@@ -179,6 +185,8 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 		}
 		return fmt.Errorf("parsing flags, %w", err)
 	}
+
+	o.LoadFromEnvironment()
 
 	// Check if each option has been set. This is a little brute force and better options might exist,
 	// but this only needs to be here for one version
