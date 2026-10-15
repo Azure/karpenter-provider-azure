@@ -517,7 +517,7 @@ func TestBuildFleetBody_AcceleratedNetworking(t *testing.T) {
 					fleet, err := BuildFleetBody(req, 1, req.Tags)
 					g.Expect(err).ToNot(HaveOccurred())
 
-					names := []string{}
+					names := make([]string, 0, len(fleet.Properties.VMSizesProfile))
 					for _, profile := range fleet.Properties.VMSizesProfile {
 						names = append(names, *profile.Name)
 					}
@@ -602,7 +602,7 @@ func TestBuildFleetBody_IncompleteSKUCapabilities(t *testing.T) {
 				g.Expect(fleet).To(BeNil())
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
-				names := []string{}
+				names := make([]string, 0, len(fleet.Properties.VMSizesProfile))
 				for _, profile := range fleet.Properties.VMSizesProfile {
 					names = append(names, *profile.Name)
 				}
@@ -696,7 +696,7 @@ func TestBuildFleetBody_OptionalEncryptionDoesNotFilterCandidates(t *testing.T) 
 			fleet, err := BuildFleetBody(req, 1, req.Tags)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			names := []string{}
+			names := make([]string, 0, len(fleet.Properties.VMSizesProfile))
 			for _, profile := range fleet.Properties.VMSizesProfile {
 				names = append(names, *profile.Name)
 			}
