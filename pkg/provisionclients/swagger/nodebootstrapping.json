@@ -489,6 +489,31 @@
           },
           "description": "Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.",
           "default": "Immediate"
+        },
+        "failfastAllUnhealthyUpstreams": {
+          "type": "boolean",
+          "description": "Determines the handling of requests when all upstream servers are unhealthy. See [forward plugin](https://coredns.io/plugins/forward) for more information.",
+          "x-nullable": true
+        },
+        "healthCheck": {
+          "$ref": "#/definitions/LocalDNSHealthCheck",
+          "x-nullable": true
+        }
+      }
+    },
+    "LocalDNSHealthCheck": {
+      "type": "object",
+      "description": "Configures CoreDNS forward plugin health checking behavior for upstream servers.",
+      "properties": {
+        "duration": {
+          "type": "string",
+          "description": "Health check interval as a Go duration string, for example \"500ms\" or \"1s\".",
+          "x-nullable": true
+        },
+        "noRec": {
+          "type": "boolean",
+          "description": "Sets the RecursionDesired flag of the health check query to false.",
+          "x-nullable": true
         }
       }
     },

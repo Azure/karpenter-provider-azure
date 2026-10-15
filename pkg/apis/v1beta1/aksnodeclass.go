@@ -348,6 +348,7 @@ type LocalDNS struct {
 // LocalDNSZoneOverride specifies DNS override configuration for a specific zone
 // +kubebuilder:validation:XValidation:message="'cluster.local' cannot be forwarded to VnetDNS",rule="!(self.zone.endsWith('cluster.local') && self.forwardDestination == 'VnetDNS')"
 // +kubebuilder:validation:XValidation:message="serveStale Verify cannot be used with protocol ForceTCP",rule="!(self.serveStale == 'Verify' && self.protocol == 'ForceTCP')"
+// +kubebuilder:validation:XValidation:message="healthCheck.duration is required when healthCheck is specified",rule="!has(self.healthCheck) || (has(self.healthCheck.duration) && size(self.healthCheck.duration) > 0 && self.healthCheck.duration != 'Never')"
 type LocalDNSZoneOverride struct {
 	// zone is the DNS zone this override applies to (e.g., ".", "cluster.local").
 	// +required
@@ -386,6 +387,43 @@ type LocalDNSZoneOverride struct {
 	// serveStale is the policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +required
 	ServeStale LocalDNSServeStale `json:"serveStale,omitempty"`
+	// failfastAllUnhealthyUpstreams determines the handling of requests when every upstream DNS
+	// server for this zone is unhealthy: fail the query immediately instead of still attempting a
+	// forward and waiting for it to time out. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	//
+	// Warning: on a zone that forwards to ClusterCoreDNS, such as cluster.local, this turns a
+	// transient CoreDNS outage into an immediate SERVFAIL for all in-cluster DNS. It is intended
+	// for zones forwarding to VnetDNS, where failing fast stops localDNS from amplifying an
+	// upstream outage.
+	// +optional
+	FailfastAllUnhealthyUpstreams *bool `json:"failfastAllUnhealthyUpstreams,omitempty"`
+	// healthCheck configures how localDNS probes the upstream DNS servers for this zone.
+	// See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// +optional
+	HealthCheck *LocalDNSHealthCheck `json:"healthCheck,omitempty"`
+}
+
+// LocalDNSHealthCheck configures the CoreDNS forward plugin health check for a zone's upstream
+// DNS servers.
+//
+// The forward plugin also accepts a `domain` knob, and AgentBaker renders it, but it is not
+// exposed here: it is reserved in the AKS control plane's LocalDNSHealthCheck message, so there
+// is no field for it to be converted into.
+type LocalDNSHealthCheck struct {
+	// duration is the interval between health check probes sent to the upstream DNS servers.
+	//
+	// Note: the pattern below is shared with cacheDuration and serveStaleDuration for consistency
+	// across this struct, which means sub-second intervals such as 500ms cannot be expressed here
+	// even though CoreDNS and AgentBaker both accept them.
+	// +kubebuilder:validation:Pattern=`^([0-9]+(s|m|h))+$`
+	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:validation:Schemaless
+	// +required
+	Duration karpv1.NillableDuration `json:"duration"`
+	// noRec sets the RecursionDesired flag of the health check query to false. It has no effect
+	// unless duration is set.
+	// +optional
+	NoRec *bool `json:"noRec,omitempty"`
 }
 
 // LocalDNSOverrides specifies DNS override configuration
