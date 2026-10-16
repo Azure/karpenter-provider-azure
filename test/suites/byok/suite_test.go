@@ -37,6 +37,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -79,7 +80,7 @@ var _ = Describe("BYOK", func() {
 		}
 
 		By("Phase 2: Creating NodeClass and NodePool")
-		nodeClass := env.DefaultAKSNodeClass()
+		nodeClass := azkarptest.AKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
 
 		By("Phase 3: Creating test Deployment")
@@ -134,7 +135,7 @@ var _ = Describe("BYOK", func() {
 		}
 
 		By("Phase 2: Creating NodeClass with ephemeral disk configuration")
-		nodeClass := env.DefaultAKSNodeClass()
+		nodeClass := azkarptest.AKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
 
 		By("Phase 3: Configuring ephemeral OS disk requirement")
@@ -194,7 +195,7 @@ var _ = Describe("BYOK", func() {
 		env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetWithoutRBAC})
 
 		By("Phase 3: Creating a NodeClass and NodePool")
-		nodeClass := env.DefaultAKSNodeClass()
+		nodeClass := azkarptest.AKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
 
 		By("Phase 4: Applying NodeClass and NodePool to cluster")

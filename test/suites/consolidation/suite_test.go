@@ -36,6 +36,7 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
@@ -60,7 +61,7 @@ func TestConsolidation(t *testing.T) {
 }
 
 var _ = BeforeEach(func() {
-	nodeClass = env.DefaultAKSNodeClass()
+	nodeClass = test.AKSNodeClass()
 	env.BeforeEach()
 })
 var _ = AfterEach(func() { env.Cleanup() })
@@ -73,7 +74,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 
 		BeforeEach(func() {
 			env.SkipIfNotWindowsCapable()
-			windowsNodeClass = env.WindowsNodeClass(v1beta1.Windows2022ImageFamily)
+			windowsNodeClass = test.AKSNodeClass(test.WithImageFamily(v1beta1.Windows2022ImageFamily))
 			windowsNodePool = env.WindowsNodePool(windowsNodeClass)
 		})
 

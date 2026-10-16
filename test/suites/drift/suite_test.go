@@ -61,7 +61,7 @@ func TestDrift(t *testing.T) {
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()
-	nodeClass = env.DefaultAKSNodeClass()
+	nodeClass = test.AKSNodeClass()
 	nodePool = env.DefaultNodePool(nodeClass)
 })
 var _ = AfterEach(func() { env.Cleanup() })
@@ -545,7 +545,7 @@ var _ = Describe("Drift", func() {
 		})
 
 		It("should drift a Windows node when the NodePool template changes", func() {
-			windowsNodeClass := env.WindowsNodeClass(v1beta1.Windows2022ImageFamily)
+			windowsNodeClass := test.AKSNodeClass(test.WithImageFamily(v1beta1.Windows2022ImageFamily))
 			windowsNodePool := env.WindowsNodePool(windowsNodeClass)
 
 			env.ExpectCreated(windowsDep, windowsNodeClass, windowsNodePool)
@@ -574,7 +574,7 @@ var _ = Describe("Drift", func() {
 		// changed. Windows pins its node image at create time, so a mismatch between the pinned
 		// value and what the NodeClass reports would otherwise drift every Windows node forever.
 		It("should not drift a Windows node when nothing changes", func() {
-			windowsNodeClass := env.WindowsNodeClass(v1beta1.Windows2022ImageFamily)
+			windowsNodeClass := test.AKSNodeClass(test.WithImageFamily(v1beta1.Windows2022ImageFamily))
 			windowsNodePool := env.WindowsNodePool(windowsNodeClass)
 
 			env.ExpectCreated(windowsDep, windowsNodeClass, windowsNodePool)
