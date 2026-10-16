@@ -3043,12 +3043,11 @@ var _ = Describe("InstanceType Provider", func() {
 					})
 				}
 				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
-				nc := test.AKSNodeClass()
+				nc := test.AKSNodeClass(test.WithImageFamily(v1beta1.Ubuntu2204ImageFamily))
 				// GPU driver installation is independent of OS compatibility; don't let it mask filtering.
 				nc.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}
 				nc.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
 				getName := func(it *corecloudprovider.InstanceType) string { return it.Name }
-				nc.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 				baseline, err := azureEnv.InstanceTypesProvider.List(ctx, nc)
 				Expect(err).ToNot(HaveOccurred())
 				for _, name := range []string{"Standard_NC24ads_A100_v4", "Standard_NC144ds_xl_RTXPRO6000BSE_v6", "Standard_NV4ads_V710_v5"} {
