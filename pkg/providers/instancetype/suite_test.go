@@ -3205,8 +3205,7 @@ var _ = Describe("InstanceType Provider", func() {
 			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
 
 			listFor := func(runtime *v1beta1.WorkloadRuntime) corecloudprovider.InstanceTypes {
-				nc := test.AKSNodeClass()
-				nc.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				nc := test.AKSNodeClass(test.WithImageFamily(v1beta1.AzureLinuxImageFamily))
 				nc.Spec.WorkloadRuntime = runtime
 				ExpectApplied(ctx, env.Client, nc)
 				its, err := azureEnv.InstanceTypesProvider.List(ctx, nc)
