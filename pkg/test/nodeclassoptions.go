@@ -36,10 +36,20 @@ func WithName(name string) AKSNodeClassOption {
 	}
 }
 
-// WithOSDiskSizeGB sets the OSDiskSizeGB field of the AKSNodeClass.
-func WithOSDiskSizeGB(size int32) AKSNodeClassOption {
+// WithManagedOSDiskSizeGB sets the OS disk size and requests a managed disk.
+func WithManagedOSDiskSizeGB(size int32) AKSNodeClassOption {
 	return func(nodeClass *v1beta1.AKSNodeClass) {
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr(size)
+		nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+	}
+}
+
+// WithEphemeralOSDiskGB sets the OS disk size and allows ephemeral placement,
+// falling back to managed when the SKU cannot accommodate it.
+func WithEphemeralOSDiskGB(size int32) AKSNodeClassOption {
+	return func(nodeClass *v1beta1.AKSNodeClass) {
+		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr(size)
+		nodeClass.Spec.OSDiskType = nil
 	}
 }
 
