@@ -90,7 +90,10 @@ type Options struct {
 	SystemNamespace         string   `json:"systemNamespace,omitempty"`
 	setFlags                map[string]bool
 
-	ProvisionMode              string            `json:"provisionMode,omitempty"`
+	ProvisionMode string `json:"provisionMode,omitempty"`
+	// NodeOSUpgradeChannel mirrors the AKS managed cluster setting. SecurityPatch images are only
+	// requested on AKS Machine API modes with SIG; unsupported combinations keep standard images.
+	NodeOSUpgradeChannel       string            `json:"nodeOSUpgradeChannel,omitempty"`
 	NodeBootstrappingServerURL string            `json:"-"`
 	UseSIG                     bool              `json:"useSIG,omitempty"` // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
 	SIGAccessTokenServerURL    string            `json:"-"`                // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
@@ -132,6 +135,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "[REQUIRED] The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR.")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
 	fs.StringVar(&o.ProvisionMode, "provision-mode", env.WithDefaultString("PROVISION_MODE", consts.ProvisionModeAKSScriptless), "[UNSUPPORTED] The provision mode for the cluster.")
+	fs.StringVar(&o.NodeOSUpgradeChannel, "node-os-upgrade-channel", env.WithDefaultString("NODE_OS_UPGRADE_CHANNEL", ""), "The AKS node OS upgrade channel used to select node images.")
 	fs.StringVar(&o.NodeBootstrappingServerURL, "nodebootstrapping-server-url", env.WithDefaultString("NODEBOOTSTRAPPING_SERVER_URL", ""), "[UNSUPPORTED] The url for the node bootstrapping provider server.")
 	fs.StringVar(&o.NodeResourceGroup, "node-resource-group", env.WithDefaultString("AZURE_NODE_RESOURCE_GROUP", ""), "[REQUIRED] the resource group created and managed by AKS where the nodes live")
 	fs.StringVar(&o.KubeletIdentityClientID, "kubelet-identity-client-id", env.WithDefaultString("KUBELET_IDENTITY_CLIENT_ID", ""), "The client ID of the kubelet identity.")
@@ -164,6 +168,13 @@ func (o *Options) LoadFromEnvironment() {
 // IsAKSMachineAPIMode returns true if the current provision mode creates instances via the AKS Machine API.
 func (o *Options) IsAKSMachineAPIMode() bool {
 	return o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+}
+
+// IsSecurityPatchChannel returns true when SecurityPatch images can be addressed through the AKS
+// Machine API. Other configurations retain standard node images so an unsupported rollout cannot
+// stop node provisioning.
+func (o *Options) IsSecurityPatchChannel() bool {
+	return o.NodeOSUpgradeChannel == consts.NodeOSUpgradeChannelSecurityPatch && o.UseSIG && o.IsAKSMachineAPIMode()
 }
 
 // ShouldUseNodeHardening returns the effective node hardening setting. Scriptless and AKS Machine

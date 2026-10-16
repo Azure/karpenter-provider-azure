@@ -18,6 +18,7 @@ package azclient
 
 import (
 	"context"
+	"slices"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -226,7 +227,13 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
-	nodeImageVersionsClient, err := imagefamily.NewNodeImageVersionsClient(cfg.SubscriptionID, cred, opts)
+	nodeImageVersionsClientOptions := optionsForNodeImageVersions(opts, o.IsSecurityPatchChannel())
+	if o.IsSecurityPatchChannel() {
+		log.FromContext(ctx).Info("requesting provisionable SecurityPatch images with standard node images")
+	} else if o.NodeOSUpgradeChannel == consts.NodeOSUpgradeChannelSecurityPatch {
+		log.FromContext(ctx).Info("SecurityPatch node images require SIG and an AKS Machine API provision mode; using standard node images")
+	}
+	nodeImageVersionsClient, err := imagefamily.NewNodeImageVersionsClient(cfg.SubscriptionID, cred, &nodeImageVersionsClientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -375,4 +382,13 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		quotaCategoryVMFamilyMappingAPI,
 		skuMixPlacementClient,
 	), nil
+}
+
+func optionsForNodeImageVersions(opts *arm.ClientOptions, includeSecurityPatchImages bool) arm.ClientOptions {
+	clientOptions := *opts
+	clientOptions.PerCallPolicies = slices.Clone(clientOptions.PerCallPolicies)
+	if includeSecurityPatchImages {
+		clientOptions.PerCallPolicies = append(clientOptions.PerCallPolicies, &includeSecurityPatchImagesPolicy{})
+	}
+	return clientOptions
 }

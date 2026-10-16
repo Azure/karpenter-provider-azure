@@ -43,6 +43,7 @@ func (o *Options) Validate() error {
 		o.validateVMMemoryOverheadPercent(),
 		o.validateVnetSubnetID(),
 		o.validateProvisionMode(),
+		o.validateNodeOSUpgradeChannel(),
 		o.validateUseSIG(),
 		o.validateAdminUsername(),
 		o.validateAdditionalTags(),
@@ -51,6 +52,16 @@ func (o *Options) Validate() error {
 		o.validateComputeRecommendationMode(),
 		validate.Struct(o),
 	)
+}
+
+func (o *Options) validateNodeOSUpgradeChannel() error {
+	switch o.NodeOSUpgradeChannel {
+	case "", consts.NodeOSUpgradeChannelNodeImage, consts.NodeOSUpgradeChannelSecurityPatch,
+		consts.NodeOSUpgradeChannelNone, consts.NodeOSUpgradeChannelUnmanaged:
+		return nil
+	default:
+		return fmt.Errorf("node-os-upgrade-channel is invalid: %s", o.NodeOSUpgradeChannel)
+	}
 }
 
 func (o *Options) validateClusterDNSIP() error {

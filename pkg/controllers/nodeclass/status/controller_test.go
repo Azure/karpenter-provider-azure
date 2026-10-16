@@ -67,6 +67,16 @@ func TestSnapshotRecentlyUsed(t *testing.T) {
 			expectSnapshot:       false,
 		},
 		{
+			name:                 "when only the SecurityPatch date changes",
+			oldKubernetesVersion: "1.31.0",
+			newKubernetesVersion: "1.31.0",
+			oldImageVersion:      "202601.01.0-2026.02.01",
+			newImageVersion:      "202601.01.0-2026.02.15",
+			oldImagesReady:       true,
+			newImagesReady:       true,
+			expectSnapshot:       false,
+		},
+		{
 			name:                 "when the previous images were not ready",
 			oldKubernetesVersion: "1.31.0",
 			newKubernetesVersion: "1.32.0",

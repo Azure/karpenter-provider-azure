@@ -166,11 +166,11 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 		return
 	}
 
-	oldSuffix := parseVersion(oldImages[0].ID)
+	oldSuffix, _ := imagefamily.SplitSecurityPatchVersion(parseVersion(oldImages[0].ID))
 
 	var newSuffix string
 	if len(newImages) > 0 {
-		newSuffix = parseVersion(newImages[0].ID)
+		newSuffix, _ = imagefamily.SplitSecurityPatchVersion(parseVersion(newImages[0].ID))
 	}
 
 	oldK8sVer := lo.FromPtr(oldNodeClass.Status.KubernetesVersion)

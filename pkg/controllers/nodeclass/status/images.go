@@ -157,7 +157,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 
 	latestImageVersion := ""
 	if len(goalImages) > 0 {
-		latestImageVersion = parseVersion(goalImages[0].ID)
+		latestImageVersion, _ = imagefamily.SplitSecurityPatchVersion(parseVersion(goalImages[0].ID))
 	}
 
 	var pinningShouldUpdate bool
@@ -177,7 +177,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	// Note: We want to handle cases 1-3 regardless of maintenance window state, since they are either
 	// for initialization, based off an underlying customer operation, or a different update we're
 	// dependant upon which would have already been preformed within its required maintenance Window.
-	shouldUpdate := imageVersionsUnready(nodeClass) || pinningShouldUpdate || unpinning
+	shouldUpdate := imageVersionsUnready(nodeClass) || pinningShouldUpdate || unpinning || shouldRefreshStandardImages(ctx, nodeClass.Status.Images)
 	if !shouldUpdate {
 		// Case 4: Check if the maintenance window is open
 		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx)
@@ -214,6 +214,16 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 	}
 	return reconcile.Result{RequeueAfter: requeueTime}, nil
+}
+
+func shouldRefreshStandardImages(ctx context.Context, images []v1beta1.NodeImage) bool {
+	if options.FromContext(ctx).IsSecurityPatchChannel() {
+		return false
+	}
+	return lo.ContainsBy(images, func(image v1beta1.NodeImage) bool {
+		_, patchDate := imagefamily.SplitSecurityPatchVersion(parseVersion(image.ID))
+		return patchDate != ""
+	})
 }
 
 // Handles case 1: This is a new AKSNodeClass, where images haven't been populated yet

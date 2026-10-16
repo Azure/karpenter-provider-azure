@@ -18,9 +18,14 @@ package imagefamily
 
 import (
 	"testing"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 )
 
 func TestIsNewerVersion(t *testing.T) {
+	g := NewWithT(t)
 	testCases := []struct {
 		version1 string
 		version2 string
@@ -41,9 +46,23 @@ func TestIsNewerVersion(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.version1+"_"+tc.version2, func(t *testing.T) {
 			result := isNewerVersion(tc.version1, tc.version2)
-			if result != tc.expected {
-				t.Errorf("isNewerVersion(%q, %q) = %v; want %v", tc.version1, tc.version2, result, tc.expected)
-			}
+			g.Expect(result).To(Equal(tc.expected))
 		})
 	}
+}
+
+func TestFilteredNodeImagesPrefersSecurityPatch(t *testing.T) {
+	g := NewWithT(t)
+	images := []*armcontainerservice.NodeImageVersion{
+		{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2containerd"), Version: lo.ToPtr("202609.23.0")},
+		{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2containerd"), Version: lo.ToPtr("202608.14.0-2026.09.25")},
+		{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2containerd"), Version: lo.ToPtr("202608.01.0-2026.09.26")},
+		{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("kata"), Version: lo.ToPtr("202609.23.0")},
+	}
+
+	filtered := FilteredNodeImages(images)
+	g.Expect(filtered).To(HaveLen(2))
+	g.Expect(lo.Map(filtered, func(image *armcontainerservice.NodeImageVersion, _ int) string { return lo.FromPtr(image.Version) })).To(ConsistOf(
+		"202608.14.0-2026.09.25", "202609.23.0",
+	))
 }

@@ -58,7 +58,8 @@ func (l *NodeImageVersionsClient) List(ctx context.Context, location string) ([]
 }
 
 // FilteredNodeImages filters on two conditions
-// 1. The image is the latest version for the given OS and SKU
+// 1. The image is the preferred version for the given OS and SKU. A SecurityPatch image is
+// preferred when present; otherwise the latest standard image is retained.
 // 2. the image belongs to a supported gallery (AKS Ubuntu, Azure Linux, or AKS Windows)
 func FilteredNodeImages(nodeImageVersions []*armcontainerservice.NodeImageVersion) []*armcontainerservice.NodeImageVersion {
 	latestImages := make(map[string]*armcontainerservice.NodeImageVersion)
@@ -79,7 +80,7 @@ func FilteredNodeImages(nodeImageVersions []*armcontainerservice.NodeImageVersio
 		key := os + "-" + sku
 
 		currentLatest, exists := latestImages[key]
-		if !exists || isNewerVersion(version, lo.FromPtr(currentLatest.Version)) {
+		if !exists || isPreferredVersion(version, lo.FromPtr(currentLatest.Version)) {
 			latestImages[key] = image
 		}
 	}
@@ -92,9 +93,37 @@ func FilteredNodeImages(nodeImageVersions []*armcontainerservice.NodeImageVersio
 	return filteredImages
 }
 
+func isPreferredVersion(version1, version2 string) bool {
+	base1, patch1 := SplitSecurityPatchVersion(version1)
+	base2, patch2 := SplitSecurityPatchVersion(version2)
+	if patch1 != "" && patch2 == "" {
+		return true
+	}
+	if patch1 == "" && patch2 != "" {
+		return false
+	}
+	if patch1 == "" {
+		return isNewerVersion(base1, base2)
+	}
+	if comparison := compareVersionSegments(base1, base2); comparison != 0 {
+		return comparison > 0
+	}
+	return compareVersionSegments(patch1, patch2) > 0
+}
+
+// SplitSecurityPatchVersion separates a composite SecurityPatch version into its standard base
+// version and patch date. Standard versions are returned with an empty patch date.
+func SplitSecurityPatchVersion(version string) (base, patchDate string) {
+	base, patchDate, _ = strings.Cut(version, "-")
+	return base, patchDate
+}
+
 // isNewerVersion will return if version1 is greater than version2, note the new versioning scheme is yearmm.dd.build, previously it was yy.mm.dd without the build id.
 func isNewerVersion(version1, version2 string) bool {
-	// Split by dots and compare each segment as an integer getting the largest vhd version
+	return compareVersionSegments(version1, version2) > 0
+}
+
+func compareVersionSegments(version1, version2 string) int {
 	v1Segments := strings.Split(version1, ".")
 	v2Segments := strings.Split(version2, ".")
 
@@ -103,18 +132,18 @@ func isNewerVersion(version1, version2 string) bool {
 		v2Segment, err2 := strconv.Atoi(v2Segments[i])
 
 		if err1 != nil || err2 != nil {
-			return false
+			return 0
 		}
 
 		if v1Segment > v2Segment {
-			return true
+			return 1
 		} else if v1Segment < v2Segment {
-			return false
+			return -1
 		}
 	}
 
 	// If all segments are equal up to the length of the shorter version,
 	// the longer version is considered newer if it has additional segments
 	// the legacy linux versions use "yy.mm.dd" whereas new linux versions use "yymm.dd.build"
-	return len(v1Segments) > len(v2Segments)
+	return len(v1Segments) - len(v2Segments)
 }

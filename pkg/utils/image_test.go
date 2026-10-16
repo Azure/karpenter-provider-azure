@@ -43,6 +43,12 @@ func TestGetAKSMachineNodeImageVersionFromImageID(t *testing.T) {
 			expectedResult: "AKSUbuntu-2204gen2containerd-2022.10.03",
 		},
 		{
+			name:           "SecurityPatch SIG image ID",
+			imageID:        "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/202608.14.0-2026.08.24",
+			expectedError:  "",
+			expectedResult: "AKSUbuntu-2204gen2containerd-202608.14.0-2026.08.24",
+		},
+		{
 			name:           "Valid Windows SIG image ID drops windows- prefix",
 			imageID:        "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Windows/providers/Microsoft.Compute/galleries/AKSWindows/images/windows-2022-containerd-gen2/versions/20348.4529.251212",
 			expectedError:  "",

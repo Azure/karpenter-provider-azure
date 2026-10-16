@@ -45,6 +45,10 @@ const (
 	ProvisionModeBootstrappingClient      = "bootstrappingclient"
 	ProvisionModeAKSMachineAPI            = "aksmachineapi"
 	ProvisionModeAKSMachineAPIHeaderBatch = "aksmachineapiheaderbatch"
+	NodeOSUpgradeChannelNodeImage         = "NodeImage"
+	NodeOSUpgradeChannelSecurityPatch     = "SecurityPatch"
+	NodeOSUpgradeChannelNone              = "None"
+	NodeOSUpgradeChannelUnmanaged         = "Unmanaged"
 
 	AKSMachineAPIHeaderBatchMaxSize = 50
 

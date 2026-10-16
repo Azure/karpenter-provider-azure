@@ -21,7 +21,9 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 
@@ -464,6 +466,64 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			})
 		})
 	}
+
+	Context("SecurityPatch images", func() {
+		var imageReconciler *status.NodeImageReconciler
+
+		BeforeEach(func() {
+			ctx = test.Options(test.OptionsFields{
+				UseSIG:               lo.ToPtr(true),
+				SIGSubscriptionID:    lo.ToPtr("10945678-1234-1234-1234-123456789012"),
+				ProvisionMode:        lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				NodeOSUpgradeChannel: lo.ToPtr(consts.NodeOSUpgradeChannelSecurityPatch),
+			}).ToContext(ctx)
+			nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+			imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, "kube-system")
+			azureEnv.NodeImageVersionsAPI.OverrideNodeImageVersions = []*armcontainerservice.NodeImageVersion{
+				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2containerd"), Version: lo.ToPtr("202608.14.0-2026.08.24")},
+				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204containerd"), Version: lo.ToPtr("202608.26.0")},
+				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2arm64containerd"), Version: lo.ToPtr("202608.14.0-2026.08.24")},
+			}
+		})
+
+		It("uses SecurityPatch images while retaining standard images for uncovered SKUs", func() {
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "Initializing", "")
+			_, err := imageReconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.Status.Images).To(HaveLen(3))
+			Expect(nodeClass.Status.Images[0].ID).To(ContainSubstring("202608.14.0-2026.08.24"))
+			Expect(nodeClass.Status.Images[1].ID).To(ContainSubstring("202608.26.0"))
+			Expect(lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)).To(Equal("202608.14.0"))
+		})
+
+		It("waits for a maintenance window before adopting SecurityPatch images", func() {
+			nodeClass.Status.Images = getExpectedTestSIGImages(oldSIGImageVersion)
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+			ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
+
+			_, err := imageReconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestSIGImages(oldSIGImageVersion)))
+		})
+
+		It("immediately returns to standard images when SecurityPatch is disabled", func() {
+			nodeClass.Status.Images = getExpectedTestSIGImages("202608.14.0-2026.08.24")
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+			ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
+			ctx = test.Options(test.OptionsFields{
+				UseSIG:               lo.ToPtr(true),
+				SIGSubscriptionID:    lo.ToPtr("10945678-1234-1234-1234-123456789012"),
+				ProvisionMode:        lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				NodeOSUpgradeChannel: lo.ToPtr(consts.NodeOSUpgradeChannelNodeImage),
+			}).ToContext(ctx)
+			azureEnv.NodeImageVersionsAPI.OverrideNodeImageVersions = nil
+
+			_, err := imageReconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestSIGImages(newSIGImageVersion)))
+		})
+	})
 
 	Context("FIPS Validation With UseSIG", func() {
 		var imageReconciler *status.NodeImageReconciler

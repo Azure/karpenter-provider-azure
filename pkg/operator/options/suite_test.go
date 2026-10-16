@@ -62,6 +62,7 @@ var _ = Describe("Options", func() {
 		"DNS_SERVICE_IP",
 		"NODE_IDENTITIES",
 		"PROVISION_MODE",
+		"NODE_OS_UPGRADE_CHANNEL",
 		"NODEBOOTSTRAPPING_SERVER_URL",
 		"VNET_GUID",
 		"USE_SIG",
@@ -578,6 +579,49 @@ var _ = Describe("Options", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(opts.ManageExistingAKSMachines).To(BeTrue())
 		})
+	})
+
+	Context("Node OS Upgrade Channel", func() {
+		It("enables SecurityPatch images for SIG-backed Machine API", func() {
+			opts.NodeOSUpgradeChannel = consts.NodeOSUpgradeChannelSecurityPatch
+			opts.ProvisionMode = consts.ProvisionModeAKSMachineAPI
+			opts.UseSIG = true
+			Expect(opts.IsSecurityPatchChannel()).To(BeTrue())
+		})
+
+		It("uses standard images when SecurityPatch is configured on another provision mode", func() {
+			opts.NodeOSUpgradeChannel = consts.NodeOSUpgradeChannelSecurityPatch
+			opts.ProvisionMode = consts.ProvisionModeBootstrappingClient
+			opts.UseSIG = true
+			Expect(opts.IsSecurityPatchChannel()).To(BeFalse())
+		})
+
+		It("uses standard images when SecurityPatch is configured without SIG", func() {
+			opts.NodeOSUpgradeChannel = consts.NodeOSUpgradeChannelSecurityPatch
+			opts.ProvisionMode = consts.ProvisionModeAKSMachineAPI
+			opts.UseSIG = false
+			Expect(opts.IsSecurityPatchChannel()).To(BeFalse())
+		})
+
+		DescribeTable("accepts non-SecurityPatch channels as standard images",
+			func(channel string) {
+				err := opts.Parse(
+					fs,
+					"--cluster-name", "my-name",
+					"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+					"--kubelet-bootstrap-token", "flag-bootstrap-token",
+					"--ssh-public-key", "flag-ssh-public-key",
+					"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+					"--node-resource-group", "my-node-rg",
+					"--node-os-upgrade-channel", channel,
+				)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(opts.IsSecurityPatchChannel()).To(BeFalse())
+			},
+			Entry("None", consts.NodeOSUpgradeChannelNone),
+			Entry("Unmanaged", consts.NodeOSUpgradeChannelUnmanaged),
+		)
+
 	})
 
 	Context("Admin Username Validation", func() {
