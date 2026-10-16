@@ -145,9 +145,18 @@ var _ = Describe("Pricing", func() {
 					RetailPrice: 9.730,
 				},
 				{
-					ArmSkuName:  "Standard_NCC40ads_H100_v5",
-					ProductName: "Virtual Machines NCCadsv5 Series Windows VM",
-					RetailPrice: 9.730,
+					ArmSkuName:  "Standard_DC4as_v7",
+					ProductName: "DCasv7 Series VM",
+					MeterName:   "DC4asv7",
+					SkuName:     "DC4asv7",
+					RetailPrice: 0.250,
+				},
+				{
+					ArmSkuName:  "Standard_DC4as_v7",
+					ProductName: "DCasv7 Series Windows VM",
+					MeterName:   "DC4asv7",
+					SkuName:     "DC4asv7",
+					RetailPrice: 0.434,
 				},
 				{
 					ArmSkuName:       "Standard_Expired",
@@ -171,6 +180,7 @@ var _ = Describe("Pricing", func() {
 			"Standard_E2as_v5":          0.136,
 			"Standard_DC2s_v3":          0.240,
 			"Standard_NCC40ads_H100_v5": 7.890,
+			"Standard_DC4as_v7":         0.250,
 			"Standard_Current":          2.000,
 		}))
 		Expect(spotPrices).To(BeEmpty())
