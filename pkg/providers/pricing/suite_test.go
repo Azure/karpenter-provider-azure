@@ -84,6 +84,26 @@ var _ = Describe("Pricing", func() {
 		Expect(ok).To(BeTrue())
 		Expect(price).To(BeNumerically(">", 0))
 	})
+	It("should return static prices for both billing products if pricing API fails", func() {
+		fakePricingAPI.NextError.Set(fmt.Errorf("failed"))
+		p := pricing.NewProvider(ctx, env, fakePricingAPI, fake.Region, make(chan struct{}))
+		providers = append(providers, p)
+
+		baseOnDemand, baseKnown := p.OnDemandPrice("Standard_D2s_v3", pricing.BillingProductBaseCompute)
+		windowsOnDemand, windowsKnown := p.OnDemandPrice("Standard_D2s_v3", pricing.BillingProductWindowsIncluded)
+		Expect(baseKnown).To(BeTrue())
+		Expect(windowsKnown).To(BeTrue())
+		Expect(baseOnDemand).To(BeNumerically(">", 0))
+		Expect(windowsOnDemand).To(BeNumerically(">", baseOnDemand))
+
+		baseSpot, baseSpotKnown := p.SpotPrice("Standard_D2s_v3", pricing.BillingProductBaseCompute)
+		windowsSpot, windowsSpotKnown := p.SpotPrice("Standard_D2s_v3", pricing.BillingProductWindowsIncluded)
+		Expect(baseSpotKnown).To(BeTrue())
+		Expect(windowsSpotKnown).To(BeTrue())
+		Expect(baseSpot).To(Equal(baseOnDemand))
+		Expect(windowsSpot).To(Equal(windowsOnDemand))
+	})
+
 	It("should update on-demand pricing with response from the pricing API", func() {
 		// modify our API before creating the pricing provider as it performs an initial update on creation.
 		fakePricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{

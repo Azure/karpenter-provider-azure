@@ -100,13 +100,17 @@ func NewAPI(cloud cloud.Configuration) client.PricingAPI {
 }
 
 func initialPrices(region string) Prices {
-	basePrices, ok := initialOnDemandPrices[region]
+	basePrices, ok := initialBaseOnDemandPrices[region]
 	if !ok {
-		basePrices = initialOnDemandPrices[defaultRegion]
+		basePrices = initialBaseOnDemandPrices[defaultRegion]
+	}
+	windowsPrices, ok := initialWindowsOnDemandPrices[region]
+	if !ok {
+		windowsPrices = initialWindowsOnDemandPrices[defaultRegion]
 	}
 	return Prices{
 		BillingProductBaseCompute:     basePrices,
-		BillingProductWindowsIncluded: {},
+		BillingProductWindowsIncluded: windowsPrices,
 	}
 }
 
@@ -447,5 +451,5 @@ func (p *Provider) WaitUntilDone() error {
 }
 
 func Regions() []string {
-	return lo.Keys(initialOnDemandPrices)
+	return lo.Keys(initialBaseOnDemandPrices)
 }
