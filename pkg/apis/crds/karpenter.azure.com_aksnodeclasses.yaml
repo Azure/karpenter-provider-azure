@@ -2086,6 +2086,17 @@ spec:
                             for more information.
                           pattern: ^([0-9]+(s|m|h))+$
                           type: string
+                        failfastAllUnhealthyUpstreams:
+                          description: |-
+                            failfastAllUnhealthyUpstreams determines the handling of requests when every upstream DNS
+                            server for this zone is unhealthy: fail the query immediately instead of still attempting a
+                            forward and waiting for it to time out. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+
+                            Warning: on a zone that forwards to ClusterCoreDNS, such as cluster.local, this turns a
+                            transient CoreDNS outage into an immediate SERVFAIL for all in-cluster DNS. It is intended
+                            for zones forwarding to VnetDNS, where failing fast stops localDNS from amplifying an
+                            upstream outage.
+                          type: boolean
                         forwardDestination:
                           description: forwardDestination is the destination server
                             for DNS queries to be forwarded from localDNS.
@@ -2102,6 +2113,28 @@ spec:
                           - RoundRobin
                           - Random
                           type: string
+                        healthCheck:
+                          description: |-
+                            healthCheck configures how localDNS probes the upstream DNS servers for this zone.
+                            See [forward plugin](https://coredns.io/plugins/forward) for more information.
+                          properties:
+                            duration:
+                              description: |-
+                                duration is the interval between health check probes sent to the upstream DNS servers.
+
+                                Note: the pattern below is shared with cacheDuration and serveStaleDuration for consistency
+                                across this struct, which means sub-second intervals such as 500ms cannot be expressed here
+                                even though CoreDNS and AgentBaker both accept them.
+                              pattern: ^([0-9]+(s|m|h))+$
+                              type: string
+                            noRec:
+                              description: |-
+                                noRec sets the RecursionDesired flag of the health check query to false. It has no effect
+                                unless duration is set.
+                              type: boolean
+                          required:
+                          - duration
+                          type: object
                         maxConcurrent:
                           description: maxConcurrent is the maximum number of concurrent
                             queries. See [forward plugin](https://coredns.io/plugins/forward)
@@ -2162,6 +2195,11 @@ spec:
                       - message: serveStale Verify cannot be used with protocol ForceTCP
                         rule: '!(self.serveStale == ''Verify'' && self.protocol ==
                           ''ForceTCP'')'
+                      - message: healthCheck.duration is required when healthCheck
+                          is specified
+                        rule: '!has(self.healthCheck) || (has(self.healthCheck.duration)
+                          && size(self.healthCheck.duration) > 0 && self.healthCheck.duration
+                          != ''Never'')'
                     maxItems: 100
                     type: array
                     x-kubernetes-list-map-keys:
@@ -2190,6 +2228,17 @@ spec:
                             for more information.
                           pattern: ^([0-9]+(s|m|h))+$
                           type: string
+                        failfastAllUnhealthyUpstreams:
+                          description: |-
+                            failfastAllUnhealthyUpstreams determines the handling of requests when every upstream DNS
+                            server for this zone is unhealthy: fail the query immediately instead of still attempting a
+                            forward and waiting for it to time out. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+
+                            Warning: on a zone that forwards to ClusterCoreDNS, such as cluster.local, this turns a
+                            transient CoreDNS outage into an immediate SERVFAIL for all in-cluster DNS. It is intended
+                            for zones forwarding to VnetDNS, where failing fast stops localDNS from amplifying an
+                            upstream outage.
+                          type: boolean
                         forwardDestination:
                           description: forwardDestination is the destination server
                             for DNS queries to be forwarded from localDNS.
@@ -2206,6 +2255,28 @@ spec:
                           - RoundRobin
                           - Random
                           type: string
+                        healthCheck:
+                          description: |-
+                            healthCheck configures how localDNS probes the upstream DNS servers for this zone.
+                            See [forward plugin](https://coredns.io/plugins/forward) for more information.
+                          properties:
+                            duration:
+                              description: |-
+                                duration is the interval between health check probes sent to the upstream DNS servers.
+
+                                Note: the pattern below is shared with cacheDuration and serveStaleDuration for consistency
+                                across this struct, which means sub-second intervals such as 500ms cannot be expressed here
+                                even though CoreDNS and AgentBaker both accept them.
+                              pattern: ^([0-9]+(s|m|h))+$
+                              type: string
+                            noRec:
+                              description: |-
+                                noRec sets the RecursionDesired flag of the health check query to false. It has no effect
+                                unless duration is set.
+                              type: boolean
+                          required:
+                          - duration
+                          type: object
                         maxConcurrent:
                           description: maxConcurrent is the maximum number of concurrent
                             queries. See [forward plugin](https://coredns.io/plugins/forward)
@@ -2266,6 +2337,11 @@ spec:
                       - message: serveStale Verify cannot be used with protocol ForceTCP
                         rule: '!(self.serveStale == ''Verify'' && self.protocol ==
                           ''ForceTCP'')'
+                      - message: healthCheck.duration is required when healthCheck
+                          is specified
+                        rule: '!has(self.healthCheck) || (has(self.healthCheck.duration)
+                          && size(self.healthCheck.duration) > 0 && self.healthCheck.duration
+                          != ''Never'')'
                     maxItems: 100
                     type: array
                     x-kubernetes-list-map-keys:
