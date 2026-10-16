@@ -27,6 +27,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
@@ -201,6 +202,15 @@ func generatePricing(filePath string) {
 	log.Printf("successfully generated pricing file: \"%s\"\n", filePath)
 }
 
+func formatPrice(price float64) string {
+	formatted := strconv.FormatFloat(price, 'f', 6, 64)
+	parsed, err := strconv.ParseFloat(formatted, 64)
+	if err == nil && parsed == price {
+		return formatted
+	}
+	return strconv.FormatFloat(price, 'g', -1, 64)
+}
+
 func writePricing(src *bytes.Buffer, variableName string, instanceNames []string, region string, getPrice func(instanceType string) (float64, bool)) {
 	fmt.Fprintf(src, "// %s\n", region)
 	fmt.Fprintf(src, "%s[%q] = map[string]float64{\n", variableName, region)
@@ -212,7 +222,7 @@ func writePricing(src *bytes.Buffer, variableName string, instanceNames []string
 		}
 
 		// TODO: look at grouping by families to make the generated output nicer
-		_, err := fmt.Fprintf(src, "\"%s\":%f, \n", instanceName, price)
+		_, err := fmt.Fprintf(src, "\"%s\":%s, \n", instanceName, formatPrice(price))
 		if err != nil {
 			log.Fatalf("error writing, %s", err)
 		}

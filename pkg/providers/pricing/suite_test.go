@@ -19,6 +19,7 @@ package pricing_test
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,6 +43,26 @@ var stop context.CancelFunc
 var fakePricingAPI *fake.PricingAPI
 var env *auth.Environment
 var providers []*pricing.Provider
+
+type orderedPricingAPI struct {
+	calls         atomic.Int32
+	firstStarted  chan struct{}
+	releaseFirst  chan struct{}
+	secondStarted chan struct{}
+}
+
+func (p *orderedPricingAPI) GetProductsPricePages(_ context.Context, _ []*client.Filter, fn func(*client.ProductsPricePage)) error {
+	switch p.calls.Add(1) {
+	case 1:
+		close(p.firstStarted)
+		<-p.releaseFirst
+		fn(&client.ProductsPricePage{Items: []client.Item{fake.NewProductPrice("Standard_D1", 1.20)}})
+	default:
+		close(p.secondStarted)
+		fn(&client.ProductsPricePage{Items: []client.Item{fake.NewProductPrice("Standard_D1", 1.30)}})
+	}
+	return nil
+}
 
 func TestAzure(t *testing.T) {
 	mainCtx = TestContextWithLogger(t)
@@ -108,8 +129,8 @@ var _ = Describe("Pricing", func() {
 		// modify our API before creating the pricing provider as it performs an initial update on creation.
 		fakePricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
 			Items: []client.Item{
-				fake.NewProductPrice("Standard_D1", 1.20),
-				fake.NewProductPrice("Standard_D14", 1.23),
+				fake.NewProductPrice("Standard_Test_D1", 1.20),
+				fake.NewProductPrice("Standard_Test_D14", 1.23),
 			},
 		})
 		updateStart := time.Now()
@@ -117,15 +138,15 @@ var _ = Describe("Pricing", func() {
 		providers = append(providers, p)
 		Eventually(func() bool { return p.OnDemandLastUpdated().After(updateStart) }).Should(BeTrue())
 
-		price, ok := p.OnDemandPrice("Standard_D1", pricing.BillingProductBaseCompute)
+		price, ok := p.OnDemandPrice("Standard_Test_D1", pricing.BillingProductBaseCompute)
 		Expect(ok).To(BeTrue())
 		Expect(price).To(BeNumerically("==", 1.20))
 
-		price, ok = p.OnDemandPrice("Standard_D14", pricing.BillingProductBaseCompute)
+		price, ok = p.OnDemandPrice("Standard_Test_D14", pricing.BillingProductBaseCompute)
 		Expect(ok).To(BeTrue())
 		Expect(price).To(BeNumerically("==", 1.23))
 
-		price, ok = p.OnDemandPrice("Standard_D1", pricing.BillingProductWindowsIncluded)
+		price, ok = p.OnDemandPrice("Standard_Test_D1", pricing.BillingProductWindowsIncluded)
 		Expect(ok).To(BeFalse())
 		Expect(price).To(Equal(pricing.MissingPrice))
 	})
@@ -151,6 +172,131 @@ var _ = Describe("Pricing", func() {
 		price, known := p.OnDemandPrice("Standard_D1", pricing.BillingProductBaseCompute)
 		Expect(known).To(BeTrue())
 		Expect(price).To(Equal(1.30))
+	})
+
+	It("should increment its sequence when Reset materially changes pricing", func() {
+		govEnv := &auth.Environment{Cloud: cloud.AzureGovernment}
+		p := pricing.NewProvider(ctx, govEnv, fakePricingAPI, fake.Region, make(chan struct{}))
+		providers = append(providers, p)
+
+		fakePricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
+			Items: []client.Item{fake.NewProductPrice("Standard_D2s_v3", 1.30)},
+		})
+		p.Update(ctx)
+		sequenceBeforeReset := p.SeqNum()
+		priceBeforeReset, known := p.OnDemandPrice("Standard_D2s_v3", pricing.BillingProductBaseCompute)
+		Expect(known).To(BeTrue())
+		Expect(priceBeforeReset).To(Equal(1.30))
+
+		p.Reset()
+		Expect(p.SeqNum()).To(Equal(sequenceBeforeReset + 1))
+		priceAfterReset, known := p.OnDemandPrice("Standard_D2s_v3", pricing.BillingProductBaseCompute)
+		Expect(known).To(BeTrue())
+		Expect(priceAfterReset).ToNot(Equal(priceBeforeReset))
+
+		p.Reset()
+		Expect(p.SeqNum()).To(Equal(sequenceBeforeReset + 1))
+	})
+
+	It("should serialize concurrent pricing refreshes", func() {
+		api := &orderedPricingAPI{
+			firstStarted:  make(chan struct{}),
+			releaseFirst:  make(chan struct{}),
+			secondStarted: make(chan struct{}),
+		}
+		govEnv := &auth.Environment{Cloud: cloud.AzureGovernment}
+		p := pricing.NewProvider(ctx, govEnv, api, fake.Region, make(chan struct{}))
+		providers = append(providers, p)
+
+		firstDone := make(chan struct{})
+		go func() {
+			defer close(firstDone)
+			p.Update(ctx)
+		}()
+		<-api.firstStarted
+
+		secondDone := make(chan struct{})
+		go func() {
+			defer close(secondDone)
+			p.Update(ctx)
+		}()
+
+		overlapped := false
+		select {
+		case <-api.secondStarted:
+			overlapped = true
+			<-secondDone
+		case <-time.After(time.Second):
+		}
+		close(api.releaseFirst)
+		<-firstDone
+		if !overlapped {
+			<-secondDone
+		}
+
+		price, known := p.OnDemandPrice("Standard_D1", pricing.BillingProductBaseCompute)
+		Expect(known).To(BeTrue())
+		Expect(price).To(Equal(1.30))
+	})
+
+	It("should retain the last-known-good product when a refresh omits it", func() {
+		govEnv := &auth.Environment{Cloud: cloud.AzureGovernment}
+		p := pricing.NewProvider(ctx, govEnv, fakePricingAPI, fake.Region, make(chan struct{}))
+		providers = append(providers, p)
+
+		baseBefore, baseKnown := p.OnDemandPrice("Standard_D2s_v3", pricing.BillingProductBaseCompute)
+		Expect(baseKnown).To(BeTrue())
+
+		fakePricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
+			Items: []client.Item{{
+				ArmSkuName:  "Standard_D2s_v3",
+				ProductName: "Virtual Machines Dsv3 Series Windows",
+				RetailPrice: 123.45,
+			}},
+		})
+		p.Update(ctx)
+		baseAfterWindowsRefresh, baseKnown := p.OnDemandPrice("Standard_D2s_v3", pricing.BillingProductBaseCompute)
+		windowsAfterWindowsRefresh, windowsKnown := p.OnDemandPrice("Standard_D2s_v3", pricing.BillingProductWindowsIncluded)
+		Expect(baseKnown).To(BeTrue())
+		Expect(baseAfterWindowsRefresh).To(Equal(baseBefore))
+		Expect(windowsKnown).To(BeTrue())
+		Expect(windowsAfterWindowsRefresh).To(Equal(123.45))
+
+		fakePricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
+			Items: []client.Item{fake.NewProductPrice("Standard_D2s_v3", 0.321)},
+		})
+		p.Update(ctx)
+		baseAfterBaseRefresh, baseKnown := p.OnDemandPrice("Standard_D2s_v3", pricing.BillingProductBaseCompute)
+		windowsAfterBaseRefresh, windowsKnown := p.OnDemandPrice("Standard_D2s_v3", pricing.BillingProductWindowsIncluded)
+		Expect(baseKnown).To(BeTrue())
+		Expect(baseAfterBaseRefresh).To(Equal(0.321))
+		Expect(windowsKnown).To(BeTrue())
+		Expect(windowsAfterBaseRefresh).To(Equal(windowsAfterWindowsRefresh))
+	})
+
+	It("should ignore prices that are not effective yet", func() {
+		fakePricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
+			Items: []client.Item{
+				{
+					ArmSkuName:         "Standard_D1",
+					ProductName:        "Virtual Machines D Series",
+					MeterID:            "current",
+					RetailPrice:        1.20,
+					EffectiveStartDate: time.Now().Add(-time.Hour),
+				},
+				{
+					ArmSkuName:         "Standard_D1",
+					ProductName:        "Virtual Machines D Series",
+					MeterID:            "future",
+					RetailPrice:        1.30,
+					EffectiveStartDate: time.Now().Add(time.Hour),
+				},
+			},
+		})
+
+		onDemandPrices, _, err := pricing.FetchPricing(ctx, fakePricingAPI, fake.Region)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(onDemandPrices.For(pricing.BillingProductBaseCompute)).To(HaveKeyWithValue("Standard_D1", 1.20))
 	})
 
 	It("should preserve base and Windows prices while excluding irrelevant products", func() {
@@ -279,6 +425,11 @@ var _ = Describe("Pricing", func() {
 		Entry("selects the sole primary meter", []client.Item{
 			{ArmSkuName: "Standard_D1", ProductName: "Virtual Machines D Series", MeterID: "meter-a", RetailPrice: 1.20, IsPrimaryMeterRegion: true},
 			{ArmSkuName: "Standard_D1", ProductName: "Virtual Machines D Series", MeterID: "meter-b", RetailPrice: 1.30},
+		}, 1.20, false),
+		Entry("selects the sole primary price", []client.Item{
+			{ArmSkuName: "Standard_D1", ProductName: "Virtual Machines D Series", MeterID: "meter-a", RetailPrice: 1.20, IsPrimaryMeterRegion: true},
+			{ArmSkuName: "Standard_D1", ProductName: "Virtual Machines D Series", MeterID: "meter-b", RetailPrice: 1.20, IsPrimaryMeterRegion: true},
+			{ArmSkuName: "Standard_D1", ProductName: "Virtual Machines D Series", MeterID: "meter-c", RetailPrice: 1.30},
 		}, 1.20, false),
 		Entry("rejects unresolved values", []client.Item{
 			{ArmSkuName: "Standard_D1", ProductName: "Virtual Machines D Series", MeterID: "meter-a", RetailPrice: 1.20},

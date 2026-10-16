@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"sort"
 	"strings"
@@ -85,6 +86,7 @@ type Provider struct {
 	region  string
 	cm      *pretty.ChangeMonitor
 
+	updateMu           sync.Mutex
 	mu                 sync.RWMutex
 	onDemandUpdateTime time.Time
 	onDemandPrices     Prices
@@ -227,6 +229,9 @@ func (p *Provider) SeqNum() uint64 {
 
 // Update fetches and atomically applies the latest pricing snapshot.
 func (p *Provider) Update(ctx context.Context) {
+	p.updateMu.Lock()
+	defer p.updateMu.Unlock()
+
 	if ctx.Err() != nil {
 		return
 	}
@@ -243,37 +248,52 @@ func (p *Provider) Update(ctx context.Context) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	changed := false
-	if onDemandPrices.Len() > 0 {
-		onDemandChanged := p.cm.HasChanged("on-demand-prices", onDemandPrices)
-		p.onDemandPrices = onDemandPrices
+	updatedOnDemand, onDemandApplied, onDemandChanged := p.mergePrices(ctx, "on-demand", p.onDemandPrices, onDemandPrices)
+	if onDemandApplied {
+		p.onDemandPrices = updatedOnDemand
 		p.onDemandUpdateTime = time.Now()
-		if onDemandChanged {
-			changed = true
-			log.FromContext(ctx).Info("updated on-demand pricing",
-				"instanceTypeCount", p.onDemandPrices.Len(),
-			)
-		}
-	} else {
-		log.FromContext(ctx).Error(errors.New("no on-demand pricing found"), "using existing on-demand pricing data")
 	}
-
-	if spotPrices.Len() > 0 {
-		spotChanged := p.cm.HasChanged("spot-prices", spotPrices)
-		p.spotPrices = spotPrices
+	updatedSpot, spotApplied, spotChanged := p.mergePrices(ctx, "spot", p.spotPrices, spotPrices)
+	if spotApplied {
+		p.spotPrices = updatedSpot
 		p.spotUpdateTime = time.Now()
-		if spotChanged {
-			changed = true
-			log.FromContext(ctx).Info("updated spot pricing",
-				"instanceTypeCount", p.spotPrices.Len(),
-			)
-		}
-	} else {
-		log.FromContext(ctx).Error(errors.New("no spot pricing found"), "using existing spot pricing data")
 	}
-	if changed {
+	if onDemandChanged || spotChanged {
 		p.seqNum.Add(1)
 	}
+}
+
+func (p *Provider) mergePrices(ctx context.Context, capacityType string, current, fresh Prices) (Prices, bool, bool) {
+	updated := newPrices()
+	applied := false
+	changed := false
+	for _, product := range []BillingProduct{BillingProductBaseCompute, BillingProductWindowsIncluded} {
+		freshProduct := fresh.For(product)
+		if len(freshProduct) == 0 {
+			updated[product] = current.For(product)
+			log.FromContext(ctx).Error(
+				errors.New("no pricing found"),
+				"using existing pricing data",
+				"capacityType", capacityType,
+				"billingProduct", product,
+			)
+			continue
+		}
+		applied = true
+		updated[product] = freshProduct
+		if !maps.Equal(current.For(product), freshProduct) {
+			changed = true
+		}
+		if p.cm.HasChanged(capacityType+"-"+string(product)+"-prices", freshProduct) {
+			log.FromContext(ctx).Info(
+				"updated pricing",
+				"capacityType", capacityType,
+				"billingProduct", product,
+				"instanceTypeCount", len(freshProduct),
+			)
+		}
+	}
+	return updated, applied, changed
 }
 
 // FetchPricing fetches VM pricing from the Azure retail pricing API for the given region,
@@ -317,6 +337,9 @@ func FetchPricing(ctx context.Context, pricingAPI client.PricingAPI, region stri
 func processPage(prices map[client.Item]bool, fetchTime time.Time) func(page *client.ProductsPricePage) {
 	return func(page *client.ProductsPricePage) {
 		for _, pItem := range page.Items {
+			if !pItem.EffectiveStartDate.IsZero() && pItem.EffectiveStartDate.After(fetchTime) {
+				continue
+			}
 			if !pItem.EffectiveEndDate.IsZero() && pItem.EffectiveEndDate.Before(fetchTime) {
 				continue
 			}
@@ -356,11 +379,11 @@ type priceKey struct {
 
 func selectPrice(key priceKey, candidates []client.Item) (float64, error) {
 	prices := map[float64]struct{}{}
-	var primary []client.Item
+	primaryPrices := map[float64]struct{}{}
 	for _, candidate := range candidates {
 		prices[candidate.RetailPrice] = struct{}{}
 		if candidate.IsPrimaryMeterRegion {
-			primary = append(primary, candidate)
+			primaryPrices[candidate.RetailPrice] = struct{}{}
 		}
 	}
 	if len(prices) == 1 {
@@ -368,8 +391,10 @@ func selectPrice(key priceKey, candidates []client.Item) (float64, error) {
 			return price, nil
 		}
 	}
-	if len(primary) == 1 {
-		return primary[0].RetailPrice, nil
+	if len(primaryPrices) == 1 {
+		for price := range primaryPrices {
+			return price, nil
+		}
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].RetailPrice != candidates[j].RetailPrice {
@@ -429,15 +454,27 @@ func (p *Provider) LivenessProbe(_ *http.Request) error {
 	return nil
 }
 
+func pricesEqual(left, right Prices) bool {
+	return maps.Equal(left.For(BillingProductBaseCompute), right.For(BillingProductBaseCompute)) &&
+		maps.Equal(left.For(BillingProductWindowsIncluded), right.For(BillingProductWindowsIncluded))
+}
+
 func (p *Provider) Reset() {
+	p.updateMu.Lock()
+	defer p.updateMu.Unlock()
+
 	staticPricing := initialPrices(p.region)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	changed := !pricesEqual(p.onDemandPrices, staticPricing) || !pricesEqual(p.spotPrices, staticPricing)
 	p.onDemandPrices = staticPricing
 	p.onDemandUpdateTime = InitialPriceUpdate
 	p.spotPrices = staticPricing
 	p.spotUpdateTime = InitialPriceUpdate
+	if changed {
+		p.seqNum.Add(1)
+	}
 }
 
 // WaitUntilDone should be called after canceling the context passed to NewProvider to wait until all goroutines have exited
