@@ -19,9 +19,12 @@ package pricing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/samber/lo"
@@ -43,6 +46,34 @@ const defaultRegion = "eastus"
 // but will still be available if chosen explicitly.
 const MissingPrice float64 = 999.0
 
+type BillingProduct string
+
+const (
+	BillingProductBaseCompute     BillingProduct = "base-compute"
+	BillingProductWindowsIncluded BillingProduct = "windows-included"
+)
+
+type Prices map[BillingProduct]map[string]float64
+
+func newPrices() Prices {
+	return Prices{
+		BillingProductBaseCompute:     {},
+		BillingProductWindowsIncluded: {},
+	}
+}
+
+func (p Prices) For(product BillingProduct) map[string]float64 {
+	return p[product]
+}
+
+func (p Prices) Len() int {
+	return len(p[BillingProductBaseCompute]) + len(p[BillingProductWindowsIncluded])
+}
+
+func (p Prices) InstanceTypes() []string {
+	return lo.Union(lo.Keys(p[BillingProductBaseCompute]), lo.Keys(p[BillingProductWindowsIncluded]))
+}
+
 // Provider provides actual pricing data to the Azure cloud provider to allow it to make more informed decisions
 // regarding which instances to launch.  This is initialized at startup with a periodically updated static price list to
 // support running in locations where pricing data is unavailable.  In those cases the static pricing data provides a
@@ -56,15 +87,27 @@ type Provider struct {
 
 	mu                 sync.RWMutex
 	onDemandUpdateTime time.Time
-	onDemandPrices     map[string]float64
+	onDemandPrices     Prices
 	spotUpdateTime     time.Time
-	spotPrices         map[string]float64
+	spotPrices         Prices
+	seqNum             atomic.Uint64
 	done               chan struct{}
 }
 
 // NewPricingAPI returns a pricing API
 func NewAPI(cloud cloud.Configuration) client.PricingAPI {
 	return client.New(cloud)
+}
+
+func initialPrices(region string) Prices {
+	basePrices, ok := initialOnDemandPrices[region]
+	if !ok {
+		basePrices = initialOnDemandPrices[defaultRegion]
+	}
+	return Prices{
+		BillingProductBaseCompute:     basePrices,
+		BillingProductWindowsIncluded: {},
+	}
 }
 
 func NewProvider(
@@ -74,12 +117,7 @@ func NewProvider(
 	region string,
 	startAsync <-chan struct{},
 ) *Provider {
-	// see if we've got region specific pricing data
-	staticPricing, ok := initialOnDemandPrices[region]
-	if !ok {
-		// and if not, fall back to the always available eastus
-		staticPricing = initialOnDemandPrices[defaultRegion]
-	}
+	staticPricing := initialPrices(region)
 
 	p := &Provider{
 		region:             region,
@@ -99,7 +137,7 @@ func NewProvider(
 		go func() {
 			log.FromContext(ctx).V(0).Info("starting pricing update loop")
 			// perform an initial price update at startup
-			p.updatePricing(ctx)
+			p.Update(ctx)
 
 			startup := time.Now()
 			// wait for leader election or to be signaled to exit
@@ -112,7 +150,7 @@ func NewProvider(
 			// if it took many hours to be elected leader, we want to re-fetch pricing before we start our periodic
 			// polling
 			if time.Since(startup) > pricingUpdatePeriod {
-				p.updatePricing(ctx)
+				p.Update(ctx)
 			}
 
 			for {
@@ -121,7 +159,7 @@ func NewProvider(
 					close(p.done)
 					return
 				case <-time.After(pricingUpdatePeriod):
-					p.updatePricing(ctx)
+					p.Update(ctx)
 				}
 			}
 		}()
@@ -135,7 +173,7 @@ func NewProvider(
 func (p *Provider) InstanceTypes() []string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return lo.Union(lo.Keys(p.onDemandPrices), lo.Keys(p.spotPrices))
+	return lo.Union(p.onDemandPrices.InstanceTypes(), p.spotPrices.InstanceTypes())
 }
 
 // OnDemandLastUpdated returns the time that the on-demand pricing was last updated
@@ -152,33 +190,39 @@ func (p *Provider) SpotLastUpdated() time.Time {
 	return p.spotUpdateTime
 }
 
-// OnDemandPrice returns the last known on-demand price for a given instance type.
+// OnDemandPrice returns the last known on-demand price for a given instance type and billing product.
 // The boolean return indicates whether a real price was found (true) or the penalty
 // MissingPrice is being returned (false).
-func (p *Provider) OnDemandPrice(instanceType string) (float64, bool) {
+func (p *Provider) OnDemandPrice(instanceType string, product BillingProduct) (float64, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	price, ok := p.onDemandPrices[instanceType]
+	price, ok := p.onDemandPrices.For(product)[instanceType]
 	if !ok {
 		return MissingPrice, false
 	}
 	return price, true
 }
 
-// SpotPrice returns the last known spot price for a given instance type.
+// SpotPrice returns the last known spot price for a given instance type and billing product.
 // The boolean return indicates whether a real price was found (true) or the penalty
 // MissingPrice is being returned (false).
-func (p *Provider) SpotPrice(instanceType string) (float64, bool) {
+func (p *Provider) SpotPrice(instanceType string, product BillingProduct) (float64, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	price, ok := p.spotPrices[instanceType]
+	price, ok := p.spotPrices.For(product)[instanceType]
 	if !ok {
 		return MissingPrice, false
 	}
 	return price, true
 }
 
-func (p *Provider) updatePricing(ctx context.Context) {
+// SeqNum returns a monotonically increasing counter for material pricing changes.
+func (p *Provider) SeqNum() uint64 {
+	return p.seqNum.Load()
+}
+
+// Update fetches and atomically applies the latest pricing snapshot.
+func (p *Provider) Update(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -195,34 +239,42 @@ func (p *Provider) updatePricing(ctx context.Context) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if len(onDemandPrices) > 0 {
+	changed := false
+	if onDemandPrices.Len() > 0 {
+		onDemandChanged := p.cm.HasChanged("on-demand-prices", onDemandPrices)
 		p.onDemandPrices = onDemandPrices
 		p.onDemandUpdateTime = time.Now()
-		if p.cm.HasChanged("on-demand-prices", p.onDemandPrices) {
+		if onDemandChanged {
+			changed = true
 			log.FromContext(ctx).Info("updated on-demand pricing",
-				"instanceTypeCount", len(p.onDemandPrices),
+				"instanceTypeCount", p.onDemandPrices.Len(),
 			)
 		}
 	} else {
 		log.FromContext(ctx).Error(errors.New("no on-demand pricing found"), "using existing on-demand pricing data")
 	}
 
-	if len(spotPrices) > 0 {
+	if spotPrices.Len() > 0 {
+		spotChanged := p.cm.HasChanged("spot-prices", spotPrices)
 		p.spotPrices = spotPrices
 		p.spotUpdateTime = time.Now()
-		if p.cm.HasChanged("spot-prices", p.spotPrices) {
+		if spotChanged {
+			changed = true
 			log.FromContext(ctx).Info("updated spot pricing",
-				"instanceTypeCount", len(p.spotPrices),
+				"instanceTypeCount", p.spotPrices.Len(),
 			)
 		}
 	} else {
 		log.FromContext(ctx).Error(errors.New("no spot pricing found"), "using existing spot pricing data")
 	}
+	if changed {
+		p.seqNum.Add(1)
+	}
 }
 
 // FetchPricing fetches VM pricing from the Azure retail pricing API for the given region,
-// returning on-demand and spot prices keyed by ARM SKU name.
-func FetchPricing(ctx context.Context, pricingAPI client.PricingAPI, region string) (onDemandPrices, spotPrices map[string]float64, err error) {
+// returning on-demand and spot prices keyed by billing product and ARM SKU name.
+func FetchPricing(ctx context.Context, pricingAPI client.PricingAPI, region string) (onDemandPrices, spotPrices Prices, err error) {
 	filters := []*client.Filter{
 		{
 			Field:    "priceType",
@@ -255,19 +307,12 @@ func FetchPricing(ctx context.Context, pricingAPI client.PricingAPI, region stri
 		return nil, nil, err
 	}
 
-	onDemandPrices, spotPrices = categorizePrices(ctx, prices)
-	return onDemandPrices, spotPrices, nil
+	return categorizePrices(prices)
 }
 
 func processPage(prices map[client.Item]bool, fetchTime time.Time) func(page *client.ProductsPricePage) {
 	return func(page *client.ProductsPricePage) {
 		for _, pItem := range page.Items {
-			if strings.HasSuffix(pItem.ProductName, " Windows") ||
-				// a few SKUs have a "Win" suffix rather than Windows, so exclude that too
-				strings.HasSuffix(pItem.ProductName, " Win") ||
-				strings.HasSuffix(pItem.ProductName, " Windows VM") {
-				continue
-			}
 			if !pItem.EffectiveEndDate.IsZero() && pItem.EffectiveEndDate.Before(fetchTime) {
 				continue
 			}
@@ -286,28 +331,90 @@ func processPage(prices map[client.Item]bool, fetchTime time.Time) func(page *cl
 	}
 }
 
-func categorizePrices(ctx context.Context, prices map[client.Item]bool) (map[string]float64, map[string]float64) {
-	onDemandPrices := map[string]float64{}
-	spotPrices := map[string]float64{}
+func billingProductForProductName(productName string) (BillingProduct, error) {
+	switch {
+	case strings.HasSuffix(productName, " Windows"),
+		strings.HasSuffix(productName, " Win"),
+		strings.HasSuffix(productName, " Windows VM"):
+		return BillingProductWindowsIncluded, nil
+	case strings.Contains(productName, "Windows"):
+		return "", fmt.Errorf("unrecognized Windows pricing product %q", productName)
+	default:
+		return BillingProductBaseCompute, nil
+	}
+}
+
+type priceKey struct {
+	instanceType   string
+	capacityType   string
+	billingProduct BillingProduct
+}
+
+func selectPrice(key priceKey, candidates []client.Item) (float64, error) {
+	prices := map[float64]struct{}{}
+	var primary []client.Item
+	for _, candidate := range candidates {
+		prices[candidate.RetailPrice] = struct{}{}
+		if candidate.IsPrimaryMeterRegion {
+			primary = append(primary, candidate)
+		}
+	}
+	if len(prices) == 1 {
+		for price := range prices {
+			return price, nil
+		}
+	}
+	if len(primary) == 1 {
+		return primary[0].RetailPrice, nil
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].RetailPrice != candidates[j].RetailPrice {
+			return candidates[i].RetailPrice < candidates[j].RetailPrice
+		}
+		return candidates[i].ProductName < candidates[j].ProductName
+	})
+	return 0, fmt.Errorf(
+		"conflicting prices for instance type %q, capacity type %q, billing product %q: %v",
+		key.instanceType,
+		key.capacityType,
+		key.billingProduct,
+		candidates,
+	)
+}
+
+func categorizePrices(prices map[client.Item]bool) (Prices, Prices, error) {
+	grouped := map[priceKey][]client.Item{}
 	for price := range prices {
+		product, err := billingProductForProductName(price.ProductName)
+		if err != nil {
+			return nil, nil, err
+		}
 		capacityType := "on-demand"
-		targetPrices := onDemandPrices
 		if strings.HasSuffix(price.SkuName, " Spot") {
 			capacityType = "spot"
-			targetPrices = spotPrices
 		}
-		if existingPrice, ok := targetPrices[price.ArmSkuName]; ok && existingPrice != price.RetailPrice {
-			log.FromContext(ctx).Info(
-				"found conflicting prices for instance type",
-				"instanceType", price.ArmSkuName,
-				"capacityType", capacityType,
-				"existingPrice", existingPrice,
-				"newPrice", price.RetailPrice,
-			)
+		key := priceKey{
+			instanceType:   price.ArmSkuName,
+			capacityType:   capacityType,
+			billingProduct: product,
 		}
-		targetPrices[price.ArmSkuName] = price.RetailPrice
+		grouped[key] = append(grouped[key], price)
 	}
-	return onDemandPrices, spotPrices
+
+	onDemandPrices := newPrices()
+	spotPrices := newPrices()
+	for key, candidates := range grouped {
+		price, err := selectPrice(key, candidates)
+		if err != nil {
+			return nil, nil, err
+		}
+		targetPrices := onDemandPrices.For(key.billingProduct)
+		if key.capacityType == "spot" {
+			targetPrices = spotPrices.For(key.billingProduct)
+		}
+		targetPrices[key.instanceType] = price
+	}
+	return onDemandPrices, spotPrices, nil
 }
 
 func (p *Provider) LivenessProbe(_ *http.Request) error {
@@ -319,12 +426,7 @@ func (p *Provider) LivenessProbe(_ *http.Request) error {
 }
 
 func (p *Provider) Reset() {
-	// see if we've got region specific pricing data
-	staticPricing, ok := initialOnDemandPrices[p.region]
-	if !ok {
-		// and if not, fall back to the always available eastus
-		staticPricing = initialOnDemandPrices[defaultRegion]
-	}
+	staticPricing := initialPrices(p.region)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
