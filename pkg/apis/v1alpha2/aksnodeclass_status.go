@@ -135,6 +135,7 @@ type ObservedVersions struct {
 // Any new node spawned from this NodeClass uses this value as the source
 // of truth for LocalDNS enablement, regardless of when cluster-side
 // conditions changed.
+// +kubebuilder:validation:Enum:=Enabled;Disabled
 type LocalDNSState string
 
 const (
@@ -185,7 +186,6 @@ type AKSNodeClassStatus struct {
 	// to Disabled if cluster-side conflicts later appear. The user can opt
 	// out by changing Mode to Disabled.
 	// +optional
-	// +kubebuilder:validation:Enum:=Enabled;Disabled
 	LocalDNSState *LocalDNSState `json:"localDNSState,omitempty"`
 	// capacityReservationGroup is the resolved shape of the capacity reservation
 	// group named by spec.capacityReservation.groupID. It is unset when no group is
