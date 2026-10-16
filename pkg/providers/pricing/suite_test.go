@@ -145,6 +145,11 @@ var _ = Describe("Pricing", func() {
 					RetailPrice: 9.730,
 				},
 				{
+					ArmSkuName:  "Standard_NCC40ads_H100_v5",
+					ProductName: "Virtual Machines NCCadsv5 Series Windows VM",
+					RetailPrice: 9.730,
+				},
+				{
 					ArmSkuName:       "Standard_Expired",
 					ProductName:      "Virtual Machines Expired Series",
 					RetailPrice:      1.000,

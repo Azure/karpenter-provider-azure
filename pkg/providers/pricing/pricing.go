@@ -264,7 +264,8 @@ func processPage(prices map[client.Item]bool, fetchTime time.Time) func(page *cl
 		for _, pItem := range page.Items {
 			if strings.HasSuffix(pItem.ProductName, " Windows") ||
 				// a few SKUs have a "Win" suffix rather than Windows, so exclude that too
-				strings.HasSuffix(pItem.ProductName, " Win") {
+				strings.HasSuffix(pItem.ProductName, " Win") ||
+				strings.HasSuffix(pItem.ProductName, " Windows VM") {
 				continue
 			}
 			if !pItem.EffectiveEndDate.IsZero() && pItem.EffectiveEndDate.Before(fetchTime) {
