@@ -174,12 +174,28 @@ func ApplySIGImagesWithVersion(
 	if nodeClass.Status.KubernetesVersion != nil {
 		kubernetesVersion = *nodeClass.Status.KubernetesVersion
 	}
-	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled(), sigImageVersion, kubernetesVersion)
+
+	var family string
+	if nodeClass.Spec.ImageFamily != nil {
+		family = *nodeClass.Spec.ImageFamily
+	}
+
+	imageFamilyNodeImages := getExpectedTestSIGImages(family, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled(), sigImageVersion, kubernetesVersion)
 	nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
 }
 
-func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool, version string, kubernetesVersion string) []imagefamily.NodeImage {
-	images := imagefamily.GetImageFamily(&imageFamily, fipsMode, trustedLaunch, kubernetesVersion, nil).DefaultImages(true, fipsMode, trustedLaunch, kataEnabled)
+func getExpectedTestSIGImages(
+	family string,
+	fipsMode *v1beta1.FIPSMode,
+	trustedLaunch bool,
+	kataEnabled bool,
+	version string,
+	kubernetesVersion string,
+) []imagefamily.NodeImage {
+	images := imagefamily.GetImageFamily(
+		&family, fipsMode, trustedLaunch, kubernetesVersion, nil,
+	).DefaultImages(
+		true, fipsMode, trustedLaunch, kataEnabled)
 	nodeImages := make([]imagefamily.NodeImage, 0, len(images))
 	for _, image := range images {
 		nodeImages = append(nodeImages, imagefamily.NodeImage{

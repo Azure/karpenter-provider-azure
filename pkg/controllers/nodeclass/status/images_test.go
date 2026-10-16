@@ -187,10 +187,12 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		expectedImages func(string) []v1beta1.NodeImage
 	}{
 		{
-			name:           "CIG",
-			oldVersion:     oldcigImageVersion,
-			latestVersion:  newCIGImageVersion,
-			expectedImages: getExpectedTestCommunityImages,
+			name:          "CIG",
+			oldVersion:    oldcigImageVersion,
+			latestVersion: newCIGImageVersion,
+			expectedImages: func(api string) []v1beta1.NodeImage {
+				return getExpectedTestCommunityImages(env.Version.String(), api)
+			},
 		},
 		{
 			name:           "SIG",
@@ -504,7 +506,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 			nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
-			nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
+			nodeClass.Status.Images = getExpectedTestCommunityImages(testK8sVersion, oldcigImageVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 			imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
 		})

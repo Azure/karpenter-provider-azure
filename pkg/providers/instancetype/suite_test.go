@@ -156,7 +156,7 @@ var _ = Describe("InstanceType Provider", func() {
 		testOptions = test.Options()
 		ctx = options.ToContext(ctx, testOptions)
 
-		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version), test.WithOSDiskSizeGB(128))
+		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
 		nodePool = coretest.NodePool(karpv1.NodePool{
