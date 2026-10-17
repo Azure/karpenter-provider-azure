@@ -23,6 +23,7 @@ import (
 	"dario.cat/mergo"
 	"github.com/samber/lo"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	azoptions "github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 )
 
@@ -49,6 +50,7 @@ type OptionsFields struct {
 	EnableAzureSDKLogging          *bool
 	DiskEncryptionSetID            *string
 	EnableFIPS                     *bool
+	WindowsLicenseType             *string
 	ClusterDNSServiceIP            *string
 	ManageExistingAKSMachines      *bool
 	AKSMachinesPoolName            *string
@@ -97,6 +99,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		AdditionalTags:                 options.AdditionalTags,
 		DiskEncryptionSetID:            lo.FromPtrOr(options.DiskEncryptionSetID, ""),
 		EnableFIPS:                     lo.FromPtrOr(options.EnableFIPS, false),
+		WindowsLicenseType:             lo.FromPtrOr(options.WindowsLicenseType, consts.WindowsLicenseTypeNone),
 		DNSServiceIP:                   lo.FromPtrOr(options.ClusterDNSServiceIP, ""),
 		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, false),
 		AKSMachinesPoolName:            lo.FromPtrOr(options.AKSMachinesPoolName, "aksmanagedap"),

@@ -37,6 +37,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	skuutil "github.com/Azure/karpenter-provider-azure/pkg/utils/sku"
@@ -62,6 +63,7 @@ const (
 // struct; adding a new field here automatically incorporates it into the key.
 type instanceTypeParameters struct {
 	ImageFamily              string
+	BillingProduct           pricing.BillingProduct
 	OSDiskSizeGB             *int32 // nil means auto-sized per SKU
 	OSDiskType               v1beta1.OSDiskType
 	MaxPods                  int32
@@ -80,6 +82,13 @@ type instanceTypeParameters struct {
 	CapacityReservationGroupID string
 	CapacityReservations       []capacityReservationPlacement
 	KataEnabled                bool
+}
+
+func billingProductFor(imageFamily, windowsLicenseType string) pricing.BillingProduct {
+	if !v1beta1.IsWindowsImageFamily(imageFamily) || windowsLicenseType == consts.WindowsLicenseTypeWindowsServer {
+		return pricing.BillingProductBaseCompute
+	}
+	return pricing.BillingProductWindowsIncluded
 }
 
 // capacityReservationPlacement is one {VM size, zone} pair that a member reservation
@@ -164,9 +173,11 @@ func (p *DefaultProvider) List(
 	}
 
 	opts := options.FromContext(ctx)
+	imageFamily := lo.FromPtr(nodeClass.Spec.ImageFamily)
 	// Compute fully initialized instance types hash key
 	instanceTypeParams := &instanceTypeParameters{
-		ImageFamily:              lo.FromPtr(nodeClass.Spec.ImageFamily),
+		ImageFamily:              imageFamily,
+		BillingProduct:           billingProductFor(imageFamily, opts.WindowsLicenseType),
 		OSDiskSizeGB:             nodeClass.Spec.OSDiskSizeGB,
 		OSDiskType:               lo.FromPtr(nodeClass.Spec.OSDiskType),
 		MaxPods:                  utils.GetMaxPods(nodeClass, opts.NetworkPlugin, opts.NetworkPluginMode),
@@ -274,7 +285,7 @@ func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instan
 		if capacityReserved {
 			instanceTypeZones = instanceTypeZones.Intersection(reservedZones[strings.ToLower(sku.GetName())])
 		}
-		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones, params.CapacityReservationGroupID), params, architecture)
+		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones, params.BillingProduct, params.CapacityReservationGroupID), params, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
@@ -392,7 +403,7 @@ func capacityReservationZones(params *instanceTypeParameters) map[string]sets.Se
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], capacityReservationGroupID string) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], billingProduct pricing.BillingProduct, capacityReservationGroupID string) cloudprovider.Offerings {
 	offerings := make([]*cloudprovider.Offering, 0, 2*len(offeringZones))
 
 	// Availability is tracked separately per group, so a shortage of unreserved capacity
@@ -404,8 +415,8 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 		placementScope := zones.PlacementScopeForZone(zone)
 
 		// Get prices for ordering; missing prices return MissingPrice (de-prioritized but not excluded).
-		onDemandPrice, _ := p.pricingProvider.OnDemandPrice(*sku.Name, pricing.BillingProductBaseCompute)
-		spotPrice, _ := p.pricingProvider.SpotPrice(*sku.Name, pricing.BillingProductBaseCompute)
+		onDemandPrice, _ := p.pricingProvider.OnDemandPrice(*sku.Name, billingProduct)
+		spotPrice, _ := p.pricingProvider.SpotPrice(*sku.Name, billingProduct)
 
 		// Unknown SKUs (not in known_skus.yaml) are deprioritized to prevent them from
 		// winning scheduling over known-good SKUs. Users can override via NodeOverlay.

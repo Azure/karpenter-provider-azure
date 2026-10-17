@@ -66,6 +66,7 @@ podLabels:
   azure.workload.identity/use: "true"
 logLevel: ${LOG_LEVEL}
 settings:
+  windowsLicenseType: "${WINDOWS_LICENSE_TYPE}"
   featureGates:
     capacityBuffer: false
     staticCapacity: true

@@ -74,6 +74,7 @@ var _ = Describe("Options", func() {
 		"ADDITIONAL_TAGS",
 		"ENABLE_AZURE_SDK_LOGGING",
 		"ENABLE_FIPS",
+		"WINDOWS_LICENSE_TYPE",
 		"AKS_MACHINES_POOL_NAME",
 		"MANAGE_EXISTING_AKS_MACHINES",
 		"PROVIDER_BATCH_IDLE_DURATION",
@@ -136,6 +137,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("LINUX_ADMIN_USERNAME", "customadminusername")
 			os.Setenv("ADDITIONAL_TAGS", "test-tag=test-value")
 			os.Setenv("ENABLE_FIPS", "true")
+			os.Setenv("WINDOWS_LICENSE_TYPE", consts.WindowsLicenseTypeWindowsServer)
 			os.Setenv("AKS_MACHINES_POOL_NAME", "mpool")
 			os.Setenv("MANAGE_EXISTING_AKS_MACHINES", "true")
 			os.Setenv("PROVIDER_BATCH_IDLE_DURATION", "1500ms")
@@ -171,6 +173,7 @@ var _ = Describe("Options", func() {
 				KubeletIdentityClientID:        lo.ToPtr("12345678-1234-1234-1234-123456789012"),
 				AdditionalTags:                 map[string]string{"test-tag": "test-value"},
 				EnableFIPS:                     lo.ToPtr(true),
+				WindowsLicenseType:             lo.ToPtr(consts.WindowsLicenseTypeWindowsServer),
 				ClusterDNSServiceIP:            lo.ToPtr("10.244.0.1"),
 				ManageExistingAKSMachines:      lo.ToPtr(true),
 				AKSMachinesPoolName:            lo.ToPtr("mpool"),
@@ -262,6 +265,50 @@ var _ = Describe("Options", func() {
 				)
 				Expect(err).ToNot(HaveOccurred(), "mode %q should be valid", mode)
 			}
+		})
+		It("should default windows-license-type to None", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.WindowsLicenseType).To(Equal(consts.WindowsLicenseTypeNone))
+		})
+		DescribeTable("should accept valid windows-license-type values",
+			func(licenseType string) {
+				err := opts.Parse(
+					fs,
+					"--cluster-name", "my-name",
+					"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+					"--kubelet-bootstrap-token", "flag-bootstrap-token",
+					"--ssh-public-key", "flag-ssh-public-key",
+					"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+					"--node-resource-group", "my-node-rg",
+					"--windows-license-type", licenseType,
+				)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(opts.WindowsLicenseType).To(Equal(licenseType))
+			},
+			Entry("None", consts.WindowsLicenseTypeNone),
+			Entry("Windows_Server", consts.WindowsLicenseTypeWindowsServer),
+		)
+		It("should reject an invalid windows-license-type", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--windows-license-type", "invalid",
+			)
+			Expect(err).To(MatchError(ContainSubstring(`windows-license-type "invalid" is invalid`)))
 		})
 		It("should fail when vnet guid is not a uuid", func() {
 			errMsg := "vnet-guid null is malformed"

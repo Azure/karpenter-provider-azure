@@ -989,6 +989,57 @@ var _ = Describe("InstanceType Provider", func() {
 				&v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)}, true),
 		)
 
+		It("should use the cluster Windows license type when pricing offerings", func() {
+			cases := []struct {
+				name               string
+				imageFamily        string
+				windowsLicenseType string
+				expectedProduct    pricing.BillingProduct
+			}{
+				{name: "Linux without AHUB", imageFamily: v1beta1.Ubuntu2204ImageFamily, windowsLicenseType: consts.WindowsLicenseTypeNone, expectedProduct: pricing.BillingProductBaseCompute},
+				{name: "Linux with AHUB", imageFamily: v1beta1.Ubuntu2204ImageFamily, windowsLicenseType: consts.WindowsLicenseTypeWindowsServer, expectedProduct: pricing.BillingProductBaseCompute},
+				{name: "Windows2022 PAYG", imageFamily: v1beta1.Windows2022ImageFamily, windowsLicenseType: consts.WindowsLicenseTypeNone, expectedProduct: pricing.BillingProductWindowsIncluded},
+				{name: "Windows2022 AHUB", imageFamily: v1beta1.Windows2022ImageFamily, windowsLicenseType: consts.WindowsLicenseTypeWindowsServer, expectedProduct: pricing.BillingProductBaseCompute},
+				{name: "Windows2025 PAYG", imageFamily: v1beta1.Windows2025ImageFamily, windowsLicenseType: consts.WindowsLicenseTypeNone, expectedProduct: pricing.BillingProductWindowsIncluded},
+				{name: "Windows2025 AHUB", imageFamily: v1beta1.Windows2025ImageFamily, windowsLicenseType: consts.WindowsLicenseTypeWindowsServer, expectedProduct: pricing.BillingProductBaseCompute},
+			}
+
+			observedPrices := map[pricing.BillingProduct]float64{}
+			windowsInstances := map[string]*corecloudprovider.InstanceType{}
+			for _, tc := range cases {
+				By(tc.name)
+				testOptions = test.Options(test.OptionsFields{WindowsLicenseType: lo.ToPtr(tc.windowsLicenseType)})
+				ctx = options.ToContext(ctx, testOptions)
+				nodeClass.Spec.ImageFamily = lo.ToPtr(tc.imageFamily)
+				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+				ExpectApplied(ctx, env.Client, nodeClass)
+
+				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				instanceType, ok := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+					return instanceType.Name == "Standard_D2s_v3"
+				})
+				Expect(ok).To(BeTrue())
+				offering, ok := lo.Find(instanceType.Offerings.Available(), func(offering *corecloudprovider.Offering) bool {
+					return offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand)
+				})
+				Expect(ok).To(BeTrue())
+
+				expectedPrice, known := azureEnv.PricingProvider.OnDemandPrice(instanceType.Name, tc.expectedProduct)
+				Expect(known).To(BeTrue())
+				Expect(offering.Price).To(Equal(expectedPrice))
+				observedPrices[tc.expectedProduct] = offering.Price
+				if v1beta1.IsWindowsImageFamily(tc.imageFamily) {
+					windowsInstances[tc.imageFamily+tc.windowsLicenseType] = instanceType
+				}
+			}
+
+			Expect(observedPrices[pricing.BillingProductWindowsIncluded]).To(BeNumerically(">", observedPrices[pricing.BillingProductBaseCompute]))
+			Expect(windowsInstances[v1beta1.Windows2022ImageFamily+consts.WindowsLicenseTypeNone]).ToNot(BeIdenticalTo(
+				windowsInstances[v1beta1.Windows2022ImageFamily+consts.WindowsLicenseTypeWindowsServer],
+			))
+		})
+
 		DescribeTable("Filtering architecture by image family",
 			func(imageFamily string, shouldIncludeArm64 bool) {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)

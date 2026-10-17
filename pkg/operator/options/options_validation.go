@@ -49,6 +49,7 @@ func (o *Options) Validate() error {
 		o.validateDiskEncryptionSetID(),
 		o.validateClusterDNSIP(),
 		o.validateComputeRecommendationMode(),
+		o.validateWindowsLicenseType(),
 		validate.Struct(o),
 	)
 }
@@ -281,6 +282,15 @@ func (o *Options) validateDiskEncryptionSetID() error {
 
 	o.ParsedDiskEncryptionSetID = parsedID
 	return nil
+}
+
+func (o *Options) validateWindowsLicenseType() error {
+	switch o.WindowsLicenseType {
+	case consts.WindowsLicenseTypeNone, consts.WindowsLicenseTypeWindowsServer:
+		return nil
+	default:
+		return fmt.Errorf("windows-license-type %q is invalid, must be one of %q or %q", o.WindowsLicenseType, consts.WindowsLicenseTypeNone, consts.WindowsLicenseTypeWindowsServer)
+	}
 }
 
 func (o *Options) validateComputeRecommendationMode() error {
