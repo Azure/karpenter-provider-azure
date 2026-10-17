@@ -184,7 +184,7 @@ spec:
               value: "{{ . }}"
           {{- end }}
             - name: WINDOWS_LICENSE_TYPE
-              value: {{ .Values.settings.windowsLicenseType | default "None" | quote }}
+              value: {{ .Values.settings.windowsLicenseType | quote }}
           {{- with .Values.controller.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}

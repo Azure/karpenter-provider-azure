@@ -8,9 +8,12 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 default_render="$tmp_dir/default.yaml"
+empty_render="$tmp_dir/empty.yaml"
 ahub_render="$tmp_dir/ahub.yaml"
 
 helm template karpenter charts/karpenter --namespace karpenter >"$default_render"
+helm template karpenter charts/karpenter --namespace karpenter \
+    --set-string settings.windowsLicenseType= >"$empty_render"
 helm template karpenter charts/karpenter --namespace karpenter \
     --set settings.windowsLicenseType=Windows_Server >"$ahub_render"
 
@@ -21,6 +24,12 @@ license_values() {
 mapfile -t default_values < <(license_values "$default_render")
 [[ "${#default_values[@]}" -eq 1 && "${default_values[0]}" == "None" ]] || {
     echo "expected exactly one default WINDOWS_LICENSE_TYPE=None entry"
+    exit 1
+}
+
+mapfile -t empty_values < <(license_values "$empty_render")
+[[ "${#empty_values[@]}" -eq 1 && -z "${empty_values[0]}" ]] || {
+    echo "expected an explicit empty windowsLicenseType to reach option validation unchanged"
     exit 1
 }
 
@@ -39,3 +48,10 @@ mapfile -t ahub_values < <(license_values "$ahub_render")
     echo "expected generated self-hosted values to carry WINDOWS_LICENSE_TYPE through settings"
     exit 1
 }
+
+grep -Fq './hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false' README.md
+grep -Fq './configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false' README.md
+grep -Fq './hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false' docs/workshops/1_aks_cluster_creation_and_install_karpenter.md
+grep -Fq './configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false' docs/workshops/1_aks_cluster_creation_and_install_karpenter.md
+grep -Fq 'When upgrading an existing self-hosted installation to this release' README.md
+grep -Fq 'When upgrading an existing self-hosted installation to this release' docs/workshops/1_aks_cluster_creation_and_install_karpenter.md

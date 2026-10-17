@@ -172,6 +172,8 @@ done
 
 The Karpenter Helm chart requires specific configuration values to work with an AKS cluster. While these values are documented within the Helm chart, you can use the `configure-values.sh` script to generate the `karpenter-values.yaml` file with the necessary configuration. This script queries the AKS cluster and creates `karpenter-values.yaml` using `karpenter-values-template.yaml` as the configuration template. Although the script automatically fetches the template from the main branch, inconsistencies may arise between the installed version of Karpenter and the repository code. Therefore, it is advisable to download the specific version of the template before running the script.
 
+When upgrading an existing self-hosted installation to this release, rerun `configure-values.sh` before the Helm upgrade so legacy values gain the Windows license setting. This is especially important for clusters using `Windows_Server`.
+
 The generated values include the AKS cluster's Windows license type so Karpenter can choose the matching public price for Windows offerings. `None` uses Windows-license-inclusive pricing; `Windows_Server` uses base-compute pricing for Azure Hybrid Benefit. If you enable or disable Azure Hybrid Benefit after installing self-hosted Karpenter, rerun `configure-values.sh` and the `helm upgrade --install` command so the controller receives the updated value. This setting changes Karpenter's price estimate only; AKS remains responsible for applying the license type to nodes.
 
 ```bash
@@ -182,9 +184,9 @@ export KARPENTER_VERSION=1.10.2
 curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/v${KARPENTER_VERSION}/karpenter-values-template.yaml
 
 # use configure-values.sh to generate karpenter-values.yaml
-# (in repo you can just do ./hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG})
+# (in repo you can run ./hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false)
 curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/v${KARPENTER_VERSION}/hack/deploy/configure-values.sh
-chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi
+chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false
 ```
 
 ### Install Karpenter
