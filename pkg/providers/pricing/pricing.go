@@ -251,22 +251,34 @@ func FetchPricing(ctx context.Context, pricingAPI client.PricingAPI, region stri
 		}}
 
 	prices := map[client.Item]bool{}
-	if err := pricingAPI.GetProductsPricePages(ctx, filters, processPage(prices)); err != nil {
+	if err := pricingAPI.GetProductsPricePages(ctx, filters, processPage(prices, time.Now())); err != nil {
 		return nil, nil, err
 	}
 
-	onDemandPrices, spotPrices = categorizePrices(prices)
+	onDemandPrices, spotPrices = categorizePrices(ctx, prices)
 	return onDemandPrices, spotPrices, nil
 }
 
-func processPage(prices map[client.Item]bool) func(page *client.ProductsPricePage) {
+func processPage(prices map[client.Item]bool, fetchTime time.Time) func(page *client.ProductsPricePage) {
 	return func(page *client.ProductsPricePage) {
 		for _, pItem := range page.Items {
-			if strings.HasSuffix(pItem.ProductName, " Windows") {
+			if strings.HasSuffix(pItem.ProductName, " Windows") ||
+				// a few SKUs have a "Win" suffix rather than Windows, so exclude that too
+				strings.HasSuffix(pItem.ProductName, " Win") ||
+				strings.HasSuffix(pItem.ProductName, " Windows VM") {
+				continue
+			}
+			if !pItem.EffectiveEndDate.IsZero() && pItem.EffectiveEndDate.Before(fetchTime) {
 				continue
 			}
 			if strings.HasSuffix(pItem.MeterName, " Low Priority") {
 				// https://learn.microsoft.com/en-us/azure/batch/batch-spot-vms#differences-between-spot-and-low-priority-vms
+				continue
+			}
+			// Some advertised prices have a different Cloud Services and Virtual Machines price. The only way
+			// to differentiate seems to be by looking at the product name suffix. We want the VM price not the cloud services price.
+			if strings.HasSuffix(pItem.ProductName, " Cloud Services") ||
+				strings.HasSuffix(pItem.ProductName, " CloudServices") {
 				continue
 			}
 			prices[pItem] = true
@@ -274,15 +286,26 @@ func processPage(prices map[client.Item]bool) func(page *client.ProductsPricePag
 	}
 }
 
-func categorizePrices(prices map[client.Item]bool) (map[string]float64, map[string]float64) {
+func categorizePrices(ctx context.Context, prices map[client.Item]bool) (map[string]float64, map[string]float64) {
 	onDemandPrices := map[string]float64{}
 	spotPrices := map[string]float64{}
 	for price := range prices {
+		capacityType := "on-demand"
+		targetPrices := onDemandPrices
 		if strings.HasSuffix(price.SkuName, " Spot") {
-			spotPrices[price.ArmSkuName] = price.RetailPrice
-		} else {
-			onDemandPrices[price.ArmSkuName] = price.RetailPrice
+			capacityType = "spot"
+			targetPrices = spotPrices
 		}
+		if existingPrice, ok := targetPrices[price.ArmSkuName]; ok && existingPrice != price.RetailPrice {
+			log.FromContext(ctx).Info(
+				"found conflicting prices for instance type",
+				"instanceType", price.ArmSkuName,
+				"capacityType", capacityType,
+				"existingPrice", existingPrice,
+				"newPrice", price.RetailPrice,
+			)
+		}
+		targetPrices[price.ArmSkuName] = price.RetailPrice
 	}
 	return onDemandPrices, spotPrices
 }

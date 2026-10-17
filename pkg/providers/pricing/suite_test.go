@@ -106,6 +106,86 @@ var _ = Describe("Pricing", func() {
 		Expect(price).To(BeNumerically("==", 1.23))
 	})
 
+	It("should exclude irrelevant prices without excluding other VM products", func() {
+		fakePricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
+			Items: []client.Item{
+				{
+					ArmSkuName:  "Standard_D2as_v5",
+					ProductName: "Virtual Machines Dasv5 Series",
+					RetailPrice: 0.108,
+				},
+				{
+					ArmSkuName:  "Standard_D2as_v5",
+					ProductName: "Dasv5 Series Cloud Services",
+					RetailPrice: 0.200,
+				},
+				{
+					ArmSkuName:  "Standard_E2as_v5",
+					ProductName: "Virtual Machines Easv5 Series",
+					RetailPrice: 0.136,
+				},
+				{
+					ArmSkuName:  "Standard_E2as_v5",
+					ProductName: "Easv5 Series CloudServices",
+					RetailPrice: 0.228,
+				},
+				{
+					ArmSkuName:  "Standard_DC2s_v3",
+					ProductName: "DCsv3 Series Linux",
+					RetailPrice: 0.240,
+				},
+				{
+					ArmSkuName:  "Standard_NCC40ads_H100_v5",
+					ProductName: "Virtual Machines NCCadsv5 Srs",
+					RetailPrice: 7.890,
+				},
+				{
+					ArmSkuName:  "Standard_NCC40ads_H100_v5",
+					ProductName: "Virtual Machines NCCadsv5 Srs Win",
+					RetailPrice: 9.730,
+				},
+				{
+					ArmSkuName:  "Standard_DC4as_v7",
+					ProductName: "DCasv7 Series VM",
+					MeterName:   "DC4asv7",
+					SkuName:     "DC4asv7",
+					RetailPrice: 0.250,
+				},
+				{
+					ArmSkuName:  "Standard_DC4as_v7",
+					ProductName: "DCasv7 Series Windows VM",
+					MeterName:   "DC4asv7",
+					SkuName:     "DC4asv7",
+					RetailPrice: 0.434,
+				},
+				{
+					ArmSkuName:       "Standard_Expired",
+					ProductName:      "Virtual Machines Expired Series",
+					RetailPrice:      1.000,
+					EffectiveEndDate: time.Now().Add(-time.Hour),
+				},
+				{
+					ArmSkuName:       "Standard_Current",
+					ProductName:      "Virtual Machines Current Series",
+					RetailPrice:      2.000,
+					EffectiveEndDate: time.Now().Add(time.Hour),
+				},
+			},
+		})
+
+		onDemandPrices, spotPrices, err := pricing.FetchPricing(ctx, fakePricingAPI, fake.Region)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(onDemandPrices).To(Equal(map[string]float64{
+			"Standard_D2as_v5":          0.108,
+			"Standard_E2as_v5":          0.136,
+			"Standard_DC2s_v3":          0.240,
+			"Standard_NCC40ads_H100_v5": 7.890,
+			"Standard_DC4as_v7":         0.250,
+			"Standard_Current":          2.000,
+		}))
+		Expect(spotPrices).To(BeEmpty())
+	})
+
 	It("should update spot pricing with response from the pricing API", func() {
 		// modify our API before creating the pricing provider as it performs an initial update on creation.
 		fakePricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
