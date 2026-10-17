@@ -239,6 +239,48 @@ var _ = Describe("Pricing", func() {
 		Expect(price).To(Equal(1.30))
 	})
 
+	It("should let Reset invalidate an in-flight refresh without waiting for the network", func() {
+		api := &orderedPricingAPI{
+			firstStarted:  make(chan struct{}),
+			releaseFirst:  make(chan struct{}),
+			secondStarted: make(chan struct{}),
+		}
+		govEnv := &auth.Environment{Cloud: cloud.AzureGovernment}
+		p := pricing.NewProvider(ctx, govEnv, api, fake.Region, make(chan struct{}))
+		providers = append(providers, p)
+
+		updateDone := make(chan struct{})
+		go func() {
+			defer close(updateDone)
+			p.Update(ctx)
+		}()
+		<-api.firstStarted
+
+		resetDone := make(chan struct{})
+		go func() {
+			defer close(resetDone)
+			p.Reset()
+		}()
+
+		select {
+		case <-resetDone:
+		case <-time.After(time.Second):
+			close(api.releaseFirst)
+			<-updateDone
+			<-resetDone
+			Fail("Reset blocked behind an in-flight pricing request")
+			return
+		}
+
+		staticPrice, known := p.OnDemandPrice("Standard_D1", pricing.BillingProductBaseCompute)
+		Expect(known).To(BeTrue())
+		close(api.releaseFirst)
+		<-updateDone
+		priceAfterLateResponse, known := p.OnDemandPrice("Standard_D1", pricing.BillingProductBaseCompute)
+		Expect(known).To(BeTrue())
+		Expect(priceAfterLateResponse).To(Equal(staticPrice))
+	})
+
 	It("should retain the last-known-good product when a refresh omits it", func() {
 		govEnv := &auth.Environment{Cloud: cloud.AzureGovernment}
 		p := pricing.NewProvider(ctx, govEnv, fakePricingAPI, fake.Region, make(chan struct{}))

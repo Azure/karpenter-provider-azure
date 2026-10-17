@@ -86,12 +86,12 @@ type Provider struct {
 	region  string
 	cm      *pretty.ChangeMonitor
 
-	updateMu           sync.Mutex
 	mu                 sync.RWMutex
 	onDemandUpdateTime time.Time
 	onDemandPrices     Prices
 	spotUpdateTime     time.Time
 	spotPrices         Prices
+	refreshGeneration  atomic.Uint64
 	seqNum             atomic.Uint64
 	done               chan struct{}
 }
@@ -229,9 +229,7 @@ func (p *Provider) SeqNum() uint64 {
 
 // Update fetches and atomically applies the latest pricing snapshot.
 func (p *Provider) Update(ctx context.Context) {
-	p.updateMu.Lock()
-	defer p.updateMu.Unlock()
-
+	generation := p.refreshGeneration.Add(1)
 	if ctx.Err() != nil {
 		return
 	}
@@ -247,6 +245,10 @@ func (p *Provider) Update(ctx context.Context) {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if generation != p.refreshGeneration.Load() {
+		log.FromContext(ctx).V(1).Info("discarding stale pricing refresh", "generation", generation)
+		return
+	}
 
 	updatedOnDemand, onDemandApplied, onDemandChanged := p.mergePrices(ctx, "on-demand", p.onDemandPrices, onDemandPrices)
 	if onDemandApplied {
@@ -460,9 +462,7 @@ func pricesEqual(left, right Prices) bool {
 }
 
 func (p *Provider) Reset() {
-	p.updateMu.Lock()
-	defer p.updateMu.Unlock()
-
+	p.refreshGeneration.Add(1)
 	staticPricing := initialPrices(p.region)
 
 	p.mu.Lock()
