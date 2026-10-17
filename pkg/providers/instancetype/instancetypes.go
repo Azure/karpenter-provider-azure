@@ -93,6 +93,7 @@ type capacityReservationPlacement struct {
 type instanceTypesSourceDataGeneration struct {
 	unavailableOfferings uint64
 	quota                uint64
+	pricing              uint64
 }
 
 type Provider interface {
@@ -289,6 +290,7 @@ func (p *DefaultProvider) currentInstanceTypesSourceDataGeneration() instanceTyp
 	return instanceTypesSourceDataGeneration{
 		unavailableOfferings: p.unavailableOfferings.SeqNum(),
 		quota:                p.quotaProvider.SeqNum(),
+		pricing:              p.pricingProvider.SeqNum(),
 	}
 }
 
@@ -402,8 +404,8 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 		placementScope := zones.PlacementScopeForZone(zone)
 
 		// Get prices for ordering; missing prices return MissingPrice (de-prioritized but not excluded).
-		onDemandPrice, _ := p.pricingProvider.OnDemandPrice(*sku.Name)
-		spotPrice, _ := p.pricingProvider.SpotPrice(*sku.Name)
+		onDemandPrice, _ := p.pricingProvider.OnDemandPrice(*sku.Name, pricing.BillingProductBaseCompute)
+		spotPrice, _ := p.pricingProvider.SpotPrice(*sku.Name, pricing.BillingProductBaseCompute)
 
 		// Unknown SKUs (not in known_skus.yaml) are deprioritized to prevent them from
 		// winning scheduling over known-good SKUs. Users can override via NodeOverlay.
