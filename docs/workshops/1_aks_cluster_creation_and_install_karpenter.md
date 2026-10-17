@@ -134,10 +134,6 @@ done
 
 The Karpenter Helm chart requires specific configuration values to work with an AKS cluster. While these values are documented within the Helm chart, you can use the `configure-values.sh` script to generate the `karpenter-values.yaml` file with the necessary configuration. This script queries the AKS cluster and creates `karpenter-values.yaml` using `karpenter-values-template.yaml` as the configuration template.
 
-When upgrading an existing self-hosted installation to this release, rerun `configure-values.sh` before the Helm upgrade so legacy values gain the Windows license setting. This is especially important for clusters using `Windows_Server`.
-
-The generated values include the AKS cluster's Windows license type so Karpenter can choose the matching public price for Windows offerings. `None` uses Windows-license-inclusive pricing; `Windows_Server` uses base-compute pricing for Azure Hybrid Benefit. If you enable or disable Azure Hybrid Benefit after installing self-hosted Karpenter, rerun `configure-values.sh` and the `helm upgrade --install` command so the controller receives the updated value. This setting changes Karpenter's price estimate only; AKS remains responsible for applying the license type to nodes.
-
 ```bash
 # Select version to install
 export KARPENTER_VERSION=0.7.0
@@ -149,9 +145,9 @@ cd ~/environment/karpenter/
 curl -sO https://raw.githubusercontent.com/Azure/karpenter/v${KARPENTER_VERSION}/karpenter-values-template.yaml
 
 # use configure-values.sh to generate karpenter-values.yaml
-# (in repo you can run ./hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false)
+# (in repo you can just do ./hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG})
 curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/v${KARPENTER_VERSION}/hack/deploy/configure-values.sh
-chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false
+chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi
 ```
 
 Check the `karpenter-values.yaml` file was created:

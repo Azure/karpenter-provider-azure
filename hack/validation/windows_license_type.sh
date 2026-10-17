@@ -49,9 +49,6 @@ mapfile -t ahub_values < <(license_values "$ahub_render")
     exit 1
 }
 
-grep -Fq './hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false' README.md
-grep -Fq './configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false' README.md
-grep -Fq './hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false' docs/workshops/1_aks_cluster_creation_and_install_karpenter.md
-grep -Fq './configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false' docs/workshops/1_aks_cluster_creation_and_install_karpenter.md
-grep -Fq 'When upgrading an existing self-hosted installation to this release' README.md
-grep -Fq 'When upgrading an existing self-hosted installation to this release' docs/workshops/1_aks_cluster_creation_and_install_karpenter.md
+grep -Fq 'settings.windowsLicenseType' docs/windows-pricing.md
+grep -Fq 'Use the script, template, and chart from the same release' docs/windows-pricing.md
+grep -Fq 'Existing self-hosted installations must set this value before upgrading' docs/windows-pricing.md
