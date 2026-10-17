@@ -48,6 +48,10 @@ const (
 
 	AKSMachineAPIHeaderBatchMaxSize = 50
 
+	// WindowsLicenseType values mirror ManagedCluster windowsProfile.licenseType.
+	WindowsLicenseTypeNone          = "None"
+	WindowsLicenseTypeWindowsServer = "Windows_Server"
+
 	// Compute recommendation mode values.
 	ComputeRecommendationModeDisabled = "disabled"
 	ComputeRecommendationModeLog      = "log-only"

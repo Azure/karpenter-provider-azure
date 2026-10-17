@@ -100,6 +100,7 @@ type Options struct {
 	EnableAzureSDKLogging      bool              `json:"enableAzureSDKLogging,omitempty"` // Controls whether Azure SDK middleware logging is enabled
 	DiskEncryptionSetID        string            `json:"diskEncryptionSetId,omitempty"`
 	EnableFIPS                 bool              `json:"enableFIPS,omitempty"`
+	WindowsLicenseType         string            `json:"windowsLicenseType,omitempty"`
 
 	// If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE is already an AKS Machine API mode, as it will behave as if this option is set to true.
 	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
@@ -140,6 +141,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
 	fs.StringVar(&o.DiskEncryptionSetID, "node-osdisk-diskencryptionset-id", env.WithDefaultString("NODE_OSDISK_DISKENCRYPTIONSET_ID", ""), "The ARM resource ID of the disk encryption set to use for customer-managed key (BYOK) encryption.")
 	fs.BoolVar(&o.EnableFIPS, "enable-fips", env.WithDefaultBool("ENABLE_FIPS", false), "If set to true, AKSNodeClasses must explicitly enable FIPS mode. This setting mirrors the AKS cluster-level FIPS configuration.")
+	fs.StringVar(&o.WindowsLicenseType, "windows-license-type", env.WithDefaultString("WINDOWS_LICENSE_TYPE", consts.WindowsLicenseTypeNone), "The AKS cluster Windows license type. Must be 'None' or 'Windows_Server'.")
 	fs.BoolVar(&o.ManageExistingAKSMachines, "manage-existing-aks-machines", env.WithDefaultBool("MANAGE_EXISTING_AKS_MACHINES", false), "If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect when already on an AKS Machine API mode.")
 	fs.StringVar(&o.AKSMachinesPoolName, "aks-machines-pool-name", env.WithDefaultString("AKS_MACHINES_POOL_NAME", ""), "The name of the agent pool that the AKS machines are/will be in with AKS machine API provision modes. Existing AKS machines outside of this pool will be ignored. Required when PROVISION_MODE is an AKS machine API mode. Must be <= 6 characters if the pool will host Windows nodes, because the AKS RP composes the Windows computer name from the pool and machine names and that is bounded by the NetBIOS limit.")
 	fs.DurationVar(&o.ProviderBatchIdleDuration, "provider-batch-idle-duration", env.WithDefaultDuration("PROVIDER_BATCH_IDLE_DURATION", time.Second), "Idle duration for provider batch accumulation. Use Go duration format such as `1s`. Only used on provision mode aksmachineapiheaderbatch.")

@@ -183,6 +183,8 @@ spec:
             - name: COMPUTE_RECOMMENDATION_MODE
               value: "{{ . }}"
           {{- end }}
+            - name: WINDOWS_LICENSE_TYPE
+              value: {{ .Values.settings.windowsLicenseType | default "None" | quote }}
           {{- with .Values.controller.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}

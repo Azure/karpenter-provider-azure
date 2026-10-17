@@ -214,6 +214,10 @@ settings:
   # "enabled": API results actively influence allocation decisions.
   computeRecommendationMode: "log-only"
 
+  # -- The AKS ManagedCluster windowsProfile.licenseType value.
+  # Use None for normal Windows PAYG or Windows_Server for Azure Hybrid Benefit.
+  windowsLicenseType: "None"
+
   # -- Feature Gate configuration values. Feature Gates will follow the same graduation process and requirements as feature gates
   # in Kubernetes. More information here https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#feature-gates-for-alpha-or-beta-features
   featureGates:
