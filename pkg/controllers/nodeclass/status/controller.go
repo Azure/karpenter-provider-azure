@@ -78,13 +78,14 @@ func NewController(
 	capacityReservationsClient azapi.CapacityReservationsAPI,
 	instanceTypes instanceTypeLister,
 	unavailableOfferings capacityReservationGroupOfferingsInvalidator,
+	systemNamespace string,
 ) *Controller {
 	return &Controller{
 
 		kubeClient: kubeClient,
 
 		kubernetesVersion:        NewKubernetesVersionReconciler(kubernetesVersionProvider),
-		nodeImage:                NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
+		nodeImage:                NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface, systemNamespace),
 		subnet:                   NewSubnetReconciler(subnetClient),
 		validation:               NewStaticValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
 		localDNS:                 NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),

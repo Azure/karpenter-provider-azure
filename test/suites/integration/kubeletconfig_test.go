@@ -32,6 +32,10 @@ import (
 
 var _ = Describe("KubeletConfig", func() {
 	It("should apply kubeReserved, evictionHard, and evictionSoft overrides to the node", func() {
+		if !env.IsAKSMachineAPIMode() {
+			Skip("this E2E requires an AKS Machine API provision mode")
+		}
+
 		nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 			KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
 			EvictionHard: &v1beta1.EvictionThreshold{
