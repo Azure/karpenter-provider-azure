@@ -26,6 +26,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
+// +kubebuilder:validation:Enum:={FIPS,Disabled}
 type FIPSMode string
 
 var (
@@ -33,6 +34,7 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
+// +kubebuilder:validation:Enum:={Managed}
 type OSDiskType string
 
 var (
@@ -156,7 +158,6 @@ type AKSNodeClassSpec struct {
 	// osDiskType is the type of disk to use for the OS.
 	// If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
 	// of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
-	// +kubebuilder:validation:Enum:={Managed}
 	// +optional
 	OSDiskType *OSDiskType `json:"osDiskType,omitempty"`
 	// osDiskSizeGB is the size of the OS disk in GB.
@@ -184,7 +185,6 @@ type AKSNodeClassSpec struct {
 	// +optional
 	Versions *Versions `json:"versions,omitempty" hash:"ignore"` // Version changes are handled through resolved status and intentionally excluded from the NodeClass hash.
 	// fipsMode controls FIPS compliance for the provisioned nodes
-	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional
 	FIPSMode *FIPSMode `json:"fipsMode,omitempty"`
 	// workloadRuntime determines the additional workload runtime a node can run.
