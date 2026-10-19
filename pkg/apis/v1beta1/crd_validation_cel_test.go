@@ -814,14 +814,13 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		It("should reject a healthCheck whose duration was never set", func() {
-			// A zero NillableDuration marshals to the literal string "Never", so has() is true and
-			// a rule checking only has() would let this through. This is what the != 'Never' clause
-			// in the XValidation rule exists for.
+			// A zero NillableDuration marshals to the literal string "Never" rather than being
+			// omitted, so required is satisfied and the duration pattern is what rejects it.
 			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.HealthCheck = &v1beta1.LocalDNSHealthCheck{NoRec: lo.ToPtr(true)}
 			err := env.Client.Create(ctx, localDNSWithOverride(overrideConfig))
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("healthCheck.duration is required when healthCheck is specified"))
+			Expect(err.Error()).To(ContainSubstring(`healthCheck.duration: Invalid value: "Never"`))
 		})
 
 		It("should reject a healthCheck with the duration key absent", func() {

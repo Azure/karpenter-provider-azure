@@ -348,7 +348,6 @@ type LocalDNS struct {
 // LocalDNSZoneOverride specifies DNS override configuration for a specific zone
 // +kubebuilder:validation:XValidation:message="'cluster.local' cannot be forwarded to VnetDNS",rule="!(self.zone.endsWith('cluster.local') && self.forwardDestination == 'VnetDNS')"
 // +kubebuilder:validation:XValidation:message="serveStale Verify cannot be used with protocol ForceTCP",rule="!(self.serveStale == 'Verify' && self.protocol == 'ForceTCP')"
-// +kubebuilder:validation:XValidation:message="healthCheck.duration is required when healthCheck is specified",rule="!has(self.healthCheck) || (has(self.healthCheck.duration) && size(self.healthCheck.duration) > 0 && self.healthCheck.duration != 'Never')"
 type LocalDNSZoneOverride struct {
 	// zone is the DNS zone this override applies to (e.g., ".", "cluster.local").
 	// +required
@@ -395,10 +394,16 @@ type LocalDNSZoneOverride struct {
 	// transient CoreDNS outage into an immediate SERVFAIL for all in-cluster DNS. It is intended
 	// for zones forwarding to VnetDNS, where failing fast stops localDNS from amplifying an
 	// upstream outage.
+	//
+	// Requires provision-mode bootstrappingclient. In any other provision mode, setting it to true
+	// fails AKSNodeClass validation, and the AKSNodeClass does not provision until it is removed.
 	// +optional
 	FailfastAllUnhealthyUpstreams *bool `json:"failfastAllUnhealthyUpstreams,omitempty"`
 	// healthCheck configures how localDNS probes the upstream DNS servers for this zone.
 	// See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	//
+	// Requires provision-mode bootstrappingclient. In any other provision mode, setting it fails
+	// AKSNodeClass validation, and the AKSNodeClass does not provision until it is removed.
 	// +optional
 	HealthCheck *LocalDNSHealthCheck `json:"healthCheck,omitempty"`
 }
@@ -420,8 +425,7 @@ type LocalDNSHealthCheck struct {
 	// +kubebuilder:validation:Schemaless
 	// +required
 	Duration karpv1.NillableDuration `json:"duration"`
-	// noRec sets the RecursionDesired flag of the health check query to false. It has no effect
-	// unless duration is set.
+	// noRec sets the RecursionDesired flag of the health check query to false.
 	// +optional
 	NoRec *bool `json:"noRec,omitempty"`
 }
@@ -1193,6 +1197,19 @@ func (in *AKSNodeClass) IsLocalDNSRequired() bool {
 // the provisioning path will not observe the unresolved state.
 func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	return in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled
+}
+
+// HasLocalDNSForwardHealthKnobs returns whether any LocalDNS zone override sets a forward health
+// knob that changes the node's Corefile: failfastAllUnhealthyUpstreams=true or a healthCheck.
+// failfastAllUnhealthyUpstreams=false matches the CoreDNS default and is not counted.
+func (in *AKSNodeClass) HasLocalDNSForwardHealthKnobs() bool {
+	if in.Spec.LocalDNS == nil {
+		return false
+	}
+	setsKnob := func(o LocalDNSZoneOverride) bool {
+		return lo.FromPtr(o.FailfastAllUnhealthyUpstreams) || o.HealthCheck != nil
+	}
+	return lo.SomeBy(in.Spec.LocalDNS.VnetDNSOverrides, setsKnob) || lo.SomeBy(in.Spec.LocalDNS.KubeDNSOverrides, setsKnob)
 }
 
 // GetGPUMode returns the effective GPU mode.

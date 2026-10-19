@@ -55,6 +55,10 @@ const (
 	// KataRequiresAzureLinux3 is the condition reason set when the Kubernetes version resolves
 	// imageFamily AzureLinux to Azure Linux 2, which does not publish a Kata image.
 	KataRequiresAzureLinux3 = "KataRequiresAzureLinux3"
+	// LocalDNSHealthKnobsUnsupportedProvisionMode is the condition reason set when a NodeClass sets a
+	// localDNS forward health knob but the provision mode cannot carry it to the node. Only the
+	// bootstrapping client mode supports them.
+	LocalDNSHealthKnobsUnsupportedProvisionMode = "LocalDNSHealthKnobsUnsupportedProvisionMode"
 	// ManagedGPUUnsupportedProvisionMode is the condition reason set when a NodeClass requests
 	// the managed GPU experience but the provision mode cannot express the NVIDIA GPU profile.
 	ManagedGPUUnsupportedProvisionMode = "ManagedGPUUnsupportedProvisionMode"
@@ -125,6 +129,7 @@ func (r *StaticValidationReconciler) Reconcile(ctx context.Context, nodeClass *v
 		r.validateKataProvisionMode,
 		r.validateManagedGPUProvisionMode,
 		r.validateNodePublicIPProvisionMode,
+		r.validateLocalDNSHealthKnobsProvisionMode,
 		r.validateKataImageFamily,
 		r.validateDiskEncryptionSetRBAC,
 	}
@@ -234,6 +239,16 @@ func (r *StaticValidationReconciler) validateNodePublicIPProvisionMode(ctx conte
 		return fail(
 			NodePublicIPUnsupportedProvisionMode,
 			fmt.Sprintf("nodePublicIP.enabled requires an AKS Machine API provision mode (%q or %q); provision-mode %q is not supported", consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch, options.FromContext(ctx).ProvisionMode),
+		), nil
+	}
+	return pass(), nil
+}
+
+func (r *StaticValidationReconciler) validateLocalDNSHealthKnobsProvisionMode(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
+	if nodeClass.HasLocalDNSForwardHealthKnobs() && !options.FromContext(ctx).SupportsLocalDNSForwardHealthKnobs() {
+		return fail(
+			LocalDNSHealthKnobsUnsupportedProvisionMode,
+			fmt.Sprintf("localDNS failfastAllUnhealthyUpstreams and healthCheck require provision-mode %q; provision-mode %q is not supported", consts.ProvisionModeBootstrappingClient, options.FromContext(ctx).ProvisionMode),
 		), nil
 	}
 	return pass(), nil

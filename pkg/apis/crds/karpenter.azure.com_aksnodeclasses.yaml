@@ -2096,6 +2096,9 @@ spec:
                             transient CoreDNS outage into an immediate SERVFAIL for all in-cluster DNS. It is intended
                             for zones forwarding to VnetDNS, where failing fast stops localDNS from amplifying an
                             upstream outage.
+
+                            Requires provision-mode bootstrappingclient. In any other provision mode, setting it to true
+                            fails AKSNodeClass validation, and the AKSNodeClass does not provision until it is removed.
                           type: boolean
                         forwardDestination:
                           description: forwardDestination is the destination server
@@ -2117,6 +2120,9 @@ spec:
                           description: |-
                             healthCheck configures how localDNS probes the upstream DNS servers for this zone.
                             See [forward plugin](https://coredns.io/plugins/forward) for more information.
+
+                            Requires provision-mode bootstrappingclient. In any other provision mode, setting it fails
+                            AKSNodeClass validation, and the AKSNodeClass does not provision until it is removed.
                           properties:
                             duration:
                               description: |-
@@ -2128,9 +2134,8 @@ spec:
                               pattern: ^([0-9]+(s|m|h))+$
                               type: string
                             noRec:
-                              description: |-
-                                noRec sets the RecursionDesired flag of the health check query to false. It has no effect
-                                unless duration is set.
+                              description: noRec sets the RecursionDesired flag of
+                                the health check query to false.
                               type: boolean
                           required:
                           - duration
@@ -2195,11 +2200,6 @@ spec:
                       - message: serveStale Verify cannot be used with protocol ForceTCP
                         rule: '!(self.serveStale == ''Verify'' && self.protocol ==
                           ''ForceTCP'')'
-                      - message: healthCheck.duration is required when healthCheck
-                          is specified
-                        rule: '!has(self.healthCheck) || (has(self.healthCheck.duration)
-                          && size(self.healthCheck.duration) > 0 && self.healthCheck.duration
-                          != ''Never'')'
                     maxItems: 100
                     type: array
                     x-kubernetes-list-map-keys:
@@ -2238,6 +2238,9 @@ spec:
                             transient CoreDNS outage into an immediate SERVFAIL for all in-cluster DNS. It is intended
                             for zones forwarding to VnetDNS, where failing fast stops localDNS from amplifying an
                             upstream outage.
+
+                            Requires provision-mode bootstrappingclient. In any other provision mode, setting it to true
+                            fails AKSNodeClass validation, and the AKSNodeClass does not provision until it is removed.
                           type: boolean
                         forwardDestination:
                           description: forwardDestination is the destination server
@@ -2259,6 +2262,9 @@ spec:
                           description: |-
                             healthCheck configures how localDNS probes the upstream DNS servers for this zone.
                             See [forward plugin](https://coredns.io/plugins/forward) for more information.
+
+                            Requires provision-mode bootstrappingclient. In any other provision mode, setting it fails
+                            AKSNodeClass validation, and the AKSNodeClass does not provision until it is removed.
                           properties:
                             duration:
                               description: |-
@@ -2270,9 +2276,8 @@ spec:
                               pattern: ^([0-9]+(s|m|h))+$
                               type: string
                             noRec:
-                              description: |-
-                                noRec sets the RecursionDesired flag of the health check query to false. It has no effect
-                                unless duration is set.
+                              description: noRec sets the RecursionDesired flag of
+                                the health check query to false.
                               type: boolean
                           required:
                           - duration
@@ -2337,11 +2342,6 @@ spec:
                       - message: serveStale Verify cannot be used with protocol ForceTCP
                         rule: '!(self.serveStale == ''Verify'' && self.protocol ==
                           ''ForceTCP'')'
-                      - message: healthCheck.duration is required when healthCheck
-                          is specified
-                        rule: '!has(self.healthCheck) || (has(self.healthCheck.duration)
-                          && size(self.healthCheck.duration) > 0 && self.healthCheck.duration
-                          != ''Never'')'
                     maxItems: 100
                     type: array
                     x-kubernetes-list-map-keys:
