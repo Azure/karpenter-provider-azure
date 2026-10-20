@@ -305,6 +305,11 @@ func (env *Environment) SkipIfNotWindowsCapable() {
 		Skip(fmt.Sprintf("Windows machines require the reserved aksmanagedap pool or a custom machines pool name <= 6 chars; got %q (%d chars)",
 			env.MachineAgentPoolName, len(env.MachineAgentPoolName)))
 	}
+	// Managed test harnesses can create the cluster through a non-ARM endpoint. They must set
+	// WINDOWS_READY only after configuring a Windows profile and a non-Cilium dataplane.
+	if os.Getenv("WINDOWS_READY") == "true" {
+		return
+	}
 	managedCluster := env.ExpectGetManagedCluster()
 	// Windows nodes do not support the Cilium dataplane configured on the cluster.
 	if managedCluster.Properties != nil && managedCluster.Properties.NetworkProfile != nil &&
