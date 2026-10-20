@@ -62,7 +62,7 @@ func createZoneOverride(zone string, forwardToVnetDNS bool) v1beta1.LocalDNSZone
 
 var _ = Describe("Validation Reconciler", func() {
 	var ctx context.Context
-	var reconciler *status.ValidationReconciler
+	var reconciler *status.StaticValidationReconciler
 	var nodeClass *v1beta1.AKSNodeClass
 	var fakeDesAPI *fake.DiskEncryptionSetsAPI
 	var emptyDiskEncryptionSetID *arm.ResourceID
@@ -71,7 +71,7 @@ var _ = Describe("Validation Reconciler", func() {
 		ctx = options.ToContext(context.Background(), test.Options())
 		fakeDesAPI = &fake.DiskEncryptionSetsAPI{}
 
-		reconciler = status.NewValidationReconciler(fakeDesAPI, emptyDiskEncryptionSetID)
+		reconciler = status.NewStaticValidationReconciler(fakeDesAPI, emptyDiskEncryptionSetID)
 		nodeClass = &v1beta1.AKSNodeClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "test-nodeclass",
@@ -81,8 +81,79 @@ var _ = Describe("Validation Reconciler", func() {
 		}
 	})
 
+	Context("provision mode compatibility", func() {
+		DescribeTable("enforces both cluster FIPS and ACL requirements",
+			func(fipsMode *v1beta1.FIPSMode, useSIG bool, expectedReason string) {
+				ctx = options.ToContext(ctx, &options.Options{
+					ProvisionMode: consts.ProvisionModeAKSMachineAPI, UseSIG: useSIG, EnableFIPS: true,
+				})
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+				nodeClass.Spec.FIPSMode = fipsMode
+				_, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				if expectedReason == "" {
+					Expect(condition.IsTrue()).To(BeTrue())
+				} else {
+					Expect(condition.IsFalse()).To(BeTrue())
+					Expect(condition.Reason).To(Equal(expectedReason))
+				}
+			},
+			Entry("rejects missing FIPS even with SIG", nil, true, status.FIPSRequired),
+			Entry("rejects missing SIG even with FIPS", &v1beta1.FIPSModeFIPS, false, status.SIGRequiredForAzureContainerLinux),
+			Entry("accepts FIPS with SIG", &v1beta1.FIPSModeFIPS, true, ""),
+		)
+
+		DescribeTable("validates image family compatibility",
+			func(imageFamily, provisionMode string, useSIG bool, expectedReason string) {
+				ctx = options.ToContext(context.Background(), &options.Options{ProvisionMode: provisionMode, UseSIG: useSIG})
+				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				if expectedReason == "" {
+					Expect(condition.IsTrue()).To(BeTrue())
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				} else {
+					Expect(condition.IsFalse()).To(BeTrue())
+					Expect(condition.Reason).To(Equal(expectedReason))
+					Expect(condition.Message).To(ContainSubstring("requires an AKS Machine API provision mode"))
+					Expect(condition.Message).To(ContainSubstring("shared image gallery access (UseSIG=true)"))
+					Expect(result).To(Equal(reconcile.Result{}))
+				}
+			},
+			Entry("ACL with Machine API and SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPI, true, ""),
+			Entry("ACL with batched Machine API and SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPIHeaderBatch, true, ""),
+			Entry("ACL with Machine API without SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPI, false, status.SIGRequiredForAzureContainerLinux),
+			Entry("ACL with batched Machine API without SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPIHeaderBatch, false, status.SIGRequiredForAzureContainerLinux),
+			Entry("ACL with bootstrapping client and SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeBootstrappingClient, true, status.IncompatibleProvisionMode),
+			Entry("ACL with local scriptless and SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSScriptless, true, status.IncompatibleProvisionMode),
+			Entry("ACL with bootstrapping client without SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeBootstrappingClient, false, status.IncompatibleProvisionMode),
+			Entry("ACL with local scriptless without SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSScriptless, false, status.IncompatibleProvisionMode),
+			Entry("Ubuntu with bootstrapping client", v1beta1.UbuntuImageFamily, consts.ProvisionModeBootstrappingClient, false, ""),
+			Entry("Azure Linux with local scriptless", v1beta1.AzureLinuxImageFamily, consts.ProvisionModeAKSScriptless, false, ""),
+		)
+
+		It("should recover after SIG access is enabled and fail again if disabled", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+			for _, useSIG := range []bool{false, true, false} {
+				ctx = options.ToContext(context.Background(), &options.Options{ProvisionMode: consts.ProvisionModeAKSMachineAPI, UseSIG: useSIG})
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsTrue()).To(Equal(useSIG))
+				if useSIG {
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				} else {
+					Expect(condition.Reason).To(Equal(status.SIGRequiredForAzureContainerLinux))
+				}
+			}
+		})
+	})
+
 	// All LocalDNS validations are now handled declaratively by CEL and kubebuilder markers.
-	// The ValidationReconciler is a skeleton for future runtime validations that cannot be
+	// The StaticValidationReconciler is a skeleton for future runtime validations that cannot be
 	// expressed in the CRD schema (e.g., external API calls, cross-resource checks, etc.).
 
 	Context("basic validation reconciliation", func() {
@@ -283,6 +354,144 @@ var _ = Describe("Validation Reconciler", func() {
 		})
 	})
 
+	Context("managed GPU provision mode validation", func() {
+		BeforeEach(func() {
+			nodeClass.Spec.GPU = &v1beta1.GPU{
+				Mode: lo.ToPtr(v1beta1.GPUModeDriver),
+				Nvidia: &v1beta1.NvidiaGPU{
+					ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged),
+				},
+			}
+		})
+
+		DescribeTable("should reject provision modes that cannot express the managed NVIDIA GPU profile",
+			func(provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(status.ManagedGPUUnsupportedProvisionMode))
+				Expect(condition.Message).To(ContainSubstring(provisionMode))
+			},
+			Entry("aksscriptless", consts.ProvisionModeAKSScriptless),
+			Entry("bootstrappingclient", consts.ProvisionModeBootstrappingClient),
+		)
+
+		DescribeTable("should accept AKS Machine API provision modes",
+			func(provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+			},
+			Entry("aksmachineapi", consts.ProvisionModeAKSMachineAPI),
+			Entry("aksmachineapiheaderbatch", consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
+
+		It("should clear the failure after the configuration is corrected", func() {
+			ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeAKSScriptless})
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsFalse()).To(BeTrue())
+
+			nodeClass.Spec.GPU.Nvidia.ManagementMode = lo.ToPtr(v1beta1.ManagementModeUnmanaged)
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+
+		DescribeTable("should not restrict configurations that do not enable managed GPU",
+			func(nvidia *v1beta1.NvidiaGPU) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeAKSScriptless})
+				nodeClass.Spec.GPU.Nvidia = nvidia
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+			},
+			Entry("omitted NVIDIA settings", nil),
+			Entry("empty NVIDIA settings", &v1beta1.NvidiaGPU{}),
+			Entry("explicit Unmanaged", &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeUnmanaged)}),
+		)
+	})
+
+	Context("node public IP provision mode validation", func() {
+		BeforeEach(func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+		})
+
+		DescribeTable("should reject provision modes that do not support node public IP",
+			func(provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(status.NodePublicIPUnsupportedProvisionMode))
+				Expect(condition.Message).To(ContainSubstring(provisionMode))
+				Expect(condition.Message).To(ContainSubstring(consts.ProvisionModeAKSMachineAPI))
+				Expect(condition.Message).To(ContainSubstring(consts.ProvisionModeAKSMachineAPIHeaderBatch))
+			},
+			Entry("aksscriptless", consts.ProvisionModeAKSScriptless),
+			Entry("bootstrappingclient", consts.ProvisionModeBootstrappingClient),
+		)
+
+		DescribeTable("should accept node public IP in AKS Machine API provision modes",
+			func(provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+			},
+			Entry("aksmachineapi", consts.ProvisionModeAKSMachineAPI),
+			Entry("aksmachineapiheaderbatch", consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
+
+		It("should clear the failure after node public IP is disabled", func() {
+			ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeAKSScriptless})
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsFalse()).To(BeTrue())
+
+			nodeClass.Spec.NodePublicIP.Enabled = lo.ToPtr(false)
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+
+		DescribeTable("should not restrict configurations that do not enable node public IP",
+			func(provisionMode string) {
+				for _, nodePublicIP := range []*v1beta1.NodePublicIP{nil, {}, {Enabled: lo.ToPtr(false)}} {
+					ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+					nodeClass.Spec.NodePublicIP = nodePublicIP
+
+					result, err := reconciler.Reconcile(ctx, nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+					Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+				}
+			},
+			Entry("aksscriptless", consts.ProvisionModeAKSScriptless),
+			Entry("bootstrappingclient", consts.ProvisionModeBootstrappingClient),
+			Entry("aksmachineapi", consts.ProvisionModeAKSMachineAPI),
+			Entry("aksmachineapiheaderbatch", consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
+	})
+
 	Context("cluster-level FIPS validation", func() {
 		BeforeEach(func() {
 			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{EnableFIPS: lo.ToPtr(true)}))
@@ -324,14 +533,14 @@ var _ = Describe("Validation Reconciler", func() {
 
 	Context("Disk Encryption Set RBAC validation", func() {
 		var fakeDesClient *fake.DiskEncryptionSetsAPI
-		var desReconciler *status.ValidationReconciler
+		var desReconciler *status.StaticValidationReconciler
 		const testID = "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Compute/diskEncryptionSets/test-des"
 
 		BeforeEach(func() {
 			fakeDesClient = &fake.DiskEncryptionSetsAPI{}
 			parsedID, err := arm.ParseResourceID(testID)
 			Expect(err).ToNot(HaveOccurred())
-			desReconciler = status.NewValidationReconciler(fakeDesClient, parsedID)
+			desReconciler = status.NewStaticValidationReconciler(fakeDesClient, parsedID)
 		})
 
 		It("should set ValidationSucceeded to true and requeue after success interval when Disk Encryption Set RBAC check passes", func() {

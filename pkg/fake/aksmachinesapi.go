@@ -115,7 +115,13 @@ func AKSMachineAPIErrorVMSizeNotSupportedBadRequest(vmSize, subscription, locati
 	return newResponseError("BadRequest", http.StatusBadRequest, message)
 }
 
-// statusCode is always BadRequest today but kept as a parameter for generality
+// AKSMachineAPIErrorLinkedAuthorizationFailed is ARM's synchronous rejection of a Machine PUT when
+// Karpenter's identity can't join the public IP prefix, or the prefix doesn't exist (as seen in E2E).
+func AKSMachineAPIErrorLinkedAuthorizationFailed(prefixID string) *azcore.ResponseError {
+	message := fmt.Sprintf("The client '00000000-0000-0000-0000-000000000000' with object id '00000000-0000-0000-0000-000000000000' has permission to perform action 'Microsoft.ContainerService/managedClusters/agentPools/machines/write' on scope '/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.ContainerService/managedClusters/test-cluster/agentPools/aksmanagedap/machines/machine'; however, it does not have permission to perform action(s) 'Microsoft.Network/publicIPPrefixes/join/action' on the linked scope(s) '%s' (respectively) or the linked scope(s) are invalid.", prefixID)
+	return newResponseError("LinkedAuthorizationFailed", http.StatusForbidden, message)
+}
+
 func newResponseError(errorCode string, statusCode int, message string) *azcore.ResponseError {
 	errorBody := fmt.Sprintf(`{"code": "%s", "message": "%s"}`, errorCode, message)
 	return &azcore.ResponseError{
@@ -231,6 +237,22 @@ func AKSMachineAPIProvisioningErrorZoneAllocationFailed(sku string, zone string)
 			{
 				Code:    lo.ToPtr("ZonalAllocationFailed"),
 				Message: lo.ToPtr(fmt.Sprintf("Allocation failed. We do not have sufficient capacity for the requested VM size %s in zone %s. Read more about improving likelihood of allocation success at http://aka.ms/allocation-guidance", sku, zone)),
+			},
+		},
+	}
+}
+
+// AKSMachineAPIProvisioningErrorLinkedAuthorizationFailed is the Machine provisioning failure when the
+// cluster identity can't join the public IP prefix to the VM (code and message as seen in E2E).
+func AKSMachineAPIProvisioningErrorLinkedAuthorizationFailed(prefixID string) *armcontainerservice.ErrorDetail {
+	message := fmt.Sprintf("The client '00000000-0000-0000-0000-000000000000' with object id '00000000-0000-0000-0000-000000000000' has permission to perform action 'Microsoft.Compute/virtualMachines/write' on scope '/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Compute/virtualMachines/vm'; however, it does not have permission to perform action(s) 'Microsoft.Network/publicIPPrefixes/join/action' on the linked scope(s) '%s' (respectively) or the linked scope(s) are invalid.", prefixID)
+	return &armcontainerservice.ErrorDetail{
+		Code:    lo.ToPtr("LinkedAuthorizationFailed"),
+		Message: lo.ToPtr(fmt.Sprintf("Code=\"LinkedAuthorizationFailed\" Message=\"%s\"", message)),
+		Details: []*armcontainerservice.ErrorDetail{
+			{
+				Code:    lo.ToPtr("LinkedAuthorizationFailed"),
+				Message: lo.ToPtr(message),
 			},
 		},
 	}

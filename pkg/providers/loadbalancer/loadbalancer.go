@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
@@ -73,6 +74,25 @@ type BackendAddressPools struct {
 
 	// generation is the generation of the LB list that was used to build this pool collection.
 	generation uint64
+}
+
+// WithoutKubernetesInboundPools returns a copy without the well-known Kubernetes inbound pools.
+// Outbound pools are retained.
+func (p *BackendAddressPools) WithoutKubernetesInboundPools() *BackendAddressPools {
+	return &BackendAddressPools{
+		IPv4PoolIDs: lo.Reject(p.IPv4PoolIDs, isKubernetesInboundBackendPoolID),
+		IPv6PoolIDs: lo.Reject(p.IPv6PoolIDs, isKubernetesInboundBackendPoolID),
+		generation:  p.generation,
+	}
+}
+
+func isKubernetesInboundBackendPoolID(poolID string, _ int) bool {
+	resourceID, err := arm.ParseResourceID(poolID)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(resourceID.Name, SLBInboundBackendPoolName) ||
+		strings.EqualFold(resourceID.Name, SLBInboundBackendPoolNameIPv6)
 }
 
 // NewProvider creates a new LoadBalancer provider

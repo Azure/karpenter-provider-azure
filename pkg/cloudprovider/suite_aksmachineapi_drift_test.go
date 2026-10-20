@@ -60,7 +60,7 @@ var _ = Describe("CloudProvider", func() {
 			azureEnv = test.NewEnvironment(ctx, env)
 			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
 			statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
-				azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
+				azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
@@ -281,6 +281,51 @@ var _ = Describe("CloudProvider", func() {
 					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(K8sVersionDrift))
+				})
+			})
+
+			Context("Static fields - Node Public IP", func() {
+				// stampNodeClassHash records the current NodeClass hash on both objects, as if the
+				// NodeClaim had been launched from the current NodeClass.
+				stampNodeClassHash := func() {
+					ExpectNodeClassHashUpdated(ctx, env.Client, nodeClass)
+					nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
+						v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
+						v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
+					})
+				}
+
+				updateNodeClassNodePublicIP := func(nodePublicIP *v1beta1.NodePublicIP) {
+					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+					nodeClass.Spec.NodePublicIP = nodePublicIP
+					ExpectApplied(ctx, env.Client, nodeClass)
+					ExpectNodeClassHashUpdated(ctx, env.Client, nodeClass)
+				}
+
+				BeforeEach(func() {
+					stampNodeClassHash()
+				})
+
+				It("should not drift when nothing changes", func() {
+					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(BeEmpty())
+				})
+
+				It("should drift when node public IP is enabled", func() {
+					updateNodeClassNodePublicIP(&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)})
+
+					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(Equal(NodeClassDrift))
+				})
+
+				It("should not drift when node public IP is explicitly disabled", func() {
+					updateNodeClassNodePublicIP(&v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)})
+
+					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(BeEmpty())
 				})
 			})
 
