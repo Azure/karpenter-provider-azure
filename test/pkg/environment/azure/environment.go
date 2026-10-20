@@ -202,7 +202,7 @@ func NewEnvironment(t *testing.T) *Environment {
 		azureEnv.MachineAgentPoolName = lo.Ternary(os.Getenv("AKS_MACHINES_POOL_NAME") == "", "mpool", os.Getenv("AKS_MACHINES_POOL_NAME"))
 	}
 	// Confirm we have a machine pool
-	if azureEnv.InClusterController && azureEnv.IsAKSMachineAPIMode() {
+	if azureEnv.InClusterController && azureEnv.IsAKSMachineAPIMode() && os.Getenv("WINDOWS_READY") != "true" {
 		azureEnv.ExpectMachinesAgentPoolExists()
 	}
 	return azureEnv
