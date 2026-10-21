@@ -17,14 +17,11 @@ limitations under the License.
 package windows_test
 
 import (
-	"encoding/base64"
-	"encoding/binary"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf16"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -318,12 +315,17 @@ Write-Output ('NPD_PROCESSES={0}' -f ($npdProcesses -join ';'))
 Write-Output ('NPD_SCHEDULED_TASKS={0}' -f ($npdScheduledTasks -join ';'))
 Write-Output ('NPD_PATHS={0}' -f ($npdPaths -join ';'))
 Write-Output 'INVENTORY_COMPLETE=true'`
-		inventoryScriptUTF16 := utf16.Encode([]rune(inventoryScript))
-		inventoryScriptBytes := make([]byte, len(inventoryScriptUTF16)*2)
-		for i, codeUnit := range inventoryScriptUTF16 {
-			binary.LittleEndian.PutUint16(inventoryScriptBytes[i*2:], codeUnit)
+		inventoryScriptConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "windows-host-inventory-",
+				Namespace:    "default",
+			},
+			Data: map[string]string{
+				"inventory.ps1": inventoryScript,
+			},
 		}
-		encodedInventoryScript := base64.StdEncoding.EncodeToString(inventoryScriptBytes)
+		env.ExpectCreated(inventoryScriptConfigMap)
+		defer env.ExpectDeleted(inventoryScriptConfigMap)
 
 		inventoryPod := env.Pod(test.PodOptions{
 			ObjectMeta: metav1.ObjectMeta{
@@ -343,9 +345,24 @@ Write-Output 'INVENTORY_COMPLETE=true'`
 			"-NoProfile",
 			"-ExecutionPolicy",
 			"Bypass",
-			"-EncodedCommand",
-			encodedInventoryScript,
+			"-File",
+			`C:\scripts\inventory.ps1`,
 		}
+		inventoryPod.Spec.Volumes = append(inventoryPod.Spec.Volumes, corev1.Volume{
+			Name: "inventory-script",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: inventoryScriptConfigMap.Name,
+					},
+				},
+			},
+		})
+		inventoryPod.Spec.Containers[0].VolumeMounts = append(inventoryPod.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "inventory-script",
+			MountPath: `C:\scripts`,
+			ReadOnly:  true,
+		})
 		inventoryPod.Spec.HostNetwork = true
 		inventoryPod.Spec.AutomountServiceAccountToken = &automountServiceAccountToken
 		inventoryPod.Spec.SecurityContext = &corev1.PodSecurityContext{
