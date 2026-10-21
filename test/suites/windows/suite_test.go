@@ -17,11 +17,14 @@ limitations under the License.
 package windows_test
 
 import (
+	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -181,22 +184,7 @@ var _ = Describe("Windows", func() {
 		hostProcess := true
 		automountServiceAccountToken := false
 		runAsUserName := `NT AUTHORITY\SYSTEM`
-		inventoryPod := env.Pod(test.PodOptions{
-			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: "windows-host-inventory-",
-				Namespace:    "default",
-			},
-			Image:    "mcr.microsoft.com/oss/kubernetes/windows-host-process-containers-base-image@sha256:b4c9637e032f667c52d1eccfa31ad8c63f1b035e8639f3f48a510536bf34032b",
-			NodeName: node.Name,
-			Command: []string{
-				`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`,
-				"-NoLogo",
-				"-NonInteractive",
-				"-NoProfile",
-				"-ExecutionPolicy",
-				"Bypass",
-				"-Command",
-				`$ErrorActionPreference = 'Stop'
+		inventoryScript := `$ErrorActionPreference = 'Stop'
 $npdPattern = '(?i)(node[-_. ]?problem[-_. ]?detector|(^|[^a-z0-9])npd([^a-z0-9]|$))'
 
 function Get-ServiceState([object[]]$services, [string]$serviceName) {
@@ -329,10 +317,35 @@ Write-Output ('NPD_SERVICES={0}' -f ($npdServices -join ';'))
 Write-Output ('NPD_PROCESSES={0}' -f ($npdProcesses -join ';'))
 Write-Output ('NPD_SCHEDULED_TASKS={0}' -f ($npdScheduledTasks -join ';'))
 Write-Output ('NPD_PATHS={0}' -f ($npdPaths -join ';'))
-Write-Output 'INVENTORY_COMPLETE=true'`,
+Write-Output 'INVENTORY_COMPLETE=true'`
+		inventoryScriptUTF16 := utf16.Encode([]rune(inventoryScript))
+		inventoryScriptBytes := make([]byte, len(inventoryScriptUTF16)*2)
+		for i, codeUnit := range inventoryScriptUTF16 {
+			binary.LittleEndian.PutUint16(inventoryScriptBytes[i*2:], codeUnit)
+		}
+		encodedInventoryScript := base64.StdEncoding.EncodeToString(inventoryScriptBytes)
+
+		inventoryPod := env.Pod(test.PodOptions{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "windows-host-inventory-",
+				Namespace:    "default",
+			},
+			Image:    "mcr.microsoft.com/oss/kubernetes/windows-host-process-containers-base-image@sha256:b4c9637e032f667c52d1eccfa31ad8c63f1b035e8639f3f48a510536bf34032b",
+			NodeName: node.Name,
+			Command: []string{
+				`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`,
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
 		})
+		inventoryPod.Spec.Containers[0].Args = []string{
+			"-NoLogo",
+			"-NonInteractive",
+			"-NoProfile",
+			"-ExecutionPolicy",
+			"Bypass",
+			"-EncodedCommand",
+			encodedInventoryScript,
+		}
 		inventoryPod.Spec.HostNetwork = true
 		inventoryPod.Spec.AutomountServiceAccountToken = &automountServiceAccountToken
 		inventoryPod.Spec.SecurityContext = &corev1.PodSecurityContext{
