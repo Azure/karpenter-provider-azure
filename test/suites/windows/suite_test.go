@@ -19,6 +19,7 @@ package windows_test
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,5 +138,28 @@ var _ = Describe("Windows", func() {
 		if imageFamily == v1beta1.Windows2025ImageFamily {
 			Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelFIPSEnabled, "true"))
 		}
+
+		checks := []struct {
+			path   string
+			marker string
+		}{
+			{path: "health", marker: "ok"},
+			{path: "version", marker: "version"},
+			{path: "metrics", marker: "windows_process_cpu_time_total"},
+		}
+		Eventually(func(g Gomega) {
+			for _, check := range checks {
+				body, err := env.KubeClient.CoreV1().RESTClient().
+					Get().
+					Resource("nodes").
+					Name(fmt.Sprintf("http:%s:19182", node.Name)).
+					SubResource("proxy").
+					Suffix(check.path).
+					Timeout(10 * time.Second).
+					DoRaw(env.Context)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.ToLower(string(body))).To(ContainSubstring(strings.ToLower(check.marker)))
+			}
+		}).WithTimeout(40 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 	})
 })
