@@ -214,9 +214,7 @@ while ($consecutiveExporterRunningSamples -lt 3) {
     }
     Start-Sleep -Seconds ([Math]::Min(30, [int]([Math]::Ceiling($remainingSeconds))))
 }
-if ($consecutiveExporterRunningSamples -lt 3) {
-    throw ('aks-windows-exporter did not produce three consecutive Running samples; final state: {0}' -f $exporterServiceState)
-}
+$exporterStable = $consecutiveExporterRunningSamples -ge 3
 
 $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
 if ($null -eq $os) {
@@ -294,7 +292,7 @@ $kubeletServiceState = Get-ServiceState $finalServices 'kubelet'
 $containerdServiceState = Get-ServiceState $finalServices 'containerd'
 $exporterServiceState = Get-ServiceState $finalServices 'aks-windows-exporter'
 if ($exporterServiceState -ne 'Running') {
-    throw ('aks-windows-exporter stopped during inventory; final state: {0}' -f $exporterServiceState)
+    $exporterStable = $false
 }
 $npdServices = @(
     $finalServices |
@@ -309,6 +307,7 @@ Write-Output ('OS_VERSION={0}' -f $osVersion)
 Write-Output ('KUBELET_SERVICE_STATE={0}' -f $kubeletServiceState)
 Write-Output ('CONTAINERD_SERVICE_STATE={0}' -f $containerdServiceState)
 Write-Output ('AKS_WINDOWS_EXPORTER_SERVICE_STATE={0}' -f $exporterServiceState)
+Write-Output ('AKS_WINDOWS_EXPORTER_STABLE={0}' -f ($exporterStable.ToString().ToLowerInvariant()))
 Write-Output ('AKSNODE_EXTENSION_PATHS={0}' -f ($aksNodeExtensionPaths -join ';'))
 Write-Output ('NPD_SERVICES={0}' -f ($npdServices -join ';'))
 Write-Output ('NPD_PROCESSES={0}' -f ($npdProcesses -join ';'))
@@ -456,6 +455,7 @@ Write-Output 'INVENTORY_COMPLETE=true'`
 			"KUBELET_SERVICE_STATE",
 			"CONTAINERD_SERVICE_STATE",
 			"AKS_WINDOWS_EXPORTER_SERVICE_STATE",
+			"AKS_WINDOWS_EXPORTER_STABLE",
 			"AKSNODE_EXTENSION_PATHS",
 			"NPD_SERVICES",
 			"NPD_PROCESSES",
@@ -474,6 +474,7 @@ Write-Output 'INVENTORY_COMPLETE=true'`
 		Expect(inventory["OS_VERSION"]).ToNot(BeEmpty())
 		Expect(inventory["KUBELET_SERVICE_STATE"]).To(Equal("Running"))
 		Expect(inventory["CONTAINERD_SERVICE_STATE"]).To(Equal("Running"))
+		Expect(inventory["AKS_WINDOWS_EXPORTER_STABLE"]).To(Equal("true"))
 		Expect(inventory["AKS_WINDOWS_EXPORTER_SERVICE_STATE"]).To(Equal("Running"))
 		for _, key := range []string{"NPD_SERVICES", "NPD_PROCESSES", "NPD_SCHEDULED_TASKS", "NPD_PATHS"} {
 			Expect(inventory[key]).To(BeEmpty(), "expected no Windows NPD match in %s, found %q", key, inventory[key])
