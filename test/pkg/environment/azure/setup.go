@@ -18,6 +18,7 @@ package azure
 
 import (
 	"fmt"
+	"os"
 
 	. "github.com/onsi/gomega"
 
@@ -45,7 +46,9 @@ func (env *Environment) BeforeEach() {
 func (env *Environment) Cleanup() {
 	env.Environment.Cleanup()
 	env.CleanupObjects(CleanableObjects...)
-	if env.IsAKSMachineAPIMode() {
+	// Managed harnesses setting WINDOWS_READY cannot query Machines through public ARM and must
+	// verify Machine cleanup through their own RP endpoint.
+	if env.IsAKSMachineAPIMode() && os.Getenv("WINDOWS_READY") != "true" {
 		// > Note: under current usage no machines should exist here,
 		// > as scaledown should ensure the machines are deleted
 		env.ExpectNoMachines()
