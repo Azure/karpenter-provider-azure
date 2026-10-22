@@ -140,10 +140,10 @@ suite directory under `test/suites/` must also be added to that matrix, as descr
 
 Three levels, as described in [CONTRIBUTING.md](./CONTRIBUTING.md):
 
-- **Unit tests** — fine-grained, under `pkg/` next to the code, standard Go tests.
-- **Acceptance tests** — Ginkgo, under `pkg/`, integrate with upstream Karpenter and fake only the
+- **Unit tests** — fine-grained, under `pkg/` next to the code, standard Go tests with Gomega for assertions.
+- **Acceptance tests** — Ginkgo with Gomega for assertions, under `pkg/`, integrate with upstream Karpenter and fake only the
   Azure clients. Prefer starting from pending pod pressure.
-- **E2E tests** — Ginkgo, under `test/`, real cluster and real Azure clients.
+- **E2E tests** — Ginkgo with Gomega for assertions, under `test/`, real cluster and real Azure clients.
 
 A test is only useful if it would fail when the intended behavior regresses.
 

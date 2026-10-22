@@ -26,9 +26,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
@@ -101,6 +100,7 @@ func machineWithFailedState(errorCode, errorMsg string) *armcontainerservice.Mac
 }
 
 func TestPollUntilDone_ImmediateSuccess(t *testing.T) {
+	g := NewWithT(t)
 	mock := &mockGetter{
 		responses: []mockResponse{
 			{machine: machineWithState(consts.ProvisioningStateSucceeded)},
@@ -110,12 +110,13 @@ func TestPollUntilDone_ImmediateSuccess(t *testing.T) {
 	poller := NewPoller(testOptions(), mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	assert.Nil(t, provisioningErr)
-	assert.NoError(t, pollerErr)
-	assert.Equal(t, 1, mock.CallCount())
+	g.Expect(provisioningErr).To(BeNil())
+	g.Expect(pollerErr).ToNot(HaveOccurred())
+	g.Expect(mock.CallCount()).To(Equal(1))
 }
 
 func TestPollUntilDone_CreatingThenSucceeded(t *testing.T) {
+	g := NewWithT(t)
 	mock := &mockGetter{
 		responses: []mockResponse{
 			{machine: machineWithState(consts.ProvisioningStateCreating)},
@@ -127,12 +128,13 @@ func TestPollUntilDone_CreatingThenSucceeded(t *testing.T) {
 	poller := NewPoller(testOptions(), mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	assert.Nil(t, provisioningErr)
-	assert.NoError(t, pollerErr)
-	assert.Equal(t, 3, mock.CallCount())
+	g.Expect(provisioningErr).To(BeNil())
+	g.Expect(pollerErr).ToNot(HaveOccurred())
+	g.Expect(mock.CallCount()).To(Equal(3))
 }
 
 func TestPollUntilDone_CreatingThenFailed(t *testing.T) {
+	g := NewWithT(t)
 	mock := &mockGetter{
 		responses: []mockResponse{
 			{machine: machineWithState(consts.ProvisioningStateCreating)},
@@ -143,13 +145,14 @@ func TestPollUntilDone_CreatingThenFailed(t *testing.T) {
 	poller := NewPoller(testOptions(), mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	require.NotNil(t, provisioningErr)
-	assert.Equal(t, "SkuNotAvailable", lo.FromPtr(provisioningErr.Code))
-	assert.NoError(t, pollerErr)
-	assert.Equal(t, 2, mock.CallCount())
+	g.Expect(provisioningErr).ToNot(BeNil())
+	g.Expect(lo.FromPtr(provisioningErr.Code)).To(Equal("SkuNotAvailable"))
+	g.Expect(pollerErr).ToNot(HaveOccurred())
+	g.Expect(mock.CallCount()).To(Equal(2))
 }
 
 func TestPollUntilDone_ImmediateFailed(t *testing.T) {
+	g := NewWithT(t)
 	mock := &mockGetter{
 		responses: []mockResponse{
 			{machine: machineWithFailedState("SkuNotAvailable", "SKU not available in region")},
@@ -159,13 +162,14 @@ func TestPollUntilDone_ImmediateFailed(t *testing.T) {
 	poller := NewPoller(testOptions(), mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	require.NotNil(t, provisioningErr)
-	assert.Equal(t, "SkuNotAvailable", lo.FromPtr(provisioningErr.Code))
-	assert.NoError(t, pollerErr)
-	assert.Equal(t, 1, mock.CallCount())
+	g.Expect(provisioningErr).ToNot(BeNil())
+	g.Expect(lo.FromPtr(provisioningErr.Code)).To(Equal("SkuNotAvailable"))
+	g.Expect(pollerErr).ToNot(HaveOccurred())
+	g.Expect(mock.CallCount()).To(Equal(1))
 }
 
 func TestPollUntilDone_FailedWithoutProvisioningError(t *testing.T) {
+	g := NewWithT(t)
 	m := machineWithState(consts.ProvisioningStateFailed)
 	// No ProvisioningError set
 	mock := &mockGetter{
@@ -177,12 +181,12 @@ func TestPollUntilDone_FailedWithoutProvisioningError(t *testing.T) {
 	poller := NewPoller(testOptions(), mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	assert.Nil(t, provisioningErr)
-	assert.Error(t, pollerErr)
-	assert.Contains(t, pollerErr.Error(), "ProvisioningError is nil")
+	g.Expect(provisioningErr).To(BeNil())
+	g.Expect(pollerErr).To(MatchError(ContainSubstring("ProvisioningError is nil")))
 }
 
 func TestPollUntilDone_Deleting(t *testing.T) {
+	g := NewWithT(t)
 	mock := &mockGetter{
 		responses: []mockResponse{
 			{machine: machineWithState(consts.ProvisioningStateDeleting)},
@@ -192,12 +196,12 @@ func TestPollUntilDone_Deleting(t *testing.T) {
 	poller := NewPoller(testOptions(), mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	assert.Nil(t, provisioningErr)
-	assert.Error(t, pollerErr)
-	assert.Contains(t, pollerErr.Error(), "canceled provisioning state")
+	g.Expect(provisioningErr).To(BeNil())
+	g.Expect(pollerErr).To(MatchError(ContainSubstring("canceled provisioning state")))
 }
 
 func TestPollUntilDone_ContextCancelled(t *testing.T) {
+	g := NewWithT(t)
 	mock := &mockGetter{
 		responses: []mockResponse{
 			{machine: machineWithState(consts.ProvisioningStateCreating)},
@@ -210,12 +214,12 @@ func TestPollUntilDone_ContextCancelled(t *testing.T) {
 	poller := NewPoller(testOptions(), mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(ctx)
 
-	assert.Nil(t, provisioningErr)
-	assert.Error(t, pollerErr)
-	assert.Contains(t, pollerErr.Error(), "context canceled")
+	g.Expect(provisioningErr).To(BeNil())
+	g.Expect(pollerErr).To(MatchError(ContainSubstring("context canceled")))
 }
 
 func TestPollUntilDone_TransientErrorRetry(t *testing.T) {
+	g := NewWithT(t)
 	transientErr := &azcore.ResponseError{
 		StatusCode: http.StatusTooManyRequests,
 		ErrorCode:  "TooManyRequests",
@@ -232,12 +236,13 @@ func TestPollUntilDone_TransientErrorRetry(t *testing.T) {
 	poller := NewPoller(testOptions(), mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	assert.Nil(t, provisioningErr)
-	assert.NoError(t, pollerErr)
-	assert.Equal(t, 3, mock.CallCount())
+	g.Expect(provisioningErr).To(BeNil())
+	g.Expect(pollerErr).ToNot(HaveOccurred())
+	g.Expect(mock.CallCount()).To(Equal(3))
 }
 
 func TestPollUntilDone_NonTransientErrorFails(t *testing.T) {
+	g := NewWithT(t)
 	notFoundErr := &azcore.ResponseError{
 		StatusCode: http.StatusNotFound,
 		ErrorCode:  "NotFound",
@@ -253,13 +258,13 @@ func TestPollUntilDone_NonTransientErrorFails(t *testing.T) {
 	poller := NewPoller(testOptions(), mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	assert.Nil(t, provisioningErr)
-	assert.Error(t, pollerErr)
-	assert.Contains(t, pollerErr.Error(), "non-retryable error")
-	assert.Equal(t, 2, mock.CallCount())
+	g.Expect(provisioningErr).To(BeNil())
+	g.Expect(pollerErr).To(MatchError(ContainSubstring("non-retryable error")))
+	g.Expect(mock.CallCount()).To(Equal(2))
 }
 
 func TestPollUntilDone_ExhaustedRetries(t *testing.T) {
+	g := NewWithT(t)
 	transientErr := &azcore.ResponseError{
 		StatusCode: http.StatusInternalServerError,
 		ErrorCode:  "InternalServerError",
@@ -280,12 +285,12 @@ func TestPollUntilDone_ExhaustedRetries(t *testing.T) {
 	poller := NewPoller(opts, mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	assert.Nil(t, provisioningErr)
-	assert.Error(t, pollerErr)
-	assert.Contains(t, pollerErr.Error(), "exhausting")
+	g.Expect(provisioningErr).To(BeNil())
+	g.Expect(pollerErr).To(MatchError(ContainSubstring("exhausting")))
 }
 
 func TestPollUntilDone_NilProvisioningStateRetry(t *testing.T) {
+	g := NewWithT(t)
 	machineWithNilState := &armcontainerservice.Machine{
 		ID:   lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/..."),
 		Name: lo.ToPtr("machine"),
@@ -305,11 +310,12 @@ func TestPollUntilDone_NilProvisioningStateRetry(t *testing.T) {
 	poller := NewPoller(testOptions(), mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	assert.Nil(t, provisioningErr)
-	assert.NoError(t, pollerErr)
+	g.Expect(provisioningErr).To(BeNil())
+	g.Expect(pollerErr).ToNot(HaveOccurred())
 }
 
 func TestPollUntilDone_RetryBudgetResetsOnHealthyState(t *testing.T) {
+	g := NewWithT(t)
 	transientErr := &azcore.ResponseError{
 		StatusCode: http.StatusInternalServerError,
 		ErrorCode:  "InternalServerError",
@@ -341,9 +347,9 @@ func TestPollUntilDone_RetryBudgetResetsOnHealthyState(t *testing.T) {
 	poller := NewPoller(opts, mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	assert.Nil(t, provisioningErr)
-	assert.NoError(t, pollerErr)
-	assert.Equal(t, 7, mock.CallCount())
+	g.Expect(provisioningErr).To(BeNil())
+	g.Expect(pollerErr).ToNot(HaveOccurred())
+	g.Expect(mock.CallCount()).To(Equal(7))
 }
 
 func TestIsTransientError(t *testing.T) {
@@ -429,13 +435,15 @@ func TestIsTransientError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result := isTransientError(tt.err)
-			assert.Equal(t, tt.expected, result)
+			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
 }
 
 func TestPollUntilDone_UpdatingState(t *testing.T) {
+	g := NewWithT(t)
 	mock := &mockGetter{
 		responses: []mockResponse{
 			{machine: machineWithState(consts.ProvisioningStateUpdating)},
@@ -447,11 +455,12 @@ func TestPollUntilDone_UpdatingState(t *testing.T) {
 	poller := NewPoller(testOptions(), mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	assert.Nil(t, provisioningErr)
-	assert.NoError(t, pollerErr)
+	g.Expect(provisioningErr).To(BeNil())
+	g.Expect(pollerErr).ToNot(HaveOccurred())
 }
 
 func TestPollUntilDone_UnrecognizedStateExhaustsRetries(t *testing.T) {
+	g := NewWithT(t)
 	mock := &mockGetter{
 		responses: []mockResponse{
 			{machine: machineWithState("UnknownState")}, // consumes retry 1
@@ -467,7 +476,6 @@ func TestPollUntilDone_UnrecognizedStateExhaustsRetries(t *testing.T) {
 	poller := NewPoller(opts, mock, "rg", "cluster", "pool", "machine")
 	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
 
-	assert.Nil(t, provisioningErr)
-	assert.Error(t, pollerErr)
-	assert.Contains(t, pollerErr.Error(), "unrecognized provisioning state")
+	g.Expect(provisioningErr).To(BeNil())
+	g.Expect(pollerErr).To(MatchError(ContainSubstring("unrecognized provisioning state")))
 }

@@ -47,7 +47,6 @@ require (
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/samber/lo v1.53.0
-	github.com/stretchr/testify v1.12.1
 	go.uber.org/multierr v1.11.0
 	go.yaml.in/yaml/v2 v2.4.4
 	golang.org/x/sync v0.24.0
