@@ -39,10 +39,11 @@ import (
 var env *azure.Environment
 
 const (
-	windowsPauseImage               = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
-	windows2025Image                = "mcr.microsoft.com/windows/servercore:ltsc2025"
-	npdConditionObservationTimeout  = 30 * time.Minute
-	npdConditionObservationInterval = time.Minute
+	windowsPauseImage                = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
+	windows2025Image                 = "mcr.microsoft.com/windows/servercore:ltsc2025"
+	windowsCapabilityPrevalidatedEnv = "WINDOWS_CAPABILITY_PREVALIDATED"
+	npdConditionObservationTimeout   = 30 * time.Minute
+	npdConditionObservationInterval  = time.Minute
 )
 
 func TestWindows(t *testing.T) {
@@ -62,7 +63,11 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Windows", func() {
 	BeforeEach(func() {
-		env.SkipIfNotWindowsCapable()
+		// Some managed test harnesses validate the Windows profile and dataplane before starting
+		// this suite but do not expose the managed cluster through public ARM.
+		if os.Getenv(windowsCapabilityPrevalidatedEnv) != "true" {
+			env.SkipIfNotWindowsCapable()
+		}
 	})
 
 	It("should provision a Windows node and run a Windows pod", func() {
@@ -132,6 +137,7 @@ var _ = Describe("Windows", func() {
 
 		// Windows nodes take noticeably longer to provision and pull images than Linux.
 		pods := env.EventuallyExpectHealthyDeploymentWithTimeout(25*time.Minute, deployment)
+		env.EventuallyExpectHealthyWithTimeout(25*time.Minute, pods...)
 		env.ExpectCreatedNodeCount("==", 1)
 		env.EventuallyExpectInitializedNodeCount("==", 1)
 
@@ -144,7 +150,7 @@ var _ = Describe("Windows", func() {
 		}
 		Expect(node.Labels).To(HaveKeyWithValue(karpv1.NodeInitializedLabelKey, "true"))
 		GinkgoWriter.Printf(
-			"NAP_WINDOWS_BASELINE family=%s os=%s osSKU=%s initialized=%s kubelet=%s runtime=%s\n",
+			"KARPENTER_WINDOWS_BASELINE family=%s os=%s osSKU=%s initialized=%s kubelet=%s runtime=%s\n",
 			imageFamily,
 			node.Labels[corev1.LabelOSStable],
 			node.Labels[v1beta1.AKSLabelOSSKU],
@@ -186,6 +192,15 @@ var _ = Describe("Windows", func() {
 			time.Sleep(npdConditionObservationInterval)
 		}
 
+		// Revalidate current workload and node health after the NPD observation window. Karpenter's
+		// initialized label is historical and does not by itself prove the Node is still Ready.
+		env.EventuallyExpectHealthyWithTimeout(time.Minute, pods...)
+		node = env.GetNode(pods[0].Spec.NodeName)
+		Expect(node.Status.Conditions).To(ContainElement(And(
+			HaveField("Type", Equal(corev1.NodeReady)),
+			HaveField("Status", Equal(corev1.ConditionTrue)),
+		)))
+
 		falseStatus := 0
 		for _, conditionType := range npdConditionTypes {
 			condition, found := conditionsByType[conditionType]
@@ -194,7 +209,7 @@ var _ = Describe("Windows", func() {
 					falseStatus++
 				}
 				GinkgoWriter.Printf(
-					"NAP_WINDOWS_NPD family=%s condition=%s present=true status=%s lastHeartbeat=%s\n",
+					"KARPENTER_WINDOWS_NPD family=%s condition=%s present=true status=%s lastHeartbeat=%s\n",
 					imageFamily,
 					conditionType,
 					condition.Status,
@@ -203,13 +218,13 @@ var _ = Describe("Windows", func() {
 				continue
 			}
 			GinkgoWriter.Printf(
-				"NAP_WINDOWS_NPD family=%s condition=%s present=false status=Missing lastHeartbeat=Missing\n",
+				"KARPENTER_WINDOWS_NPD family=%s condition=%s present=false status=Missing lastHeartbeat=Missing\n",
 				imageFamily,
 				conditionType,
 			)
 		}
 		GinkgoWriter.Printf(
-			"NAP_WINDOWS_NPD_SUMMARY family=%s tracked=%d present=%d falseStatus=%d observedFor=%s\n",
+			"KARPENTER_WINDOWS_NPD_SUMMARY family=%s tracked=%d present=%d falseStatus=%d observedFor=%s\n",
 			imageFamily,
 			len(npdConditionTypes),
 			present,
