@@ -133,6 +133,7 @@ var _ = Describe("Windows", func() {
 		// Windows nodes take noticeably longer to provision and pull images than Linux.
 		pods := env.EventuallyExpectHealthyDeploymentWithTimeout(25*time.Minute, deployment)
 		env.ExpectCreatedNodeCount("==", 1)
+		env.EventuallyExpectInitializedNodeCount("==", 1)
 
 		node := env.GetNode(pods[0].Spec.NodeName)
 		Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelOSStable, string(corev1.Windows)))
@@ -152,6 +153,8 @@ var _ = Describe("Windows", func() {
 			node.Status.NodeInfo.ContainerRuntimeVersion,
 		)
 
+		// Probe the six Linux AKS NPD signals for parity; Windows has no published NPD
+		// condition contract.
 		npdConditionTypes := []corev1.NodeConditionType{
 			"KubeletProblem",
 			"ContainerRuntimeProblem",
@@ -163,17 +166,17 @@ var _ = Describe("Windows", func() {
 		// Managed node-extension reconciliation can lag Node readiness. Observe for the same
 		// 30-minute window used by AKS extension validation before recording conditions as absent.
 		observationStarted := time.Now()
-		var conditionStatuses map[corev1.NodeConditionType]corev1.ConditionStatus
+		var conditionsByType map[corev1.NodeConditionType]corev1.NodeCondition
 		present := 0
 		for {
 			node = env.GetNode(pods[0].Spec.NodeName)
-			conditionStatuses = make(map[corev1.NodeConditionType]corev1.ConditionStatus, len(node.Status.Conditions))
+			conditionsByType = make(map[corev1.NodeConditionType]corev1.NodeCondition, len(node.Status.Conditions))
 			for _, condition := range node.Status.Conditions {
-				conditionStatuses[condition.Type] = condition.Status
+				conditionsByType[condition.Type] = condition
 			}
 			present = 0
 			for _, conditionType := range npdConditionTypes {
-				if _, found := conditionStatuses[conditionType]; found {
+				if _, found := conditionsByType[conditionType]; found {
 					present++
 				}
 			}
@@ -183,33 +186,34 @@ var _ = Describe("Windows", func() {
 			time.Sleep(npdConditionObservationInterval)
 		}
 
-		healthy := 0
+		falseStatus := 0
 		for _, conditionType := range npdConditionTypes {
-			status, found := conditionStatuses[conditionType]
+			condition, found := conditionsByType[conditionType]
 			if found {
-				if status == corev1.ConditionFalse {
-					healthy++
+				if condition.Status == corev1.ConditionFalse {
+					falseStatus++
 				}
 				GinkgoWriter.Printf(
-					"NAP_WINDOWS_NPD family=%s condition=%s present=true status=%s\n",
+					"NAP_WINDOWS_NPD family=%s condition=%s present=true status=%s lastHeartbeat=%s\n",
 					imageFamily,
 					conditionType,
-					status,
+					condition.Status,
+					condition.LastHeartbeatTime.Time.UTC().Format(time.RFC3339),
 				)
 				continue
 			}
 			GinkgoWriter.Printf(
-				"NAP_WINDOWS_NPD family=%s condition=%s present=false status=Missing\n",
+				"NAP_WINDOWS_NPD family=%s condition=%s present=false status=Missing lastHeartbeat=Missing\n",
 				imageFamily,
 				conditionType,
 			)
 		}
 		GinkgoWriter.Printf(
-			"NAP_WINDOWS_NPD_SUMMARY family=%s expected=%d present=%d healthy=%d observedFor=%s\n",
+			"NAP_WINDOWS_NPD_SUMMARY family=%s tracked=%d present=%d falseStatus=%d observedFor=%s\n",
 			imageFamily,
 			len(npdConditionTypes),
 			present,
-			healthy,
+			falseStatus,
 			time.Since(observationStarted).Round(time.Second),
 		)
 	})
