@@ -1,0 +1,49 @@
+# Gaming workload example: low-latency session service.
+# Goals:
+# - Prefer same-zone placement for the service to minimize cross-zone latency/cost
+# - But keep some resilience with best-effort distribution
+#
+# Pattern:
+# - Use preferred topology spread instead of hard (ScheduleAnyway)
+# - Optionally prefer nodes labeled as "low-latency" / "premium networking" / etc.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-gaming-low-latency-prefer-local
+spec:
+  replicas: 12
+  selector:
+    matchLabels:
+      app: sample-gaming-low-latency-prefer-local
+  template:
+    metadata:
+      labels:
+        app: sample-gaming-low-latency-prefer-local
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          # Prefer a node pool you label for low-latency networking.
+          - weight: 50
+            preference:
+              matchExpressions:
+              - key: example.com/network-tier
+                operator: In
+                values: ["low-latency"]
+
+      # Best-effort: try to keep spread across zones, but don't block scheduling.
+      topologySpreadConstraints:
+      - maxSkew: 2
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: sample-gaming-low-latency-prefer-local
+
+      containers:
+      - name: session
+        image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "256Mi"
