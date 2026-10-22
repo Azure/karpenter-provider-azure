@@ -81,7 +81,8 @@ func WithTags(pairs ...string) AKSNodeClassOption {
 // Non-zero fields in the provided spec will overwrite the corresponding fields in the AKSNodeClass.
 func WithMergedSpec(spec v1beta1.AKSNodeClassSpec) AKSNodeClassOption {
 	return func(nodeClass *v1beta1.AKSNodeClass) {
-		if err := mergo.Merge(&nodeClass.Spec, spec, mergo.WithOverride); err != nil {
+		// Use a copy to guarantee independence (no shared slices, maps, etc)
+		if err := mergo.Merge(&nodeClass.Spec, spec.DeepCopy(), mergo.WithOverride); err != nil {
 			panic(fmt.Sprintf("Failed to merge spec: %s", err))
 		}
 	}
