@@ -19,51 +19,56 @@ package sync
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
 )
 
 func TestMap_StoreAndLoad(t *testing.T) {
+	g := NewWithT(t)
 	var m Map[string, int]
 	m.Store("a", 1)
 	v, ok := m.Load("a")
-	assert.True(t, ok)
-	assert.Equal(t, 1, v)
+	g.Expect(ok).To(BeTrue())
+	g.Expect(v).To(Equal(1))
 
 	_, ok = m.Load("missing")
-	assert.False(t, ok)
+	g.Expect(ok).To(BeFalse())
 }
 
 func TestMap_Delete(t *testing.T) {
+	g := NewWithT(t)
 	var m Map[string, int]
 	m.Store("a", 1)
 	m.Delete("a")
 	_, ok := m.Load("a")
-	assert.False(t, ok)
+	g.Expect(ok).To(BeFalse())
 }
 
 func TestMap_LoadOrStore(t *testing.T) {
+	g := NewWithT(t)
 	var m Map[string, int]
 	v, loaded := m.LoadOrStore("a", 1)
-	assert.False(t, loaded)
-	assert.Equal(t, 1, v)
+	g.Expect(loaded).To(BeFalse())
+	g.Expect(v).To(Equal(1))
 
 	v, loaded = m.LoadOrStore("a", 2)
-	assert.True(t, loaded)
-	assert.Equal(t, 1, v)
+	g.Expect(loaded).To(BeTrue())
+	g.Expect(v).To(Equal(1))
 }
 
 func TestMap_LoadAndDelete(t *testing.T) {
+	g := NewWithT(t)
 	var m Map[string, int]
 	m.Store("a", 1)
 	v, loaded := m.LoadAndDelete("a")
-	assert.True(t, loaded)
-	assert.Equal(t, 1, v)
+	g.Expect(loaded).To(BeTrue())
+	g.Expect(v).To(Equal(1))
 
 	_, loaded = m.LoadAndDelete("a")
-	assert.False(t, loaded)
+	g.Expect(loaded).To(BeFalse())
 }
 
 func TestMap_Range(t *testing.T) {
+	g := NewWithT(t)
 	var m Map[string, int]
 	m.Store("a", 1)
 	m.Store("b", 2)
@@ -73,21 +78,23 @@ func TestMap_Range(t *testing.T) {
 		seen[k] = v
 		return true
 	})
-	assert.Equal(t, map[string]int{"a": 1, "b": 2}, seen)
+	g.Expect(seen).To(Equal(map[string]int{"a": 1, "b": 2}))
 }
 
 func TestMap_Clear(t *testing.T) {
+	g := NewWithT(t)
 	var m Map[string, int]
 	m.Store("a", 1)
 	m.Clear()
 	_, ok := m.Load("a")
-	assert.False(t, ok)
+	g.Expect(ok).To(BeFalse())
 }
 
 func TestMap_ZeroValue(t *testing.T) {
+	g := NewWithT(t)
 	var m Map[string, int]
 	_, ok := m.Load("x")
-	assert.False(t, ok)
+	g.Expect(ok).To(BeFalse())
 	m.Delete("x") // should not panic
 	m.Range(func(k string, v int) bool { return true })
 }
