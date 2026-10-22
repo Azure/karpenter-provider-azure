@@ -38,8 +38,12 @@ import (
 
 var env *azure.Environment
 
-const windowsPauseImage = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
-const windows2025Image = "mcr.microsoft.com/windows/servercore:ltsc2025"
+const (
+	windowsPauseImage               = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
+	windows2025Image                = "mcr.microsoft.com/windows/servercore:ltsc2025"
+	npdConditionObservationTimeout  = 30 * time.Minute
+	npdConditionObservationInterval = time.Minute
+)
 
 func TestWindows(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -156,15 +160,33 @@ var _ = Describe("Windows", func() {
 			"FrequentContainerdRestart",
 			"VMEventScheduled",
 		}
-		conditionStatuses := make(map[corev1.NodeConditionType]corev1.ConditionStatus, len(node.Status.Conditions))
-		for _, condition := range node.Status.Conditions {
-			conditionStatuses[condition.Type] = condition.Status
+		// Managed node-extension reconciliation can lag Node readiness. Observe for the same
+		// 30-minute window used by AKS extension validation before recording conditions as absent.
+		observationStarted := time.Now()
+		var conditionStatuses map[corev1.NodeConditionType]corev1.ConditionStatus
+		present := 0
+		for {
+			node = env.GetNode(pods[0].Spec.NodeName)
+			conditionStatuses = make(map[corev1.NodeConditionType]corev1.ConditionStatus, len(node.Status.Conditions))
+			for _, condition := range node.Status.Conditions {
+				conditionStatuses[condition.Type] = condition.Status
+			}
+			present = 0
+			for _, conditionType := range npdConditionTypes {
+				if _, found := conditionStatuses[conditionType]; found {
+					present++
+				}
+			}
+			if present == len(npdConditionTypes) || time.Since(observationStarted) >= npdConditionObservationTimeout {
+				break
+			}
+			time.Sleep(npdConditionObservationInterval)
 		}
-		present, healthy := 0, 0
+
+		healthy := 0
 		for _, conditionType := range npdConditionTypes {
 			status, found := conditionStatuses[conditionType]
 			if found {
-				present++
 				if status == corev1.ConditionFalse {
 					healthy++
 				}
@@ -183,11 +205,12 @@ var _ = Describe("Windows", func() {
 			)
 		}
 		GinkgoWriter.Printf(
-			"NAP_WINDOWS_NPD_SUMMARY family=%s expected=%d present=%d healthy=%d\n",
+			"NAP_WINDOWS_NPD_SUMMARY family=%s expected=%d present=%d healthy=%d observedFor=%s\n",
 			imageFamily,
 			len(npdConditionTypes),
 			present,
 			healthy,
+			time.Since(observationStarted).Round(time.Second),
 		)
 	})
 })
