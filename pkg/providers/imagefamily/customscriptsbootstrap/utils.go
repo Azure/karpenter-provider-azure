@@ -155,7 +155,30 @@ func convertLocalDNSZoneOverrideToModel(override *v1beta1.LocalDNSZoneOverride) 
 		modelOverride.ServeStale = &serveStale
 	}
 
+	if override.FailfastAllUnhealthyUpstreams != nil {
+		modelOverride.FailfastAllUnhealthyUpstreams = override.FailfastAllUnhealthyUpstreams
+	}
+
+	modelOverride.HealthCheck = convertLocalDNSHealthCheckToModel(override.HealthCheck)
+
 	return modelOverride
+}
+
+// convertLocalDNSHealthCheckToModel converts v1beta1.LocalDNSHealthCheck to models.LocalDNSHealthCheck.
+//
+// Returns nil until a duration is actually set. The embedded *time.Duration is nil for a zero
+// NillableDuration, so that guard is also what keeps String() from panicking. Emitting a health
+// check without a duration would reach the control plane missing a value it requires, turning a
+// no-op here into a provisioning failure there.
+func convertLocalDNSHealthCheckToModel(healthCheck *v1beta1.LocalDNSHealthCheck) *models.LocalDNSHealthCheck {
+	if healthCheck == nil || healthCheck.Duration.Duration == nil {
+		return nil
+	}
+
+	return &models.LocalDNSHealthCheck{
+		Duration: lo.ToPtr(healthCheck.Duration.String()),
+		NoRec:    healthCheck.NoRec,
+	}
 }
 
 // convertLinuxOSConfigToModel converts v1beta1.LinuxOSConfiguration to models.CustomLinuxOSConfig

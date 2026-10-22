@@ -44,6 +44,42 @@ var _ = AfterEach(func() {
 	}
 })
 
+// localDNSUnstructuredZoneOverride builds a zone override as raw unstructured fields, with every
+// value the CRD requires present. Used where the typed client cannot express the shape under test
+// — notably a healthCheck whose duration key is absent, which karpv1.NillableDuration always
+// serializes as the string "Never" rather than omitting.
+func localDNSUnstructuredZoneOverride(zone, forwardDestination string) map[string]any {
+	return map[string]any{
+		"zone":               zone,
+		"queryLogging":       "Error",
+		"protocol":           "PreferUDP",
+		"forwardDestination": forwardDestination,
+		"forwardPolicy":      "Sequential",
+		"maxConcurrent":      int64(100),
+		"cacheDuration":      "1h",
+		"serveStaleDuration": "30m",
+		"serveStale":         "Verify",
+	}
+}
+
+// localDNSUnstructuredSpec returns a valid localDNS profile with healthCheck attached to the root
+// zone of vnetDNSOverrides. Everything else is well-formed, so a rejection isolates healthCheck.
+func localDNSUnstructuredSpec(healthCheck map[string]any) map[string]any {
+	vnetRoot := localDNSUnstructuredZoneOverride(".", "VnetDNS")
+	vnetRoot["healthCheck"] = healthCheck
+	return map[string]any{
+		"mode": "Required",
+		"vnetDNSOverrides": []any{
+			vnetRoot,
+			localDNSUnstructuredZoneOverride("cluster.local", "ClusterCoreDNS"),
+		},
+		"kubeDNSOverrides": []any{
+			localDNSUnstructuredZoneOverride(".", "ClusterCoreDNS"),
+			localDNSUnstructuredZoneOverride("cluster.local", "ClusterCoreDNS"),
+		},
+	}
+}
+
 var _ = Describe("CEL/Validation", func() {
 	var nodePool *karpv1.NodePool
 
@@ -745,6 +781,131 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("invalid: -1 (below minimum)", lo.ToPtr(int32(-1)), "maxConcurrent"),
 			Entry("invalid: -100 (below minimum)", lo.ToPtr(int32(-100)), "maxConcurrent"),
 		)
+
+		// localDNSWithOverride builds a valid LocalDNS profile and splices overrideConfig in as a
+		// third vnetDNSOverrides entry, alongside the two zones the CRD requires.
+		localDNSWithOverride := func(overrideConfig v1beta1.LocalDNSZoneOverride) *v1beta1.AKSNodeClass {
+			return &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode:             v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+					},
+				},
+			}
+		}
+
+		DescribeTable("should validate healthCheck duration", func(durationStr string, expectedErr string) {
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
+			overrideConfig.HealthCheck = &v1beta1.LocalDNSHealthCheck{Duration: karpv1.MustParseNillableDuration(durationStr)}
+			err := env.Client.Create(ctx, localDNSWithOverride(overrideConfig))
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			}
+		},
+			Entry("valid duration: 5s", "5s", ""),
+			Entry("valid duration: 1h30m", "1h30m", ""),
+			Entry("invalid duration: 500ms is below the shared pattern's granularity", "500ms", "healthCheck"),
+		)
+
+		It("should reject a healthCheck whose duration was never set", func() {
+			// A zero NillableDuration marshals to the literal string "Never" rather than being
+			// omitted, so required is satisfied and the duration pattern is what rejects it.
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
+			overrideConfig.HealthCheck = &v1beta1.LocalDNSHealthCheck{NoRec: lo.ToPtr(true)}
+			err := env.Client.Create(ctx, localDNSWithOverride(overrideConfig))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(`healthCheck.duration: Invalid value: "Never"`))
+		})
+
+		It("should reject a healthCheck with the duration key absent", func() {
+			// The typed client cannot emit an absent duration, so this needs the unstructured path.
+			nodeClass := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "karpenter.azure.com/v1beta1",
+				"kind":       "AKSNodeClass",
+				"metadata":   map[string]any{"name": strings.ToLower(randomdata.SillyName())},
+				"spec":       map[string]any{"localDNS": localDNSUnstructuredSpec(map[string]any{"noRec": true})},
+			}}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		It("should reject a healthCheck with an empty duration", func() {
+			nodeClass := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "karpenter.azure.com/v1beta1",
+				"kind":       "AKSNodeClass",
+				"metadata":   map[string]any{"name": strings.ToLower(randomdata.SillyName())},
+				"spec":       map[string]any{"localDNS": localDNSUnstructuredSpec(map[string]any{"duration": ""})},
+			}}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		It("should reject an explicitly null healthCheck duration", func() {
+			nodeClass := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "karpenter.azure.com/v1beta1",
+				"kind":       "AKSNodeClass",
+				"metadata":   map[string]any{"name": strings.ToLower(randomdata.SillyName())},
+				"spec":       map[string]any{"localDNS": localDNSUnstructuredSpec(map[string]any{"duration": nil})},
+			}}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		It("should accept the same unstructured shape once duration is valid", func() {
+			// Guards the three rejections above against passing for an unrelated reason: the only
+			// difference here is a well-formed duration.
+			nodeClass := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "karpenter.azure.com/v1beta1",
+				"kind":       "AKSNodeClass",
+				"metadata":   map[string]any{"name": strings.ToLower(randomdata.SillyName())},
+				"spec":       map[string]any{"localDNS": localDNSUnstructuredSpec(map[string]any{"duration": "5s"})},
+			}}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		DescribeTable("should accept failfastAllUnhealthyUpstreams", func(failfast *bool) {
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
+			overrideConfig.FailfastAllUnhealthyUpstreams = failfast
+			Expect(env.Client.Create(ctx, localDNSWithOverride(overrideConfig))).To(Succeed())
+		},
+			Entry("true", lo.ToPtr(true)),
+			Entry("false", lo.ToPtr(false)),
+			Entry("unset", nil),
+		)
+
+		// Neither knob is zone-restricted: AgentBaker renders both on whatever zone carries them
+		// and the control plane applies no zone rule, so karpenter must not add one either.
+		DescribeTable("should accept both health knobs on any zone", func(zone string, forwardToVnetDNS bool) {
+			overrides := []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false)}
+			for i := range overrides {
+				if overrides[i].Zone != zone {
+					continue
+				}
+				overrides[i].FailfastAllUnhealthyUpstreams = lo.ToPtr(true)
+				overrides[i].HealthCheck = &v1beta1.LocalDNSHealthCheck{Duration: karpv1.MustParseNillableDuration("5s")}
+			}
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode:             v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: overrides,
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		},
+			Entry("root zone", ".", true),
+			Entry("cluster.local", "cluster.local", false),
+		)
+
+		It("should accept an override that sets neither health knob", func() {
+			Expect(env.Client.Create(ctx, localDNSWithOverride(createCompleteLocalDNSZoneOverride("test.domain", true)))).To(Succeed())
+		})
 
 		It("should reject duplicate zones in VnetDNSOverrides due to listType=map", func() {
 			// This test proves that listType=map with listMapKey=zone enforces uniqueness
