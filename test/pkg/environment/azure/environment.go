@@ -60,8 +60,9 @@ func init() {
 }
 
 const (
-	CiliumAgentNotReadyTaint    = "node.cilium.io/agent-not-ready"
-	EphemeralInitContainerImage = "alpine"
+	CiliumAgentNotReadyTaint         = "node.cilium.io/agent-not-ready"
+	EphemeralInitContainerImage      = "alpine"
+	WindowsCapabilityPrevalidatedEnv = "WINDOWS_CAPABILITY_PREVALIDATED"
 
 	ciliumStartupTaintTolerationSeconds int64 = 120
 )
@@ -304,6 +305,11 @@ func (env *Environment) SkipIfNotWindowsCapable() {
 	if env.MachineAgentPoolName != "aksmanagedap" && len(env.MachineAgentPoolName) > 6 {
 		Skip(fmt.Sprintf("Windows machines require the reserved aksmanagedap pool or a custom machines pool name <= 6 chars; got %q (%d chars)",
 			env.MachineAgentPoolName, len(env.MachineAgentPoolName)))
+	}
+	// Some managed test harnesses validate the Windows profile and dataplane before starting
+	// this suite but do not expose the managed cluster through public ARM.
+	if os.Getenv(WindowsCapabilityPrevalidatedEnv) == "true" {
+		return
 	}
 	managedCluster := env.ExpectGetManagedCluster()
 	// Windows nodes do not support the Cilium dataplane configured on the cluster.

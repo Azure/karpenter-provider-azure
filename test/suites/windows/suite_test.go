@@ -39,11 +39,10 @@ import (
 var env *azure.Environment
 
 const (
-	windowsPauseImage                = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
-	windows2025Image                 = "mcr.microsoft.com/windows/servercore:ltsc2025"
-	windowsCapabilityPrevalidatedEnv = "WINDOWS_CAPABILITY_PREVALIDATED"
-	npdConditionObservationTimeout   = 30 * time.Minute
-	npdConditionObservationInterval  = time.Minute
+	windowsPauseImage               = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
+	windows2025Image                = "mcr.microsoft.com/windows/servercore:ltsc2025"
+	npdConditionObservationTimeout  = 30 * time.Minute
+	npdConditionObservationInterval = time.Minute
 )
 
 func TestWindows(t *testing.T) {
@@ -63,11 +62,7 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Windows", func() {
 	BeforeEach(func() {
-		// Some managed test harnesses validate the Windows profile and dataplane before starting
-		// this suite but do not expose the managed cluster through public ARM.
-		if os.Getenv(windowsCapabilityPrevalidatedEnv) != "true" {
-			env.SkipIfNotWindowsCapable()
-		}
+		env.SkipIfNotWindowsCapable()
 	})
 
 	It("should provision a Windows node and run a Windows pod", func() {
