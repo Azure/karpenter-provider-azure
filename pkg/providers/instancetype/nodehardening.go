@@ -41,6 +41,14 @@ const (
 	systemReservedCPUMillicores int64 = 100
 	bytesPerMiB                 int64 = 1024 * 1024
 
+	// Additional managed GPU system-reserved memory (Linux):
+	//   roundUpTo64(1.10 * (479 + 30*gpuCount))
+	managedGPUBaseMiB         int64 = 479
+	managedGPUPerDeviceMiB    int64 = 30
+	managedGPUHeadroomPercent int64 = 110
+	managedGPURoundingMiB     int64 = 64
+	percentageDenominator     int64 = 100
+
 	// systemReservedEphemeralStorage mirrors the RP's fixed 1Gi ephemeral-storage
 	// system reservation on hardened nodes.
 	systemReservedEphemeralStorage = "1Gi"
@@ -76,14 +84,27 @@ func hardenedKubeReservedMemoryMiB(maxPods int32, totalMemoryMiB int64) int64 {
 //
 //	200 + 100*floor(totalMemoryMiB/(32*1024)) (+100 when Azure CNI)
 //
+// Managed GPU nodes add:
+//
+//	roundUpTo64(1.10 * (479 + 30*gpuCount))
+//
 // Mirrors the hardened system-reserved memory calculation in the AKS RP.
-func systemReservedMemoryMiB(totalMemoryMiB int64, isAzureCNI bool) int64 {
+func systemReservedMemoryMiB(totalMemoryMiB int64, isAzureCNI bool, managedGPUCount int64) int64 {
 	steps := totalMemoryMiB / (systemReservedStepGiB * 1024)
 	mem := systemReservedBaseMiB + steps*systemReservedPerStepMiB
 	if isAzureCNI {
 		mem += systemReservedCNIBonusMiB
 	}
+	if managedGPUCount > 0 {
+		mem += managedGPUSystemReservedMemoryMiB(managedGPUCount)
+	}
 	return mem
+}
+
+func managedGPUSystemReservedMemoryMiB(gpuCount int64) int64 {
+	reservationHundredths := managedGPUHeadroomPercent * (managedGPUBaseMiB + managedGPUPerDeviceMiB*gpuCount)
+	roundingHundredths := managedGPURoundingMiB * percentageDenominator
+	return ((reservationHundredths + roundingHundredths - 1) / roundingHundredths) * managedGPURoundingMiB
 }
 
 // evictionMemoryLadder returns the hardened soft- and hard-eviction
