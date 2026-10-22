@@ -32,6 +32,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/sku"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/newskus"
@@ -104,7 +105,7 @@ func TestNewSKUs(t *testing.T) {
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()
-	nodeClass = env.DefaultAKSNodeClass()
+	nodeClass = test.AKSNodeClass()
 	nodePool = env.DefaultNodePool(nodeClass)
 })
 var _ = AfterEach(func() { env.Cleanup() })

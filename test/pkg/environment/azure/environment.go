@@ -47,7 +47,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
-	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
@@ -253,25 +252,6 @@ func (env *Environment) IsMachineModeOrNPS() bool {
 
 func (env *Environment) UsesSharedImageGallery() bool {
 	return env.IsMachineModeOrNPS()
-}
-
-func (env *Environment) DefaultAKSNodeClass() *v1beta1.AKSNodeClass {
-	nodeClass := test.AKSNodeClass()
-	return nodeClass
-}
-
-func (env *Environment) AZLinuxNodeClass() *v1beta1.AKSNodeClass {
-	nodeClass := env.DefaultAKSNodeClass()
-	nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
-	return nodeClass
-}
-
-// WindowsNodeClass returns an AKSNodeClass configured for the requested Windows image family.
-// Windows nodes are only provisionable in the AKS Machine API provision mode.
-func (env *Environment) WindowsNodeClass(imageFamily string) *v1beta1.AKSNodeClass {
-	nodeClass := env.DefaultAKSNodeClass()
-	nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
-	return nodeClass
 }
 
 // WindowsNodePool returns a NodePool that provisions Windows (amd64) nodes for the given
