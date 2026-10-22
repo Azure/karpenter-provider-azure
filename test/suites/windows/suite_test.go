@@ -137,5 +137,57 @@ var _ = Describe("Windows", func() {
 		if imageFamily == v1beta1.Windows2025ImageFamily {
 			Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelFIPSEnabled, "true"))
 		}
+		Expect(node.Labels).To(HaveKeyWithValue(karpv1.NodeInitializedLabelKey, "true"))
+		GinkgoWriter.Printf(
+			"NAP_WINDOWS_BASELINE family=%s os=%s osSKU=%s initialized=%s kubelet=%s runtime=%s\n",
+			imageFamily,
+			node.Labels[corev1.LabelOSStable],
+			node.Labels[v1beta1.AKSLabelOSSKU],
+			node.Labels[karpv1.NodeInitializedLabelKey],
+			node.Status.NodeInfo.KubeletVersion,
+			node.Status.NodeInfo.ContainerRuntimeVersion,
+		)
+
+		npdConditionTypes := []corev1.NodeConditionType{
+			"KubeletProblem",
+			"ContainerRuntimeProblem",
+			"FilesystemCorruptionProblem",
+			"FrequentKubeletRestart",
+			"FrequentContainerdRestart",
+			"VMEventScheduled",
+		}
+		conditionStatuses := make(map[corev1.NodeConditionType]corev1.ConditionStatus, len(node.Status.Conditions))
+		for _, condition := range node.Status.Conditions {
+			conditionStatuses[condition.Type] = condition.Status
+		}
+		present, healthy := 0, 0
+		for _, conditionType := range npdConditionTypes {
+			status, found := conditionStatuses[conditionType]
+			if found {
+				present++
+				if status == corev1.ConditionFalse {
+					healthy++
+				}
+				GinkgoWriter.Printf(
+					"NAP_WINDOWS_NPD family=%s condition=%s present=true status=%s\n",
+					imageFamily,
+					conditionType,
+					status,
+				)
+				continue
+			}
+			GinkgoWriter.Printf(
+				"NAP_WINDOWS_NPD family=%s condition=%s present=false status=Missing\n",
+				imageFamily,
+				conditionType,
+			)
+		}
+		GinkgoWriter.Printf(
+			"NAP_WINDOWS_NPD_SUMMARY family=%s expected=%d present=%d healthy=%d\n",
+			imageFamily,
+			len(npdConditionTypes),
+			present,
+			healthy,
+		)
 	})
 })
