@@ -19,6 +19,7 @@ package status
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -55,6 +56,9 @@ const (
 	// KataRequiresAzureLinux3 is the condition reason set when the Kubernetes version resolves
 	// imageFamily AzureLinux to Azure Linux 2, which does not publish a Kata image.
 	KataRequiresAzureLinux3 = "KataRequiresAzureLinux3"
+	// KubeletOverridesUnsupportedProvisionMode is the condition reason set when a NodeClass configures
+	// kubelet resource or eviction overrides that the active provision mode cannot carry.
+	KubeletOverridesUnsupportedProvisionMode = "KubeletOverridesUnsupportedProvisionMode"
 	// ManagedGPUUnsupportedProvisionMode is the condition reason set when a NodeClass requests
 	// the managed GPU experience but the provision mode cannot express the NVIDIA GPU profile.
 	ManagedGPUUnsupportedProvisionMode = "ManagedGPUUnsupportedProvisionMode"
@@ -125,6 +129,7 @@ func (r *StaticValidationReconciler) Reconcile(ctx context.Context, nodeClass *v
 		r.validateKataProvisionMode,
 		r.validateManagedGPUProvisionMode,
 		r.validateNodePublicIPProvisionMode,
+		r.validateKubeletOverrideProvisionMode,
 		r.validateKataImageFamily,
 		r.validateDiskEncryptionSetRBAC,
 	}
@@ -237,6 +242,43 @@ func (r *StaticValidationReconciler) validateNodePublicIPProvisionMode(ctx conte
 		), nil
 	}
 	return pass(), nil
+}
+
+//nolint:gocyclo // Keep the required leaf-pointer checks local and deterministically ordered.
+func (r *StaticValidationReconciler) validateKubeletOverrideProvisionMode(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
+	kubelet := nodeClass.Spec.Kubelet
+	if kubelet == nil || options.FromContext(ctx).IsAKSMachineAPIMode() {
+		return pass(), nil
+	}
+
+	fields := make([]string, 0, 5)
+	if kubelet.KubeReserved != nil && (kubelet.KubeReserved.CPUMillicores != nil || kubelet.KubeReserved.MemoryMB != nil) {
+		fields = append(fields, "spec.kubelet.kubeReserved")
+	}
+	if kubelet.EvictionHard != nil && (kubelet.EvictionHard.MemoryAvailable != nil || kubelet.EvictionHard.NodeFsAvailable != nil || kubelet.EvictionHard.NodeFsInodesFree != nil) {
+		fields = append(fields, "spec.kubelet.evictionHard")
+	}
+	if kubelet.EvictionSoft != nil && (kubelet.EvictionSoft.MemoryAvailable != nil || kubelet.EvictionSoft.NodeFsAvailable != nil || kubelet.EvictionSoft.NodeFsInodesFree != nil) {
+		fields = append(fields, "spec.kubelet.evictionSoft")
+	}
+	if kubelet.EvictionSoftGracePeriod != nil && (kubelet.EvictionSoftGracePeriod.MemoryAvailable != nil || kubelet.EvictionSoftGracePeriod.NodeFsAvailable != nil || kubelet.EvictionSoftGracePeriod.NodeFsInodesFree != nil) {
+		fields = append(fields, "spec.kubelet.evictionSoftGracePeriod")
+	}
+	if kubelet.EvictionMaxPodGracePeriod != nil {
+		fields = append(fields, "spec.kubelet.evictionMaxPodGracePeriod")
+	}
+	if len(fields) == 0 {
+		return pass(), nil
+	}
+
+	return fail(
+		KubeletOverridesUnsupportedProvisionMode,
+		fmt.Sprintf(
+			"kubelet override fields [%s] are not supported with provision-mode %q",
+			strings.Join(fields, ", "),
+			options.FromContext(ctx).ProvisionMode,
+		),
+	), nil
 }
 
 func (r *StaticValidationReconciler) validateKataImageFamily(_ context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
