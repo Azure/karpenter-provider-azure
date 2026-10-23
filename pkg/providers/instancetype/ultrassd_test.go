@@ -22,9 +22,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 
-	//nolint:staticcheck // deprecated package used by skewer
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
-	"github.com/Azure/skewer"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v9"
+	"github.com/Azure/skewer/v2"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
@@ -80,25 +79,25 @@ func TestUltraSSDOptions(t *testing.T) {
 }
 
 func ultraSSDSKU(regional bool, zonal map[string]bool) *skewer.SKU {
-	capabilities := []compute.ResourceSkuCapabilities{{
+	capabilities := []*armcompute.ResourceSKUCapabilities{{
 		Name:  new(skewer.UltraSSDAvailable),
 		Value: new(lo.Ternary(regional, "True", "False")),
 	}}
-	zoneDetails := lo.MapToSlice(zonal, func(zone string, supported bool) compute.ResourceSkuZoneDetails {
-		names := []string{zone}
-		zoneCapabilities := []compute.ResourceSkuCapabilities{{
+	zoneDetails := lo.MapToSlice(zonal, func(zone string, supported bool) *armcompute.ResourceSKUZoneDetails {
+		names := []*string{lo.ToPtr(zone)}
+		zoneCapabilities := []*armcompute.ResourceSKUCapabilities{{
 			Name:  new(skewer.UltraSSDAvailable),
 			Value: new(lo.Ternary(supported, "True", "False")),
 		}}
-		return compute.ResourceSkuZoneDetails{
-			Name:         &names,
-			Capabilities: &zoneCapabilities,
+		return &armcompute.ResourceSKUZoneDetails{
+			Name:         names,
+			Capabilities: zoneCapabilities,
 		}
 	})
-	locationInfo := []compute.ResourceSkuLocationInfo{{ZoneDetails: &zoneDetails}}
-	sku := skewer.SKU(compute.ResourceSku{
-		Capabilities: &capabilities,
-		LocationInfo: &locationInfo,
+	locationInfo := []*armcompute.ResourceSKULocationInfo{{ZoneDetails: zoneDetails}}
+	sku := skewer.SKU(armcompute.ResourceSKU{
+		Capabilities: capabilities,
+		LocationInfo: locationInfo,
 	})
 	return &sku
 }

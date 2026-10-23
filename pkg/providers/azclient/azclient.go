@@ -23,7 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armrecommender"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
@@ -38,13 +38,12 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/capacityrecommendation"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
@@ -287,8 +286,10 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	}
 
 	// TODO: this one is not enabled for rate limiting / throttling ...
-	// TODO Move this over to track 2 when skewer is migrated
-	skuClient := skuclient.NewSkuClient(cfg.SubscriptionID, cred, env.Cloud)
+	skuClient, err := armcompute.NewResourceSKUsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	// These clients are used for Azure instance management.
 	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI

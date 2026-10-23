@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	instancetypecontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
@@ -110,24 +110,24 @@ var _ = Describe("InstanceType Controller", func() {
 		// create a copy of the slice so we can revert it to its old state afterwards
 		copy := slices.Clone(fake.ResourceSkus[fake.Region])
 		fake.ResourceSkus[fake.Region] = append(fake.ResourceSkus[fake.Region],
-			compute.ResourceSku{
+			&armcompute.ResourceSKU{
 				Name:         lo.ToPtr("Standard_D64s_v6"),
 				Tier:         lo.ToPtr("Stanadard"),
 				Kind:         lo.ToPtr(""),
 				Size:         lo.ToPtr("D64s_v6"),
 				Family:       lo.ToPtr("standardD64s_v6Family"),
 				ResourceType: lo.ToPtr("virtualMachines"),
-				APIVersions:  &[]string{},
-				Costs:        &[]compute.ResourceSkuCosts{},
-				Restrictions: &[]compute.ResourceSkuRestrictions{},
-				Capabilities: &[]compute.ResourceSkuCapabilities{
+				APIVersions:  []*string{},
+				Costs:        []*armcompute.ResourceSKUCosts{},
+				Restrictions: []*armcompute.ResourceSKURestrictions{},
+				Capabilities: []*armcompute.ResourceSKUCapabilities{
 					{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("64")},
 					{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("64")},
 					{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
 					{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr("64")},
 				},
-				Locations:    &[]string{"southcentralus"},
-				LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{}}},
+				Locations:    []*string{lo.ToPtr("southcentralus")},
+				LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: []*string{}}},
 			},
 		)
 		defer func() {

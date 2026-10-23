@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"

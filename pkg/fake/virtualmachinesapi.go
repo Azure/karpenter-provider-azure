@@ -27,7 +27,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	fakesync "github.com/Azure/karpenter-provider-azure/pkg/fake/sync"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"

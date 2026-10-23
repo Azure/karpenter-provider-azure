@@ -56,12 +56,11 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 	"github.com/alecthomas/units"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -69,7 +68,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v9"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -1020,7 +1019,7 @@ var _ = Describe("InstanceType Provider", func() {
 						UseSIG: lo.ToPtr(true),
 					}))
 
-				// Repopilate instance types based on above ctx
+				// Repopulate instance types based on above ctx
 				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 			})
 
@@ -1044,7 +1043,6 @@ var _ = Describe("InstanceType Provider", func() {
 					Entry("NC24ads A100 v4 ignores ineligible NVMe", fake.MakeSKU("Standard_NC24ads_A100_v4"), int64(274), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
 					Entry("D64s v3 uses cache", fake.MakeSKU("Standard_D64s_v3"), int64(1717), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
 					Entry("D2s v3 converts its 50 GiB cache to decimal GB", fake.MakeSKU("Standard_D2s_v3"), int64(53), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-					Entry("A0 does not support ephemeral", fake.MakeSKU("Standard_A0"), int64(0), nil),
 					Entry("D2 v2 does not support ephemeral", fake.MakeSKU("Standard_D2_v2"), int64(0), nil),
 					Entry("nil SKU", nil, int64(0), nil),
 				)
@@ -1328,7 +1326,7 @@ var _ = Describe("InstanceType Provider", func() {
 					func(vcpus int, expectedSizeGB int32) {
 						sku := &skewer.SKU{
 							Name: lo.ToPtr("Standard_Test"),
-							Capabilities: &[]compute.ResourceSkuCapabilities{
+							Capabilities: []*armcompute.ResourceSKUCapabilities{
 								{Name: lo.ToPtr(skewer.VCPUs), Value: lo.ToPtr(strconv.Itoa(vcpus))},
 							},
 						}
@@ -2378,6 +2376,11 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		Context("Zone-aware provisioning", func() {
+			BeforeEach(func() {
+				azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, fake.MakeSyntheticRegionalSKU(fake.Region))
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+			})
+
 			It("should prefer zonal placement for zone-capable instance types by default", func() {
 				coretest.ReplaceRequirements(nodePool,
 					karpv1.NodeSelectorRequirementWithMinValues{
@@ -2481,7 +2484,7 @@ var _ = Describe("InstanceType Provider", func() {
 					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_NC6s_v3"}})
+						Values:   []string{fake.SyntheticRegionalSKUName}})
 					pv := coretest.PersistentVolume(coretest.PersistentVolumeOptions{
 						NodeSelectorTerms: []v1.NodeSelectorTerm{{
 							MatchExpressions: []v1.NodeSelectorRequirement{
@@ -2518,7 +2521,7 @@ var _ = Describe("InstanceType Provider", func() {
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_NC6s_v3"}})
+					Values:   []string{fake.SyntheticRegionalSKUName}})
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 				pod := coretest.UnschedulablePod()
@@ -2555,7 +2558,8 @@ var _ = Describe("InstanceType Provider", func() {
 					karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_NC6s_v3"}}, // non-zonal SKU
+						Values:   []string{fake.SyntheticRegionalSKUName}, // non-zonal SKU
+					},
 					karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelTopologyZone,
 						Operator: v1.NodeSelectorOpIn,
@@ -2577,7 +2581,8 @@ var _ = Describe("InstanceType Provider", func() {
 					karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_NC6s_v3"}}, // non-zonal SKU
+						Values:   []string{fake.SyntheticRegionalSKUName}, // non-zonal SKU
+					},
 					karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelTopologyZone,
 						Operator: v1.NodeSelectorOpIn,
@@ -2752,7 +2757,7 @@ var _ = Describe("InstanceType Provider", func() {
 						Name:   lo.ToPtr("Standard_D2_v2"),
 						Size:   lo.ToPtr("D2_v2"),
 						Family: lo.ToPtr("StandardDv2Family"),
-						Capabilities: &[]compute.ResourceSkuCapabilities{
+						Capabilities: []*armcompute.ResourceSKUCapabilities{
 							{
 								Name:  lo.ToPtr("vCPUs"),
 								Value: lo.ToPtr("2"),
@@ -2763,7 +2768,7 @@ var _ = Describe("InstanceType Provider", func() {
 						Name:   lo.ToPtr("Standard_D16_v2"),
 						Size:   lo.ToPtr("D16_v2"),
 						Family: lo.ToPtr("StandardDv2Family"),
-						Capabilities: &[]compute.ResourceSkuCapabilities{
+						Capabilities: []*armcompute.ResourceSKUCapabilities{
 							{
 								Name:  lo.ToPtr("vCPUs"),
 								Value: lo.ToPtr("16"),
@@ -2774,7 +2779,7 @@ var _ = Describe("InstanceType Provider", func() {
 						Name:   lo.ToPtr("Standard_D32_v2"),
 						Size:   lo.ToPtr("D32_v2"),
 						Family: lo.ToPtr("StandardDv2Family"),
-						Capabilities: &[]compute.ResourceSkuCapabilities{
+						Capabilities: []*armcompute.ResourceSKUCapabilities{
 							{
 								Name:  lo.ToPtr("vCPUs"),
 								Value: lo.ToPtr("32"),
@@ -2990,7 +2995,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			DescribeTable("filtering SKUs by retirement date",
 				func(retirementDate *string, expectedToBeAvailable bool) {
-					capabilities := []compute.ResourceSkuCapabilities{
+					capabilities := []*armcompute.ResourceSKUCapabilities{
 						{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
 						{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("8")},
 						{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
@@ -2998,18 +3003,18 @@ var _ = Describe("InstanceType Provider", func() {
 					if retirementDate != nil {
 						capabilities = append(
 							capabilities,
-							compute.ResourceSkuCapabilities{
+							&armcompute.ResourceSKUCapabilities{
 								Name:  lo.ToPtr(skewer.RetirementDateUTC),
 								Value: retirementDate,
 							})
 					}
-					azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+					azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, &armcompute.ResourceSKU{
 						Name:         lo.ToPtr("Standard_TestRetirement_v1"),
 						Size:         lo.ToPtr("D2s_v3"),
 						Family:       lo.ToPtr("standardTestRetirementFamily"),
 						ResourceType: lo.ToPtr("virtualMachines"),
-						Locations:    &[]string{fake.Region},
-						Capabilities: &capabilities,
+						Locations:    []*string{lo.ToPtr(fake.Region)},
+						Capabilities: capabilities,
 					})
 
 					Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
@@ -3041,11 +3046,11 @@ var _ = Describe("InstanceType Provider", func() {
 					{"Standard_NC144ds_xl_RTXPRO6000BSE_v6", "False"},
 					{"Standard_NV4ads_V710_v5", "False"},
 				} {
-					azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+					azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, &armcompute.ResourceSKU{
 						Name: lo.ToPtr(sku.name), Size: lo.ToPtr(strings.TrimPrefix(sku.name, "Standard_")),
 						Family: lo.ToPtr("standardTestACLFamily"), ResourceType: lo.ToPtr("virtualMachines"),
-						Locations: &[]string{fake.Region},
-						Capabilities: &[]compute.ResourceSkuCapabilities{
+						Locations: []*string{lo.ToPtr(fake.Region)},
+						Capabilities: []*armcompute.ResourceSKUCapabilities{
 							{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("24")},
 							{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("96")},
 							{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
@@ -3307,17 +3312,17 @@ var _ = Describe("InstanceType Provider", func() {
 				// Add a SKU to the fake SKU API that does NOT have pricing in the static pricing data.
 				// This simulates a new SKU appearing in the SKU API before pricing data is available.
 				// Standard_D2_v2_Promo is in known_skus.yaml but has no southcentralus pricing.
-				azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+				azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, &armcompute.ResourceSKU{
 					Name:         lo.ToPtr("Standard_D2_v2_Promo"),
 					Tier:         lo.ToPtr("Standard"),
 					Kind:         lo.ToPtr(""),
 					Size:         lo.ToPtr("D2_v2_Promo"),
 					Family:       lo.ToPtr("standardDv2Family"),
 					ResourceType: lo.ToPtr("virtualMachines"),
-					APIVersions:  &[]string{},
-					Costs:        &[]compute.ResourceSkuCosts{},
-					Restrictions: &[]compute.ResourceSkuRestrictions{},
-					Capabilities: &[]compute.ResourceSkuCapabilities{
+					APIVersions:  []*string{},
+					Costs:        []*armcompute.ResourceSKUCosts{},
+					Restrictions: []*armcompute.ResourceSKURestrictions{},
+					Capabilities: []*armcompute.ResourceSKUCapabilities{
 						{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("102400")},
 						{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 						{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
@@ -3336,8 +3341,11 @@ var _ = Describe("InstanceType Provider", func() {
 						{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 						{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
 					},
-					Locations:    &[]string{fake.Region},
-					LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr(fake.Region), Zones: &[]string{"1", "2", "3"}}},
+					Locations: []*string{lo.ToPtr(fake.Region)},
+					LocationInfo: []*armcompute.ResourceSKULocationInfo{{
+						Location: lo.ToPtr(fake.Region),
+						Zones:    []*string{lo.ToPtr("1"), lo.ToPtr("2"), lo.ToPtr("3")},
+					}},
 				})
 
 				// Verify this SKU has no known pricing
@@ -3385,17 +3393,17 @@ var _ = Describe("InstanceType Provider", func() {
 				unknownSKUName := "Standard_FakeSKU_v6"
 				Expect(instancetype.IsKnownSKU(unknownSKUName)).To(BeFalse(), unknownSKUName+" should not be in known_skus.yaml")
 
-				azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+				azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, &armcompute.ResourceSKU{
 					Name:         lo.ToPtr(unknownSKUName),
 					Tier:         lo.ToPtr("Standard"),
 					Kind:         lo.ToPtr(""),
 					Size:         lo.ToPtr("D2ts_v6"),
 					Family:       lo.ToPtr("standardDtsv6Family"),
 					ResourceType: lo.ToPtr("virtualMachines"),
-					APIVersions:  &[]string{},
-					Costs:        &[]compute.ResourceSkuCosts{},
-					Restrictions: &[]compute.ResourceSkuRestrictions{},
-					Capabilities: &[]compute.ResourceSkuCapabilities{
+					APIVersions:  []*string{},
+					Costs:        []*armcompute.ResourceSKUCosts{},
+					Restrictions: []*armcompute.ResourceSKURestrictions{},
+					Capabilities: []*armcompute.ResourceSKUCapabilities{
 						{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("102400")},
 						{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 						{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
@@ -3414,8 +3422,11 @@ var _ = Describe("InstanceType Provider", func() {
 						{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 						{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
 					},
-					Locations:    &[]string{fake.Region},
-					LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr(fake.Region), Zones: &[]string{"1", "2", "3"}}},
+					Locations: []*string{lo.ToPtr(fake.Region)},
+					LocationInfo: []*armcompute.ResourceSKULocationInfo{{
+						Location: lo.ToPtr(fake.Region),
+						Zones:    []*string{lo.ToPtr("1"), lo.ToPtr("2"), lo.ToPtr("3")},
+					}},
 				})
 
 				// Re-fetch instance types with the new SKU
@@ -4700,30 +4711,30 @@ func withSKUCapability(sku *skewer.SKU, name, value string) *skewer.SKU {
 
 func withSKUCapabilityValue(sku *skewer.SKU, name string, value *string) *skewer.SKU {
 	clone := *sku
-	capabilities := append([]compute.ResourceSkuCapabilities(nil), (*sku.Capabilities)...)
+	capabilities := append([]*armcompute.ResourceSKUCapabilities(nil), sku.Capabilities...)
 	for i := range capabilities {
 		if lo.FromPtr(capabilities[i].Name) == name {
-			capability := capabilities[i]
+			capability := *capabilities[i]
 			capability.Value = value
-			capabilities[i] = capability
-			clone.Capabilities = &capabilities
+			capabilities[i] = &capability
+			clone.Capabilities = capabilities
 			return &clone
 		}
 	}
-	capabilities = append(capabilities, compute.ResourceSkuCapabilities{
+	capabilities = append(capabilities, &armcompute.ResourceSKUCapabilities{
 		Name:  lo.ToPtr(name),
 		Value: value,
 	})
-	clone.Capabilities = &capabilities
+	clone.Capabilities = capabilities
 	return &clone
 }
 
 func withoutEphemeralOSDiskPlacementCapability(sku *skewer.SKU) *skewer.SKU {
 	clone := *sku
-	capabilities := lo.Filter(append([]compute.ResourceSkuCapabilities(nil), (*sku.Capabilities)...), func(capability compute.ResourceSkuCapabilities, _ int) bool {
+	capabilities := lo.Filter(append([]*armcompute.ResourceSKUCapabilities(nil), sku.Capabilities...), func(capability *armcompute.ResourceSKUCapabilities, _ int) bool {
 		return !strings.EqualFold(lo.FromPtr(capability.Name), "SupportedEphemeralOSDiskPlacements")
 	})
-	clone.Capabilities = &capabilities
+	clone.Capabilities = capabilities
 	return &clone
 }
 

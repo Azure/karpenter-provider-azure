@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v9"
 	"github.com/samber/lo"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -153,13 +153,14 @@ func (env *Environment) deleteCapacityReservationGroup(groupName string, reserva
 				return fmt.Errorf("deleting capacity reservation %s: %w", reservationName, err)
 			}
 		}
-		if _, err := env.CapacityReservationGroupsClient.Delete(ctx, env.NodeResourceGroup, groupName, nil); err != nil {
-			// ARM answers 202 when it defers the delete, which the generated client reports as
-			// an error because it only accepts 200 and 204. The delete was accepted either way.
-			var responseErr *azcore.ResponseError
-			if !errors.As(err, &responseErr) || responseErr.StatusCode != http.StatusAccepted {
-				return fmt.Errorf("deleting capacity reservation group %s: %w", groupName, err)
-			}
+		// ARM can defer group deletion with 202, so wait for the long-running operation
+		// instead of treating request acceptance as completed cleanup.
+		poller, err := env.CapacityReservationGroupsClient.BeginDelete(ctx, env.NodeResourceGroup, groupName, nil)
+		if err != nil {
+			return fmt.Errorf("deleting capacity reservation group %s: %w", groupName, err)
+		}
+		if _, err := poller.PollUntilDone(ctx, nil); err != nil {
+			return fmt.Errorf("deleting capacity reservation group %s: %w", groupName, err)
 		}
 		return nil
 	})

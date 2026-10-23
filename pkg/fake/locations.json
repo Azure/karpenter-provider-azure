@@ -435,6 +435,42 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
+        "physicalZone": "indiasouthcentral-az1"
+      },
+      {
+        "logicalZone": "2",
+        "physicalZone": "indiasouthcentral-az3"
+      },
+      {
+        "logicalZone": "3",
+        "physicalZone": "indiasouthcentral-az2"
+      }
+    ],
+    "displayName": "India South Central",
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/indiasouthcentral",
+    "metadata": {
+      "geography": "India",
+      "geographyGroup": "Asia Pacific",
+      "latitude": "17.36599922",
+      "longitude": "78.47599792",
+      "pairedRegion": [
+        {
+          "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/centralindia",
+          "name": "centralindia"
+        }
+      ],
+      "physicalLocation": "Hyderabad",
+      "regionCategory": "Recommended",
+      "regionType": "Physical"
+    },
+    "name": "indiasouthcentral",
+    "regionalDisplayName": "(Asia Pacific) India South Central",
+    "type": "Region"
+  },
+  {
+    "availabilityZoneMappings": [
+      {
+        "logicalZone": "1",
         "physicalZone": "indonesiacentral-az1"
       },
       {
@@ -1359,6 +1395,28 @@
     "type": "Region"
   },
   {
+    "displayName": "Austria",
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/austria",
+    "metadata": {
+      "regionCategory": "Other",
+      "regionType": "Logical"
+    },
+    "name": "austria",
+    "regionalDisplayName": "Austria",
+    "type": "Region"
+  },
+  {
+    "displayName": "Belgium",
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/belgium",
+    "metadata": {
+      "regionCategory": "Other",
+      "regionType": "Logical"
+    },
+    "name": "belgium",
+    "regionalDisplayName": "Belgium",
+    "type": "Region"
+  },
+  {
     "displayName": "Brazil",
     "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/brazil",
     "metadata": {
@@ -1381,6 +1439,28 @@
     "type": "Region"
   },
   {
+    "displayName": "Chile",
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/chile",
+    "metadata": {
+      "regionCategory": "Other",
+      "regionType": "Logical"
+    },
+    "name": "chile",
+    "regionalDisplayName": "Chile",
+    "type": "Region"
+  },
+  {
+    "displayName": "Denmark",
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/denmark",
+    "metadata": {
+      "regionCategory": "Other",
+      "regionType": "Logical"
+    },
+    "name": "denmark",
+    "regionalDisplayName": "Denmark",
+    "type": "Region"
+  },
+  {
     "displayName": "Europe",
     "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/europe",
     "metadata": {
@@ -1389,6 +1469,17 @@
     },
     "name": "europe",
     "regionalDisplayName": "Europe",
+    "type": "Region"
+  },
+  {
+    "displayName": "Finland",
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/finland",
+    "metadata": {
+      "regionCategory": "Other",
+      "regionType": "Logical"
+    },
+    "name": "finland",
+    "regionalDisplayName": "Finland",
     "type": "Region"
   },
   {
@@ -1557,6 +1648,17 @@
     "type": "Region"
   },
   {
+    "displayName": "Saudi Arabia",
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/saudiarabia",
+    "metadata": {
+      "regionCategory": "Other",
+      "regionType": "Logical"
+    },
+    "name": "saudiarabia",
+    "regionalDisplayName": "Saudi Arabia",
+    "type": "Region"
+  },
+  {
     "displayName": "Singapore",
     "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/singapore",
     "metadata": {
@@ -1705,6 +1807,10 @@
       {
         "logicalZone": "3",
         "physicalZone": "eastus2-az2"
+      },
+      {
+        "logicalZone": "4",
+        "physicalZone": "eastus2-az5"
       }
     ],
     "displayName": "East US 2",
@@ -1801,7 +1907,6 @@
     "type": "Region"
   },
   {
-    "availabilityZoneMappings": [],
     "displayName": "North Central US",
     "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/northcentralus",
     "metadata": {
@@ -1824,7 +1929,6 @@
     "type": "Region"
   },
   {
-    "availabilityZoneMappings": [],
     "displayName": "West US",
     "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/westus",
     "metadata": {

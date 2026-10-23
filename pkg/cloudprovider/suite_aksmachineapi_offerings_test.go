@@ -41,8 +41,8 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -54,7 +54,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 )
 
 var _ = Describe("CloudProvider", func() {
@@ -70,6 +70,8 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
+			azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, fake.MakeSyntheticRegionalSKU(fake.Region))
+			Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 			statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
 				azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
@@ -418,7 +420,7 @@ var _ = Describe("CloudProvider", func() {
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_NC6s_v3"}, // Non-zonal instance type
+					Values:   []string{fake.SyntheticRegionalSKUName}, // Non-zonal instance type
 				})
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
@@ -746,7 +748,7 @@ var _ = Describe("CloudProvider", func() {
 						Name:   lo.ToPtr("Standard_D2_v2"),
 						Size:   lo.ToPtr("D2_v2"),
 						Family: lo.ToPtr("StandardDv2Family"),
-						Capabilities: &[]compute.ResourceSkuCapabilities{
+						Capabilities: []*armcompute.ResourceSKUCapabilities{
 							{
 								Name:  lo.ToPtr("vCPUs"),
 								Value: lo.ToPtr("2"),
@@ -757,7 +759,7 @@ var _ = Describe("CloudProvider", func() {
 						Name:   lo.ToPtr("Standard_D16_v2"),
 						Size:   lo.ToPtr("D16_v2"),
 						Family: lo.ToPtr("StandardDv2Family"),
-						Capabilities: &[]compute.ResourceSkuCapabilities{
+						Capabilities: []*armcompute.ResourceSKUCapabilities{
 							{
 								Name:  lo.ToPtr("vCPUs"),
 								Value: lo.ToPtr("16"),
@@ -768,7 +770,7 @@ var _ = Describe("CloudProvider", func() {
 						Name:   lo.ToPtr("Standard_D32_v2"),
 						Size:   lo.ToPtr("D32_v2"),
 						Family: lo.ToPtr("StandardDv2Family"),
-						Capabilities: &[]compute.ResourceSkuCapabilities{
+						Capabilities: []*armcompute.ResourceSKUCapabilities{
 							{
 								Name:  lo.ToPtr("vCPUs"),
 								Value: lo.ToPtr("32"),

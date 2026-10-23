@@ -24,7 +24,6 @@ import (
 
 func TestSKUExistence(t *testing.T) {
 	testSKUExistenceForRegion(t, "southcentralus", sets.New(
-		"Standard_A0",
 		"Standard_B1s",
 		"Standard_D2s_v3",
 		"Standard_D2_v2",
@@ -37,11 +36,9 @@ func TestSKUExistence(t *testing.T) {
 		"Standard_F16s_v2",
 		"Standard_M8-2ms",
 		"Standard_NC24ads_A100_v4",
-		"Standard_NC6s_v3",
 		"Standard_NC16as_T4_v3",
 	))
 	testSKUExistenceForRegion(t, "westcentralus", sets.New(
-		"Standard_A0",
 		"Standard_B1s",
 		"Standard_D2s_v3",
 		"Standard_D2_v2",
