@@ -22,6 +22,8 @@ disabled_render="$tmp_dir/disabled.yaml"
 explicitly_disabled_render="$tmp_dir/explicitly-disabled.yaml"
 enabled_render="$tmp_dir/enabled.yaml"
 legacy_render="$tmp_dir/legacy.yaml"
+new_gates_render="$tmp_dir/new-gates.yaml"
+legacy_repair_render="$tmp_dir/legacy-repair.yaml"
 legacy_chart="$tmp_dir/karpenter"
 standalone_crd_render="$tmp_dir/standalone-crds.yaml"
 main_crd_render="$tmp_dir/main-crds.yaml"
@@ -63,9 +65,21 @@ yq eval -i 'del(
     .settings.featureGates.spotToSpotConsolidation,
     .settings.featureGates.nodeRepair,
     .settings.featureGates.nodeOverlay,
-    .settings.featureGates.staticCapacity
+    .settings.featureGates.staticCapacity,
+    .settings.featureGates.terminateFirstDrift,
+    .settings.featureGates.terminateFirstRepair,
+    .settings.featureGates.podDeletionCostManagement,
+    .settings.legacyNodeRepair
 )' "$legacy_chart/values.yaml"
 run_helm "$legacy_render" template karpenter "$legacy_chart" --namespace karpenter
+run_helm "$new_gates_render" template karpenter charts/karpenter --namespace karpenter \
+    --set settings.featureGates.nodeRepair=true \
+    --set settings.featureGates.terminateFirstDrift=true \
+    --set settings.featureGates.terminateFirstRepair=true \
+    --set settings.featureGates.podDeletionCostManagement=true
+run_helm "$legacy_repair_render" template karpenter charts/karpenter --namespace karpenter \
+    --set settings.featureGates.nodeRepair=true \
+    --set settings.legacyNodeRepair=true
 
 # Render both supported CRD delivery paths.
 run_helm "$standalone_crd_render" template karpenter-crd charts/karpenter-crd
@@ -84,7 +98,7 @@ feature_gates() {
     echo "expected CapacityBuffer=false when the chart setting is explicitly disabled"
     exit 1
 }
-[[ "$(feature_gates "$legacy_render")" == "CapacityBuffer=false,ReservedCapacity=false,SpotToSpotConsolidation=false,NodeRepair=false,NodeOverlay=false,StaticCapacity=false" ]] || {
+[[ "$(feature_gates "$legacy_render")" == "CapacityBuffer=false,ReservedCapacity=false,SpotToSpotConsolidation=false,NodeRepair=false,NodeOverlay=false,StaticCapacity=false,TerminateFirstDrift=false,TerminateFirstRepair=false,PodDeletionCostManagement=false" ]] || {
     echo "expected all feature gates to default to false when legacy values omit the chart settings"
     exit 1
 }
@@ -93,12 +107,39 @@ feature_gates() {
     exit 1
 }
 
+[[ "$(feature_gates "$new_gates_render")" == *"NodeRepair=true"* &&
+   "$(feature_gates "$new_gates_render")" == *"TerminateFirstDrift=true,TerminateFirstRepair=true,PodDeletionCostManagement=true"* ]] || {
+    echo "expected the v1.15 feature gates to render when enabled"
+    exit 1
+}
+for render in "$disabled_render" "$legacy_render" "$legacy_repair_render"; do
+    expected="false"
+    if [[ "$render" == "$legacy_repair_render" ]]; then
+        expected="true"
+    fi
+    actual="$(yq eval-all 'select(.kind == "Deployment") | .spec.template.spec.containers[] | .env[] | select(.name == "LEGACY_NODE_REPAIR") | .value' "$render")"
+    [[ "$actual" == "$expected" ]] || {
+        echo "expected LEGACY_NODE_REPAIR=$expected in $render"
+        exit 1
+    }
+done
+
 core_role_json() {
     yq eval-all -o=json 'select(.kind == "ClusterRole" and .metadata.name == "karpenter-core")' "$1"
 }
 
 disabled_rules="$(core_role_json "$disabled_render")"
 enabled_rules="$(core_role_json "$enabled_render")"
+new_gates_rules="$(core_role_json "$new_gates_render")"
+
+jq -e 'any(.rules[]; .apiGroups == ["autoscaling.k8s.io"] and .resources == ["verticalpodautoscalers"] and .verbs == ["get", "list", "watch"])' \
+    <<<"$disabled_rules" >/dev/null
+for render in "$disabled_render" "$legacy_render"; do
+    jq -e 'all(.rules[]; (.resources | index("pods")) == null or (.verbs | index("patch")) == null)' \
+        <<<"$(core_role_json "$render")" >/dev/null
+done
+jq -e 'any(.rules[]; .apiGroups == [""] and .resources == ["pods"] and .verbs == ["delete", "patch"])' \
+    <<<"$new_gates_rules" >/dev/null
 
 # Disabled values must not broaden the controller role; enabled values must
 # grant the exact read/status permissions used by core.
