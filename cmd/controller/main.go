@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/overlay"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
+	"sigs.k8s.io/karpenter/pkg/controllers/node/health"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	coreoperator "sigs.k8s.io/karpenter/pkg/operator"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
@@ -65,7 +66,8 @@ func main() {
 
 	overlayUndecoratedCloudProvider := metrics.Decorate(aksCloudProvider)
 	cloudProvider := overlay.Decorate(overlayUndecoratedCloudProvider, op.GetClient(), op.InstanceTypeStore)
-	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
+	repairPolicyMatcher := lo.Must(health.NewRepairPolicyMatcher(ctx, cloudProvider))
+	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider, state.WithRepairPolicyMatcher(repairPolicyMatcher))
 
 	op.
 		WithControllers(ctx, corecontrollers.NewControllers(
@@ -78,6 +80,7 @@ func main() {
 			overlayUndecoratedCloudProvider,
 			clusterState,
 			op.InstanceTypeStore,
+			op.PredictionStore,
 		)...).
 		WithControllers(ctx, controllers.NewControllers(
 			ctx,

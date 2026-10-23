@@ -39,6 +39,7 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/capacitybuffer"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
+	"sigs.k8s.io/karpenter/pkg/controllers/node/health"
 	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
@@ -340,6 +341,65 @@ func runCapacityBufferTests(expectCreateCalls func(expectedCalls int)) {
 }
 
 var _ = Describe("CloudProvider", func() {
+	Context("Repair", func() {
+		It("should explicitly reject in-place reboot", func() {
+			err := (&CloudProvider{}).Reboot(ctx, nodeClaim, "operation-id")
+			Expect(corecloudprovider.IsNodeRebootNotImplementedError(err)).To(BeTrue())
+		})
+
+		It("should not bypass Ready toleration with a transition before node creation", func() {
+			repairCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
+				FeatureGates: coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
+			}))
+			matcher, err := health.NewRepairPolicyMatcher(repairCtx, &CloudProvider{})
+			Expect(err).ToNot(HaveOccurred())
+			now := fakeClock.Now()
+			node := coretest.Node()
+			node.CreationTimestamp = metav1.NewTime(now)
+			node.Status.Conditions = []v1.NodeCondition{{
+				Type:               v1.NodeReady,
+				Status:             v1.ConditionFalse,
+				LastTransitionTime: metav1.NewTime(now.Add(-11 * time.Minute)),
+			}}
+			matches := matcher.Match(node)
+			Expect(health.Resolve(matches, now.Add(10*time.Minute-time.Nanosecond), time.Time{}).Action).To(BeEmpty())
+			Expect(health.Resolve(matches, now.Add(10*time.Minute), time.Time{}).Action).To(Equal(corecloudprovider.ReplaceNode))
+		})
+
+		DescribeTable("should preserve repair tolerations and forceful drain bounds", func(conditionType v1.NodeConditionType, conditionStatus v1.ConditionStatus, toleration time.Duration) {
+			repairCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
+				FeatureGates: coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
+			}))
+			matcher, err := health.NewRepairPolicyMatcher(repairCtx, &CloudProvider{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(matcher).ToNot(BeNil())
+			now := fakeClock.Now()
+			node := coretest.Node()
+			node.CreationTimestamp = metav1.NewTime(now.Add(-time.Hour))
+			node.Status.Conditions = []v1.NodeCondition{{
+				Type:               conditionType,
+				Status:             conditionStatus,
+				Reason:             "UnrecognizedReason",
+				LastTransitionTime: metav1.NewTime(now),
+			}}
+			matches := matcher.Match(node)
+			Expect(matches).To(HaveLen(1))
+			Expect(health.Resolve(matches, now.Add(toleration-time.Nanosecond), time.Time{}).Action).To(BeEmpty())
+			result := health.Resolve(matches, now.Add(toleration), time.Time{})
+			Expect(result.Action).To(Equal(corecloudprovider.ReplaceNode))
+			Expect(result.Condition).To(Equal(conditionType))
+			Expect(result.TerminationGracePeriod).To(Equal(lo.ToPtr(time.Duration(0))))
+
+			node.Status.Conditions[0].Status = lo.Ternary(conditionStatus == v1.ConditionTrue, v1.ConditionFalse, v1.ConditionTrue)
+			Expect(matcher.Match(node)).To(BeEmpty())
+		},
+			Entry("NodeReady=False", v1.NodeReady, v1.ConditionFalse, 10*time.Minute),
+			Entry("NodeReady=Unknown", v1.NodeReady, v1.ConditionUnknown, 10*time.Minute),
+			Entry("NodeHealthy=False", v1.NodeConditionType("kubernetes.azure.com/NodeHealthy"), v1.ConditionFalse, time.Duration(0)),
+			Entry("PreemptionScheduled=True", v1.NodeConditionType(SpotConditionPreemptionScheduled), v1.ConditionTrue, time.Duration(0)),
+		)
+	})
+
 	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
 	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.
 	// If ProvisionMode = AKSScriptless is no longer supported, their code/tests will be replaced with ProvisionMode = AKSMachineAPI.

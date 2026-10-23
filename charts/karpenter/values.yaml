@@ -205,6 +205,9 @@ settings:
   # -- When set, Karpenter ignores pods' Dynamic Resource Allocation requests during scheduling simulations.
   # DRA is not supported by the Azure provider, so this must remain enabled until support, RBAC, and validation are implemented.
   ignoreDRARequests: true
+  # -- Run the legacy forceful repair controller instead of budget-aware repair. Requires nodeRepair.
+  # The legacy controller does not support terminateFirstRepair or the karpenter.sh/do-not-repair annotation.
+  legacyNodeRepair: false
   # -- Disable cluster state metrics and events.
   disableClusterStateObservability: false
 
@@ -229,7 +232,7 @@ settings:
     # Setting this to true will enable spot replacement consolidation for both single and multi-node consolidation.
     spotToSpotConsolidation: false
     # -- nodeRepair is ALPHA and is disabled by default.
-    # Setting this to true will enable node repair.
+    # Setting this to true enables replacement of unhealthy nodes subject to NodePool disruption budgets.
     nodeRepair: false
     # -- nodeOverlay is ALPHA and is disabled by default.
     # Setting this will allow the use of node overlay to impact scheduling decisions.
@@ -237,3 +240,12 @@ settings:
     # -- staticCapacity is ALPHA and is disabled by default.
     # Setting this to true will enable static capacity provisioning.
     staticCapacity: false
+    # -- terminateFirstDrift is ALPHA and is disabled by default.
+    # Allows drift to terminate before replacing a node in a capacity-constrained NodePool.
+    terminateFirstDrift: false
+    # -- terminateFirstRepair is ALPHA and is disabled by default.
+    # Allows repair to terminate before replacing a node in a capacity-constrained NodePool. Requires nodeRepair.
+    terminateFirstRepair: false
+    # -- podDeletionCostManagement is ALPHA and is disabled by default.
+    # Manages ReplicaSet pods' deletion-cost annotations and grants patch permission on pods.
+    podDeletionCostManagement: false

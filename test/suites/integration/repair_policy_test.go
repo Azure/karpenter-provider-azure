@@ -40,14 +40,16 @@ var _ = Describe("Repair Policy", func() {
 		// remove this if NodeRepair feature gate is enabled by default
 		if env.InClusterController {
 			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "FEATURE_GATES", Value: "NodeRepair=True"})
+			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "LEGACY_NODE_REPAIR", Value: "false"})
 		} else {
 			Skip("This test requires the controller to be running in-cluster (to ensure NodeRepair feature gate is enabled")
 		}
 
+		// A zero-toleration fault makes budget and annotation checks exercise an already-eligible repair.
 		unhealthyCondition = corev1.NodeCondition{
-			Type:               corev1.NodeReady,
+			Type:               "kubernetes.azure.com/NodeHealthy",
 			Status:             corev1.ConditionFalse,
-			LastTransitionTime: metav1.Time{Time: time.Now().Add(-11 * time.Minute)},
+			LastTransitionTime: metav1.Time{Time: time.Now()},
 		}
 		numPods = 1
 		// Add pods with a do-not-disrupt annotation so that we can check node metadata before we disrupt
@@ -68,11 +70,11 @@ var _ = Describe("Repair Policy", func() {
 		selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 	})
 
+	// Core clamps backdated transitions to node creation, so Ready repairs still wait for the node to be 10 minutes old.
 	DescribeTable("Conditions", func(unhealthyCondition corev1.NodeCondition) {
 		env.ExpectCreated(nodeClass, nodePool, dep)
 		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
-		node := env.ExpectCreatedNodeCount("==", 1)[0]
-		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 
 		node = common.ReplaceNodeConditions(node, unhealthyCondition)
 		env.ExpectStatusUpdated(node)
@@ -101,28 +103,54 @@ var _ = Describe("Repair Policy", func() {
 			LastTransitionTime: metav1.Time{Time: time.Now()},
 		}),
 	)
-	It("should ignore disruption budgets", func() {
+	DescribeTable("Disruption budgets", func(legacy bool) {
+		if legacy {
+			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "LEGACY_NODE_REPAIR", Value: "true"})
+		}
 		nodePool.Spec.Disruption.Budgets = []karpenterv1.Budget{
 			{
-				Nodes: "0",
+				Nodes:   "0",
+				Reasons: []karpenterv1.DisruptionReason{karpenterv1.DisruptionReasonUnhealthy},
 			},
 		}
 		env.ExpectCreated(nodeClass, nodePool, dep)
 		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
-		node := env.ExpectCreatedNodeCount("==", 1)[0]
-		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 
 		node = common.ReplaceNodeConditions(node, unhealthyCondition)
 		env.ExpectStatusUpdated(node)
 
+		if !legacy {
+			env.ConsistentlyExpectNodesNotDisrupted([]*corev1.Node{node}, time.Minute)
+			nodePool.Spec.Disruption.Budgets[0].Nodes = "100%"
+			env.ExpectUpdated(nodePool)
+		}
+		env.EventuallyExpectNotFound(pod, node)
+		env.EventuallyExpectHealthyPodCount(selector, numPods)
+	},
+		Entry("should respect budgets with v1.15 repair", false),
+		Entry("should ignore budgets with legacy repair", true),
+	)
+	It("should respect do-not-repair annotation on node", func() {
+		env.ExpectCreated(nodeClass, nodePool, dep)
+		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
+
+		node.Annotations[karpenterv1.DoNotRepairAnnotationKey] = "true"
+		env.ExpectUpdated(node)
+		node = common.ReplaceNodeConditions(node, unhealthyCondition)
+		env.ExpectStatusUpdated(node)
+
+		env.ConsistentlyExpectNodesNotDisrupted([]*corev1.Node{node}, time.Minute)
+		delete(node.Annotations, karpenterv1.DoNotRepairAnnotationKey)
+		env.ExpectUpdated(node)
 		env.EventuallyExpectNotFound(pod, node)
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 	})
 	It("should ignore do-not-disrupt annotation on node", func() {
 		env.ExpectCreated(nodeClass, nodePool, dep)
 		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
-		node := env.ExpectCreatedNodeCount("==", 1)[0]
-		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 
 		node.Annotations[karpenterv1.DoNotDisruptAnnotationKey] = "true"
 		env.ExpectUpdated(node)
@@ -137,8 +165,7 @@ var _ = Describe("Repair Policy", func() {
 		nodePool.Spec.Template.Spec.TerminationGracePeriod = &metav1.Duration{Duration: time.Hour}
 		env.ExpectCreated(nodeClass, nodePool, dep)
 		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
-		node := env.ExpectCreatedNodeCount("==", 1)[0]
-		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 
 		node = common.ReplaceNodeConditions(node, unhealthyCondition)
 		env.ExpectStatusUpdated(node)
