@@ -37,6 +37,7 @@ var (
 	OverconstrainedZonalAllocationFailureReason = "OverconstrainedZonalAllocationFailure"
 	OverconstrainedAllocationFailureReason      = "OverconstrainedAllocationFailure"
 	SKUNotAvailableReason                       = "SKUNotAvailable"
+	InvalidAvailabilityZoneReason               = "InvalidAvailabilityZone"
 
 	// LowQuotaTTL is the TTL for offerings that return a quota error but the quota limit is not 0.
 	// This means there is still some quota available, just not enough to fulfill the current request.
@@ -233,6 +234,26 @@ func handleSKUNotAvailableError(
 		zone,
 		capacityType)
 	return corecloudprovider.NewCreateError(err, SKUNotAvailableReason, err.Error())
+}
+
+func handleInvalidAvailabilityZoneError(
+	ctx context.Context,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
+	sku *skewer.SKU,
+	instanceType *corecloudprovider.InstanceType,
+	zone,
+	_,
+	_,
+	_ string,
+) error {
+	// Catalog support can disagree with Compute. This is a placement restriction, not a
+	// capacity shortage: do not infer that other sizes or zones are also unsupported.
+	if zone != "" && zone != zones.Regional {
+		unavailableOfferings.MarkOfferingUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, sku, zone, karpv1.CapacityTypeOnDemand, AllocationFailureTTL)
+		unavailableOfferings.MarkOfferingUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, sku, zone, karpv1.CapacityTypeSpot, AllocationFailureTTL)
+	}
+	err := fmt.Errorf("availability zone %s is not supported for instance type %s (will try another available placement)", zone, instanceType.Name)
+	return corecloudprovider.NewCreateError(err, InvalidAvailabilityZoneReason, err.Error())
 }
 
 // For zonal allocation failure, we will mark all instance types from this SKU family that have >= CPU count as the one that hit the error in this zone

@@ -47,6 +47,12 @@ func NewErrorDetailHandler(unavailableOfferings *cache.UnavailableOfferings) *Er
 		UnavailableOfferings: unavailableOfferings,
 		HandlerEntries: []errorDetailHandlerEntry{
 			{
+				match: func(detail armcontainerservice.ErrorDetail) bool {
+					return detail.Code != nil && *detail.Code == InvalidAvailabilityZoneReason
+				},
+				handle: handleInvalidAvailabilityZoneError,
+			},
+			{
 				match:  sdkerrors.LowPriorityQuotaHasBeenReachedInErrorDetail,
 				handle: handleLowPriorityQuotaError,
 			},

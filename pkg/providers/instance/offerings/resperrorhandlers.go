@@ -45,6 +45,13 @@ func NewResponseErrorHandler(unavailableOfferings *cache.UnavailableOfferings) *
 		UnavailableOfferings: unavailableOfferings,
 		HandlerEntries: []responseErrorHandlerEntry{
 			{
+				match: func(err error) bool {
+					var responseError *azcore.ResponseError
+					return errors.As(err, &responseError) && responseError.ErrorCode == InvalidAvailabilityZoneReason
+				},
+				handle: handleInvalidAvailabilityZoneError,
+			},
+			{
 				match:  sdkerrors.LowPriorityQuotaHasBeenReached,
 				handle: handleLowPriorityQuotaError,
 			},

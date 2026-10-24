@@ -18,7 +18,9 @@ package offerings
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -26,6 +28,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/skewer"
 	. "github.com/onsi/gomega"
+	gocache "github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -51,6 +54,7 @@ const (
 	errMsgOverconstrainedAllocationFmt      = "unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)"
 	errMsgRegionalQuotaExceeded             = "regional on-demand vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests"
 	errMsgSKUNotAvailableForSubscriptionFmt = "VM size %s is not supported for this subscription in this location, for more details please visit: https://aka.ms/aks/vm-size-selector"
+	errMsgInvalidAvailabilityZoneFmt        = "availability zone %s is not supported for instance type %s (will try another available placement)"
 )
 
 var (
@@ -179,6 +183,29 @@ func createCommonErrorInstanceType(offerings ...offering) *cloudprovider.Instanc
 	}
 
 	return it
+}
+
+func TestHandleInvalidAvailabilityZoneError(t *testing.T) {
+	for _, zone := range []string{testZone2, zones.Regional, ""} {
+		t.Run("zone="+zone, func(t *testing.T) {
+			g := NewWithT(t)
+			singleInstanceCache := gocache.New(time.Hour, time.Hour)
+			unavailableOfferings := cache.NewUnavailableOfferingsWithCache(singleInstanceCache, gocache.New(time.Hour, time.Hour))
+			err := handleInvalidAvailabilityZoneError(t.Context(), unavailableOfferings.ForCapacityReservationGroup(""),
+				createDefaultCommonErrorTestSKU(), createCommonErrorInstanceType(zone2OnDemand, regionalOnDemand),
+				zone, karpv1.CapacityTypeOnDemand, "InvalidAvailabilityZone", "original Azure response")
+			assertHandledError(t, err, fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, zone, testInstanceName), InvalidAvailabilityZoneReason)
+
+			if zone == "" || zone == zones.Regional {
+				g.Expect(singleInstanceCache.ItemCount()).To(BeZero())
+				return
+			}
+			g.Expect(singleInstanceCache.ItemCount()).To(Equal(2))
+			for _, item := range singleInstanceCache.Items() {
+				g.Expect(time.Until(time.Unix(0, item.Expiration))).To(BeNumerically("~", AllocationFailureTTL, time.Second))
+			}
+		})
+	}
 }
 
 func TestMarkOfferingsUnavailableForCapacityTypeAndPlacement(t *testing.T) {

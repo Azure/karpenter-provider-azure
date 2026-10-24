@@ -122,6 +122,37 @@ func nodePublicIPBeginCreateErrorTestCase(name, code, message string) aksMachine
 
 func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTestCase {
 	return []aksMachineBeginCreateErrorTestCase{
+		newAKSMachineBeginCreateErrorTestCase("Invalid availability zone for spot").
+			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+			withHandlableError("InvalidAvailabilityZone", "The requested zone is not supported.").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+			).
+			expectAvailable(
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeSpot),
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+			).
+			build(),
+		newAKSMachineBeginCreateErrorTestCase("Invalid availability zone for reserved capacity").
+			withInstanceType(zone2OnDemand, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withCapacityReservationGroup(testCapacityReservationGroupID).
+			withHandlableError("InvalidAvailabilityZone", "The requested zone is not supported.").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			expectAvailable(
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+			).
+			build(),
 		newAKSMachineBeginCreateErrorTestCase("VMSizeNotSupported").
 			withInstanceType(zone2OnDemand, zone3Spot, regionalOnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).

@@ -333,6 +333,59 @@ func TestUnavailableOfferings_CapacityReservationGroupScope(t *testing.T) {
 	})
 }
 
+func TestUnavailableOfferings_MarkOfferingUnavailableWithTTL(t *testing.T) {
+	for _, groupID := range []string{"", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"} {
+		t.Run("scope="+groupID, func(t *testing.T) {
+			singleInstanceCache := cache.New(testUnavailableOfferingsTTL, time.Hour)
+			u := NewUnavailableOfferingsWithCache(singleInstanceCache, cache.New(testUnavailableOfferingsTTL, time.Hour))
+			view := u.ForCapacityReservationGroup(groupID)
+			sku := createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8)
+			larger := createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16)
+
+			view.MarkOfferingUnavailableWithTTL(t.Context(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand, testUnavailableOfferingsTTL)
+			if !view.IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+				t.Fatal("expected the attempted offering to be unavailable")
+			}
+			if view.IsUnavailable(larger, "westus-1", karpv1.CapacityTypeOnDemand) {
+				t.Error("expected a larger size in the same family to stay available")
+			}
+			if view.IsUnavailable(sku, "westus-2", karpv1.CapacityTypeOnDemand) ||
+				view.IsUnavailable(sku, "0", karpv1.CapacityTypeOnDemand) ||
+				view.IsUnavailable(sku, "westus-1", karpv1.CapacityTypeSpot) ||
+				u.ForCapacityReservationGroup(groupID+"-other").IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+				t.Error("expected other zones, capacity types and scopes to stay available")
+			}
+		})
+	}
+}
+
+func TestUnavailableOfferings_MarkOfferingUnavailableWithTTLExpiration(t *testing.T) {
+	singleInstanceCache := cache.New(testUnavailableOfferingsTTL, time.Hour)
+	u := NewUnavailableOfferingsWithCache(singleInstanceCache, cache.New(testUnavailableOfferingsTTL, time.Hour))
+	view := u.ForCapacityReservationGroup("")
+	sku := createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8)
+	view.MarkOfferingUnavailableWithTTL(t.Context(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand, testUnavailableOfferingsTTL)
+	if u.SeqNum() != 1 {
+		t.Fatal("expected the first mark to advance the cache generation")
+	}
+	key := singleInstanceKey(unreservedScope, sku.GetName(), "westus-1", karpv1.CapacityTypeOnDemand)
+	_, expiration, found := singleInstanceCache.GetWithExpiration(key)
+	if !found || time.Until(expiration) > testUnavailableOfferingsTTL || time.Until(expiration) <= 0 {
+		t.Fatal("expected the supplied TTL to be used")
+	}
+	view.MarkOfferingUnavailableWithTTL(t.Context(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand, testUnavailableOfferingsTTL)
+	_, refreshedExpiration, _ := singleInstanceCache.GetWithExpiration(key)
+	if !refreshedExpiration.After(expiration) || u.SeqNum() != 1 {
+		t.Fatal("expected a duplicate mark to refresh the TTL without changing the generation")
+	}
+
+	time.Sleep(testUnavailableOfferingsTTL)
+	singleInstanceCache.DeleteExpired()
+	if view.IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) || u.SeqNum() != 2 {
+		t.Fatal("expected expiry to restore availability and advance the cache generation")
+	}
+}
+
 // Each member of a group is a separately reserved block, so a failure on one size must not
 // suppress a larger sibling the user has also reserved.
 func TestUnavailableOfferings_CapacityReservationGroupDoesNotWidenByFamily(t *testing.T) {

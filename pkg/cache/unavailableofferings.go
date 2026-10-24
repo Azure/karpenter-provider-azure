@@ -276,15 +276,21 @@ func (v *CapacityReservationGroupUnavailableOfferings) MarkSpotUnavailableWithTT
 // In addition to marking the specific instance type unavailable, it also marks the VM family
 // unavailable at the SKU's vCPU count, so that larger sizes of the same family are also blocked.
 func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unavailableReason string, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) {
-	u.markUnavailableWithTTL(ctx, unreservedScope, unavailableReason, sku, zone, capacityType, ttl)
+	u.markUnavailableWithTTL(ctx, unreservedScope, unavailableReason, sku, zone, capacityType, ttl, true)
 }
 
 // MarkUnavailableWithTTL marks an offering unavailable for this view.
 func (v *CapacityReservationGroupUnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unavailableReason string, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) {
-	v.offerings.markUnavailableWithTTL(ctx, v.scope, unavailableReason, sku, zone, capacityType, ttl)
+	v.offerings.markUnavailableWithTTL(ctx, v.scope, unavailableReason, sku, zone, capacityType, ttl, true)
 }
 
-func (u *UnavailableOfferings) markUnavailableWithTTL(ctx context.Context, scope unavailableOfferingsScope, unavailableReason string, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) {
+// MarkOfferingUnavailableWithTTL marks only this SKU, zone and capacity type unavailable,
+// without inferring that larger sizes of the same family are also unavailable.
+func (v *CapacityReservationGroupUnavailableOfferings) MarkOfferingUnavailableWithTTL(ctx context.Context, unavailableReason string, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) {
+	v.offerings.markUnavailableWithTTL(ctx, v.scope, unavailableReason, sku, zone, capacityType, ttl, false)
+}
+
+func (u *UnavailableOfferings) markUnavailableWithTTL(ctx context.Context, scope unavailableOfferingsScope, unavailableReason string, sku *skewer.SKU, zone, capacityType string, ttl time.Duration, widenToFamily bool) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	instanceType := sku.GetName()
@@ -307,7 +313,7 @@ func (u *UnavailableOfferings) markUnavailableWithTTL(ctx context.Context, scope
 	// Widening there would suppress reserved capacity the user is paying for, for the whole
 	// TTL, on no evidence.
 	familyChanged := false
-	if scope == unreservedScope {
+	if widenToFamily && scope == unreservedScope {
 		familyChanged = u.markFamilyUnavailableAtCPUCount(ctx, scope, sku, zone, capacityType, ttl)
 	}
 	if !wasUnavailable || familyChanged {
