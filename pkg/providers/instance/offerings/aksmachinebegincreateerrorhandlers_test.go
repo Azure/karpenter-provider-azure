@@ -122,6 +122,41 @@ func nodePublicIPBeginCreateErrorTestCase(name, code, message string) aksMachine
 
 func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTestCase {
 	return []aksMachineBeginCreateErrorTestCase{
+		newAKSMachineBeginCreateErrorTestCase("AKS availability zone not supported").
+			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withHandlableError("AvailabilityZoneNotSupported", "The zone(s) '2' for resource 'dummy' is not supported. The supported zones for location 'westus' are '3,1'").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+			).
+			expectAvailable(
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+			).
+			build(),
+		newAKSMachineBeginCreateErrorTestCase("AKS availability zone not supported for reserved capacity").
+			withInstanceType(zone2OnDemand, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withCapacityReservationGroup(testCapacityReservationGroupID).
+			withHandlableError("AvailabilityZoneNotSupported", "The requested availability zone is not supported.").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			expectAvailable(
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+			).
+			build(),
+		newAKSMachineBeginCreateErrorTestCase("AvailabilityZoneNotSupported in an unrelated message is not handled").
+			withInstanceType(zone2OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withHandlableError("BadRequest", "AvailabilityZoneNotSupported").
+			expectAvailable(allDefaultTestOfferingInfo()...).
+			build(),
 		newAKSMachineBeginCreateErrorTestCase("Invalid availability zone for spot").
 			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).

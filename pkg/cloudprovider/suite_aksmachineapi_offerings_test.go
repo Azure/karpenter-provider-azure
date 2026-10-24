@@ -94,6 +94,67 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		Context("Create - Expected Creation Failures", func() {
+			DescribeTable("should handle AvailabilityZoneNotSupported without bypassing placement requirements",
+				func(provisionMode string, allowRegional bool) {
+					testOptions.ProvisionMode = provisionMode
+					azureEnv.Reset(ctx)
+					azureEnv = test.NewEnvironment(ctx, env)
+					cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+					cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+					coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
+					statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, testOptions.NetworkPolicy, testOptions.NetworkPlugin,
+						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace)
+					allowedZones := []string{fakeZone1}
+					if allowRegional {
+						allowedZones = append(allowedZones, zones.Regional)
+					}
+					coretest.ReplaceRequirements(nodePool,
+						karpv1.NodeSelectorRequirementWithMinValues{
+							Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{defaultTestSKU.GetName()},
+						},
+						karpv1.NodeSelectorRequirementWithMinValues{
+							Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand},
+						},
+						karpv1.NodeSelectorRequirementWithMinValues{
+							Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: allowedZones,
+						},
+					)
+					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+					syncErr := fake.AKSMachineAPIErrorAvailabilityZoneNotSupported("1", fake.Region)
+					if provisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+						azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(string) (string, string) {
+							return syncErr.ErrorCode, syncErr.Error()
+						}
+					} else {
+						azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(syncErr)
+					}
+
+					pod := coretest.UnschedulablePod()
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectNotScheduled(ctx, env.Client, pod)
+					ExpectUnavailable(azureEnv, defaultTestSKU, fakeZone1, karpv1.CapacityTypeOnDemand)
+					ExpectUnavailable(azureEnv, defaultTestSKU, fakeZone1, karpv1.CapacityTypeSpot)
+					Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(defaultTestSKU, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+
+					azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = nil
+					azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					if !allowRegional {
+						ExpectNotScheduled(ctx, env.Client, pod)
+						return
+					}
+					node := ExpectScheduled(ctx, env.Client, pod)
+					Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(defaultTestSKU.GetName()))
+					Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(zones.Regional))
+					Expect(node.Labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeRegional))
+				},
+				Entry("Machine API with regional fallback", consts.ProvisionModeAKSMachineAPI, true),
+				Entry("Machine API with a required zone", consts.ProvisionModeAKSMachineAPI, false),
+				Entry("batched Machine API with regional fallback", consts.ProvisionModeAKSMachineAPIHeaderBatch, true),
+				Entry("batched Machine API with a required zone", consts.ProvisionModeAKSMachineAPIHeaderBatch, false),
+			)
+
 			// Ported from VM test: "should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed"
 			It("should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed", func() {
 				// Configure NodePool to allow both spot and on-demand

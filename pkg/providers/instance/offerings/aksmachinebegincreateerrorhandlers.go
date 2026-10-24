@@ -71,7 +71,7 @@ func NewAKSMachineBeginCreateErrorHandler(unavailableOfferings *cache.Unavailabl
 		handlerEntries: []aksMachineBeginCreateErrorHandlerEntry{
 			{
 				match: func(he *HandlableError) bool {
-					return he.Code == InvalidAvailabilityZoneReason
+					return isUnsupportedAvailabilityZone(he.Code)
 				},
 				handle: handleInvalidAvailabilityZoneError,
 			},

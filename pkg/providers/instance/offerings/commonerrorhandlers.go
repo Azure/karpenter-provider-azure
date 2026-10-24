@@ -236,6 +236,10 @@ func handleSKUNotAvailableError(
 	return corecloudprovider.NewCreateError(err, SKUNotAvailableReason, err.Error())
 }
 
+func isUnsupportedAvailabilityZone(code string) bool {
+	return code == InvalidAvailabilityZoneReason || code == "AvailabilityZoneNotSupported"
+}
+
 func handleInvalidAvailabilityZoneError(
 	ctx context.Context,
 	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,

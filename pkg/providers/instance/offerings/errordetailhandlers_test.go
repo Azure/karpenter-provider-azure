@@ -123,6 +123,22 @@ func newTestErrorDetailHandling() *ErrorDetailHandler {
 
 func setupErrorDetailTestCases() []errorDetailTestCase {
 	return []errorDetailTestCase{
+		newErrorDetailTestCase("AKS availability zone not supported").
+			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+			withErrorDetail("AvailabilityZoneNotSupported", "The requested availability zone is not supported.").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+			).
+			expectAvailable(
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+			).
+			build(),
 		newErrorDetailTestCase("Invalid availability zone for spot").
 			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
