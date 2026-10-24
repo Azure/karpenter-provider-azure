@@ -131,11 +131,12 @@ func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTest
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
 			).
 			expectAvailable(
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
 			).
 			build(),
 		newAKSMachineBeginCreateErrorTestCase("AKS availability zone not supported for reserved capacity").
@@ -166,13 +167,14 @@ func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTest
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
 			).
 			expectAvailable(
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
 				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeSpot),
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
 			).
 			build(),
 		newAKSMachineBeginCreateErrorTestCase("Invalid availability zone for reserved capacity").
@@ -292,7 +294,7 @@ func TestHandleMachineAPISyncErrors(t *testing.T) {
 			)
 
 			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
-			assertOfferingsState(t, handler.unavailableOfferings, tc.capacityReservationGroupID, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+			assertOfferingsState(t, handler.unavailableOfferings, tc.capacityReservationGroupID, tc.expectedReason, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
 }

@@ -243,18 +243,18 @@ func isUnsupportedAvailabilityZone(code string) bool {
 func handleInvalidAvailabilityZoneError(
 	ctx context.Context,
 	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
-	sku *skewer.SKU,
+	_ *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
 	_,
 	_,
 	_ string,
 ) error {
-	// Catalog support can disagree with Compute. This is a placement restriction, not a
-	// capacity shortage: do not infer that other sizes or zones are also unsupported.
+	// Compute InvalidAvailabilityZone and Machine API AvailabilityZoneNotSupported reject
+	// the zone itself. SKU-specific zone restrictions instead surface as SkuNotAvailable.
+	// Do not apply this interpretation to AKS cluster/agent-pool preflight errors.
 	if zone != "" && zone != zones.Regional {
-		unavailableOfferings.MarkOfferingUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, sku, zone, karpv1.CapacityTypeOnDemand, AllocationFailureTTL)
-		unavailableOfferings.MarkOfferingUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, sku, zone, karpv1.CapacityTypeSpot, AllocationFailureTTL)
+		unavailableOfferings.MarkZoneUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, zone, AllocationFailureTTL)
 	}
 	err := fmt.Errorf("availability zone %s is not supported for instance type %s (will try another available placement)", zone, instanceType.Name)
 	return corecloudprovider.NewCreateError(err, InvalidAvailabilityZoneReason, err.Error())

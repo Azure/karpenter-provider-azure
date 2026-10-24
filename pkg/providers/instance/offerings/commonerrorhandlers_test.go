@@ -200,7 +200,13 @@ func TestHandleInvalidAvailabilityZoneError(t *testing.T) {
 				g.Expect(singleInstanceCache.ItemCount()).To(BeZero())
 				return
 			}
-			g.Expect(singleInstanceCache.ItemCount()).To(Equal(2))
+			g.Expect(singleInstanceCache.ItemCount()).To(Equal(1))
+			otherSKU := createCommonErrorTestSKU("Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2")
+			for _, capacityType := range []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot} {
+				g.Expect(unavailableOfferings.IsUnavailable(otherSKU, zone, capacityType)).To(BeTrue())
+				g.Expect(unavailableOfferings.IsUnavailable(otherSKU, testZone3, capacityType)).To(BeFalse())
+				g.Expect(unavailableOfferings.IsUnavailable(otherSKU, zones.Regional, capacityType)).To(BeFalse())
+			}
 			for _, item := range singleInstanceCache.Items() {
 				g.Expect(time.Until(time.Unix(0, item.Expiration))).To(BeNumerically("~", AllocationFailureTTL, time.Second))
 			}

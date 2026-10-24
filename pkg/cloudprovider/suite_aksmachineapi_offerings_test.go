@@ -137,6 +137,13 @@ var _ = Describe("CloudProvider", func() {
 					ExpectUnavailable(azureEnv, defaultTestSKU, fakeZone1, karpv1.CapacityTypeSpot)
 					Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(defaultTestSKU, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeFalse())
 
+					otherSKU := fake.MakeSKU("Standard_D2_v5")
+					ExpectUnavailable(azureEnv, otherSKU, fakeZone1, karpv1.CapacityTypeOnDemand)
+					ExpectUnavailable(azureEnv, otherSKU, fakeZone1, karpv1.CapacityTypeSpot)
+					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+						Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{otherSKU.GetName()},
+					})
+					ExpectApplied(ctx, env.Client, nodePool)
 					azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = nil
 					azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -145,7 +152,7 @@ var _ = Describe("CloudProvider", func() {
 						return
 					}
 					node := ExpectScheduled(ctx, env.Client, pod)
-					Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(defaultTestSKU.GetName()))
+					Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(otherSKU.GetName()))
 					Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(zones.Regional))
 					Expect(node.Labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeRegional))
 				},

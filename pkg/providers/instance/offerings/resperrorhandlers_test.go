@@ -156,7 +156,7 @@ func newTestResponseErrorHandling() *ResponseErrorHandler {
 	return NewResponseErrorHandler(cache.NewUnavailableOfferings())
 }
 
-func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableOfferings, capacityReservationGroupID string, unavailable, available []offeringToCheck) {
+func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableOfferings, capacityReservationGroupID, expectedReason string, unavailable, available []offeringToCheck) {
 	t.Helper()
 	g := NewWithT(t)
 	view := unavailableOfferings.ForCapacityReservationGroup(capacityReservationGroupID)
@@ -167,8 +167,8 @@ func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableO
 			info.skuToCheck.GetName(), info.zone, info.capacityType,
 		)
 		if capacityReservationGroupID != "" {
-			g.Expect(unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeFalse(),
-				"Expected unreserved offering %s in zone %s with capacity type %s to be unaffected by a capacity reservation group failure",
+			g.Expect(unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(Equal(expectedReason == InvalidAvailabilityZoneReason),
+				"Only invalid zones should propagate from reserved to unreserved offering %s in zone %s with capacity type %s",
 				info.skuToCheck.GetName(), info.zone, info.capacityType,
 			)
 		}
@@ -193,11 +193,12 @@ func setupTestCases() []responseErrorTestCase {
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
 			).
 			expectAvailable(
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
 			).
 			build(),
 		newTestCase("Invalid availability zone for on-demand").
@@ -209,13 +210,14 @@ func setupTestCases() []responseErrorTestCase {
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
 			).
 			expectAvailable(
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
 				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeSpot),
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
 			).
 			build(),
 		newTestCase("Invalid availability zone for reserved capacity").
@@ -425,7 +427,7 @@ func TestHandleResponseErrors(t *testing.T) {
 			)
 
 			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
-			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, tc.expectedReason, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
 }
@@ -436,7 +438,7 @@ func TestHandleWrappedInvalidAvailabilityZone(t *testing.T) {
 		testZone2, karpv1.CapacityTypeSpot, "", fmt.Errorf("creating VM: %w", createResponseError("InvalidAvailabilityZone", "The requested zone is not supported.")))
 
 	assertHandledError(t, err, fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName), InvalidAvailabilityZoneReason)
-	assertOfferingsState(t, provider.UnavailableOfferings, "",
+	assertOfferingsState(t, provider.UnavailableOfferings, "", InvalidAvailabilityZoneReason,
 		[]offeringToCheck{defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot), defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)},
 		[]offeringToCheck{defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand)})
 }

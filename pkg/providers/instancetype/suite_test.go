@@ -549,6 +549,13 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectUnavailable(testEnv, defaultTestSKU, fakeZone1, karpv1.CapacityTypeSpot)
 				Expect(testEnv.UnavailableOfferingsCache.IsUnavailable(defaultTestSKU, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeFalse())
 
+				otherSKU := fake.MakeSKU("Standard_D2_v5")
+				ExpectUnavailable(testEnv, otherSKU, fakeZone1, karpv1.CapacityTypeOnDemand)
+				ExpectUnavailable(testEnv, otherSKU, fakeZone1, karpv1.CapacityTypeSpot)
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{otherSKU.GetName()},
+				})
+				ExpectApplied(testCtx, env.Client, nodePool)
 				testEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 				ExpectProvisionedAndWaitForPromises(testCtx, env.Client, testCluster, testProvider, testProvisioner, testEnv, pod)
 				if !allowRegional {
@@ -557,7 +564,7 @@ var _ = Describe("InstanceType Provider", func() {
 					return
 				}
 				node := ExpectScheduled(testCtx, env.Client, pod)
-				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(defaultTestSKU.GetName()))
+				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(otherSKU.GetName()))
 				Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(zones.Regional))
 				Expect(node.Labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeRegional))
 			},
