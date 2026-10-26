@@ -30,39 +30,32 @@ permissions:
 
 jobs:
   e2e:
+    name: ${{ matrix.source.name }} / ${{ matrix.case.provision_mode }} / ${{ matrix.case.suite }}
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
-        suite:
-          - ACR
-          - BYOK
-          - CapacityBuffer
-          - CapacityReservation
-          - Chaos
-          - Consolidation
-          - Drift
-          - GPU
-          - InPlaceUpdate
-          - Integration
-          - KubernetesUpgrade
-          - Machine
-          - NewSKUs
-          - NodeClaim
-          - Scheduling
-          - Spot
-          - Storage
-          - Subnet
-          - Utilization
-          - Windows
+        case:
+          - {suite: Utilization, provision_mode: aksscriptless}
+          - {suite: Consolidation, provision_mode: aksscriptless}
+          - {suite: CapacityBuffer, provision_mode: aksmachineapi}
+          - {suite: Utilization, provision_mode: aksmachineapi}
+          - {suite: Consolidation, provision_mode: aksmachineapi}
+          - {suite: Drift, provision_mode: aksmachineapi}
+          - {suite: Machine, provision_mode: aksmachineapi}
+          - {suite: Integration, provision_mode: aksmachineapi}
+        source:
+          - {name: main, git_ref: 298f6f998fa77bb7e64d51e78913ff8f33f8b857}
+          - {name: fixed, git_ref: 8f428c7c015d430a24431f6b5edea29f5511f3ea}
     permissions:
       contents: read
       statuses: write
     uses: ./.github/workflows/e2e.yaml
     with:
-      git_ref: ${{ inputs.git_ref }}
-      suite: ${{ matrix.suite }}
+      git_ref: ${{ matrix.source.git_ref }}
+      suite: ${{ matrix.case.suite }}
       location: ${{ inputs.location }}
-      provision_mode: ${{ inputs.provision_mode || 'aksscriptless' }}
+      provision_mode: ${{ matrix.case.provision_mode }}
       k8s_version: ${{ inputs.k8s_version }}
       azure_vm_size: ${{ inputs.azure_vm_size }}
     secrets:
