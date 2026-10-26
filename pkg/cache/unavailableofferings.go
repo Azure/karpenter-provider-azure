@@ -293,12 +293,12 @@ func (v *CapacityReservationGroupUnavailableOfferings) MarkZoneUnavailableWithTT
 	defer u.mu.Unlock()
 	key := unavailableZoneKey(zone)
 	_, wasUnavailable := u.singleOfferingCache.Get(key)
-	log.FromContext(ctx).V(1).Info("marking availability zone unavailable",
-		"unavailable", unavailableReason,
-		"zone", zone,
-		"ttl", ttl)
 	u.singleOfferingCache.Set(key, struct{}{}, ttl)
 	if !wasUnavailable {
+		log.FromContext(ctx).Info("marking availability zone unavailable",
+			"unavailable", unavailableReason,
+			"zone", zone,
+			"ttl", ttl)
 		u.seqNum.Add(1)
 	}
 }

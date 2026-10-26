@@ -19,6 +19,7 @@ package offerings
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -236,9 +237,12 @@ func handleSKUNotAvailableError(
 	return corecloudprovider.NewCreateError(err, SKUNotAvailableReason, err.Error())
 }
 
-func isUnsupportedAvailabilityZone(code string) bool {
+// IsUnsupportedAvailabilityZone identifies zone-invalidity errors on the instance provisioning APIs.
+func IsUnsupportedAvailabilityZone(code string) bool {
 	return code == InvalidAvailabilityZoneReason || code == "AvailabilityZoneNotSupported"
 }
+
+var supportedAvailabilityZonesPattern = regexp.MustCompile(`The supported zones for location '[^'\r\n]*' are '([0-9]+(?:[ ,]+[0-9]+)*)'`)
 
 func handleInvalidAvailabilityZoneError(
 	ctx context.Context,
@@ -248,15 +252,21 @@ func handleInvalidAvailabilityZoneError(
 	zone,
 	_,
 	_,
-	_ string,
+	errorMessage string,
 ) error {
 	// Compute InvalidAvailabilityZone and Machine API AvailabilityZoneNotSupported reject
 	// the zone itself. SKU-specific zone restrictions instead surface as SkuNotAvailable.
 	// Do not apply this interpretation to AKS cluster/agent-pool preflight errors.
-	if zone != "" && zone != zones.Regional {
-		unavailableOfferings.MarkZoneUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, zone, AllocationFailureTTL)
+	if zone == "" || zone == zones.Regional {
+		return nil
 	}
+	unavailableOfferings.MarkZoneUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, zone, AllocationFailureTTL)
 	err := fmt.Errorf("availability zone %s is not supported for instance type %s (will try another available placement)", zone, instanceType.Name)
+	// Azure messages can contain resource identifiers; retain only the numeric zone list.
+	if matches := supportedAvailabilityZonesPattern.FindStringSubmatch(errorMessage); len(matches) == 2 {
+		supportedZones := strings.FieldsFunc(matches[1], func(r rune) bool { return r == ',' || r == ' ' })
+		err = fmt.Errorf("%w; supported Azure zones: %s", err, strings.Join(supportedZones, ", "))
+	}
 	return corecloudprovider.NewCreateError(err, InvalidAvailabilityZoneReason, err.Error())
 }
 

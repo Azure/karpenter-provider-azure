@@ -126,7 +126,7 @@ func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTest
 			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withHandlableError("AvailabilityZoneNotSupported", "The zone(s) '2' for resource 'dummy' is not supported. The supported zones for location 'westus' are '3,1'").
-			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt+"; supported Azure zones: 3, 1", testZone2, testInstanceName)).
 			expectReason(InvalidAvailabilityZoneReason).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),

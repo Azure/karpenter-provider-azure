@@ -32,9 +32,14 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	"github.com/Azure/skewer"
 	"github.com/onsi/gomega"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
 // ---------------------------------------------------------------------------
@@ -386,6 +391,115 @@ func makeBatchInternalServerError(details []testErrorDetail) *azcore.ResponseErr
 // =====================================================================
 // Per-machine batch error tests
 // =====================================================================
+
+func makeZoneBatch(t *testing.T, placements [][]string, ultraSSD bool) *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError] {
+	t.Helper()
+	g := gomega.NewWithT(t)
+	requests := make([]*batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError], 0, len(placements))
+	for i, placement := range placements {
+		template := tpl("Standard_D2s_v3", placement, nil)
+		if ultraSSD {
+			template.Properties.Hardware.UltraSsdEnabled = &ultraSSD
+		}
+		requests = append(requests, makeReq(fmt.Sprintf("m-%d", i), template))
+	}
+	batch := makeBatch(requests...)
+	for _, request := range requests {
+		key, err := determineBatchKey(&request.Payload)
+		g.Expect(err).ToNot(gomega.HaveOccurred())
+		g.Expect(key).To(gomega.Equal(batch.Key))
+	}
+	return batch
+}
+
+func TestExecutorUnsupportedZoneAttribution(t *testing.T) {
+	t.Parallel()
+	for _, code := range []string{"AvailabilityZoneNotSupported", "InvalidAvailabilityZone"} {
+		for _, tc := range []struct {
+			name         string
+			zones        [][]string
+			perMachine   bool
+			ultraSSD     bool
+			operational  bool
+			blockedZones []string
+		}{
+			{
+				name: "top-level mixed zones", zones: [][]string{{"1"}, {"2"}, {"3"}, {"4"}, nil},
+				operational: true,
+			},
+			{
+				name: "top-level zonal and regional", zones: [][]string{{"4"}, nil},
+				operational: true,
+			},
+			{
+				name: "top-level same zone", zones: [][]string{{"4"}, {"4"}},
+				blockedZones: []string{"eastus2-4"},
+			},
+			{
+				name: "top-level UltraSSD same zone", zones: [][]string{{"4"}, {"4"}}, ultraSSD: true,
+				blockedZones: []string{"eastus2-4"},
+			},
+			{
+				name: "top-level regional", zones: [][]string{nil, {}},
+			},
+			{
+				name: "per-machine mixed zones", zones: [][]string{{"1"}, {"4"}, nil}, perMachine: true,
+				blockedZones: []string{"eastus2-4"},
+			},
+		} {
+			t.Run(code+"/"+tc.name, func(t *testing.T) {
+				t.Parallel()
+				g := gomega.NewWithT(t)
+				message := "The zone(s) '4' for resource 'dummy' is not supported. The supported zones for location 'eastus2' are '1,2,3'"
+				body, err := json.Marshal(map[string]string{"code": code, "message": message})
+				g.Expect(err).ToNot(gomega.HaveOccurred())
+				apiError := makeResponseError(code, http.StatusBadRequest, string(body))
+				if tc.perMachine {
+					apiError = makeBatchClientError([]testErrorDetail{{Code: code, Message: message, Target: "m-1"}})
+				}
+				batch := makeZoneBatch(t, tc.zones, tc.ultraSSD)
+				requests := batch.Requests
+
+				newExecutor(&recordingClient{err: apiError}).executeBatch(t.Context(), batch)
+				unavailable := cache.NewUnavailableOfferings()
+				handler := offerings.NewAKSMachineBeginCreateErrorHandler(unavailable)
+				name, family := "Standard_D2s_v3", "standardDSv3Family"
+				otherName, otherFamily := "Standard_D2_v5", "standardDv5Family"
+				sku := &skewer.SKU{Name: &name, Family: &family}
+				otherSKU := &skewer.SKU{Name: &otherName, Family: &otherFamily}
+				for i, response := range awaitAll(t, requests...) {
+					if tc.operational {
+						g.Expect(response.Err).To(gomega.MatchError(gomega.ContainSubstring("cannot attribute availability zone rejection")))
+						g.Expect(response.Payload).To(gomega.BeNil())
+						continue
+					}
+					g.Expect(response.Err).ToNot(gomega.HaveOccurred())
+					if tc.perMachine && i != 1 {
+						g.Expect(response.Payload).To(gomega.BeNil())
+						continue
+					}
+					g.Expect(response.Payload).ToNot(gomega.BeNil())
+					g.Expect(response.Payload.Code).To(gomega.Equal(code))
+					zone, err := zones.MakeAKSLabelZoneFromARMZones("eastus2", requests[i].Payload.machineBody.Zones)
+					g.Expect(err).ToNot(gomega.HaveOccurred())
+					handled := handler.Handle(t.Context(), sku, &corecloudprovider.InstanceType{Name: name},
+						zone, karpv1.CapacityTypeOnDemand, "", response.Payload)
+					if zone == "0" {
+						g.Expect(handled).ToNot(gomega.HaveOccurred())
+					} else {
+						g.Expect(handled).To(gomega.HaveOccurred())
+					}
+				}
+				for _, zone := range []string{"eastus2-1", "eastus2-2", "eastus2-3", "eastus2-4", "0"} {
+					for _, capacityType := range []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot} {
+						g.Expect(unavailable.IsUnavailable(otherSKU, zone, capacityType)).
+							To(gomega.Equal(slices.Contains(tc.blockedZones, zone)), "zone %s, capacity type %s", zone, capacityType)
+					}
+				}
+			})
+		}
+	}
+}
 
 func TestExecutorBatchClientError_PartialFailure(t *testing.T) {
 	t.Parallel()

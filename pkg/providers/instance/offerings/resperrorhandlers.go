@@ -47,7 +47,7 @@ func NewResponseErrorHandler(unavailableOfferings *cache.UnavailableOfferings) *
 			{
 				match: func(err error) bool {
 					var responseError *azcore.ResponseError
-					return errors.As(err, &responseError) && isUnsupportedAvailabilityZone(responseError.ErrorCode)
+					return errors.As(err, &responseError) && IsUnsupportedAvailabilityZone(responseError.ErrorCode)
 				},
 				handle: handleInvalidAvailabilityZoneError,
 			},
@@ -95,8 +95,8 @@ func (h *ResponseErrorHandler) extractErrorCodeAndMessage(err error) (string, st
 	return "", err.Error()
 }
 
-// Handle records the failure against capacityReservationGroupID, or against unreserved
-// capacity when it is empty, so the two never mask each other.
+// Handle scopes capacity failures to capacityReservationGroupID, or to unreserved capacity
+// when it is empty. Unsupported zones apply to every scope.
 func (h *ResponseErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, capacityReservationGroupID string, responseError error) error {
 	for _, handler := range h.HandlerEntries {
 		if handler.match(responseError) {
