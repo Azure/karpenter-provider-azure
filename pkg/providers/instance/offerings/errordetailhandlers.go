@@ -48,7 +48,7 @@ func NewErrorDetailHandler(unavailableOfferings *cache.UnavailableOfferings) *Er
 		HandlerEntries: []errorDetailHandlerEntry{
 			{
 				match: func(detail armcontainerservice.ErrorDetail) bool {
-					return detail.Code != nil && IsUnsupportedAvailabilityZone(*detail.Code)
+					return detail.Code != nil && isUnsupportedAvailabilityZone(*detail.Code)
 				},
 				handle: handleInvalidAvailabilityZoneError,
 			},

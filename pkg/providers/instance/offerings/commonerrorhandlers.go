@@ -237,8 +237,8 @@ func handleSKUNotAvailableError(
 	return corecloudprovider.NewCreateError(err, SKUNotAvailableReason, err.Error())
 }
 
-// IsUnsupportedAvailabilityZone identifies zone-invalidity errors on the instance provisioning APIs.
-func IsUnsupportedAvailabilityZone(code string) bool {
+// isUnsupportedAvailabilityZone identifies zone-invalidity errors on the instance provisioning APIs.
+func isUnsupportedAvailabilityZone(code string) bool {
 	return code == InvalidAvailabilityZoneReason || code == "AvailabilityZoneNotSupported"
 }
 

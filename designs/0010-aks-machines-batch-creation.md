@@ -241,8 +241,6 @@ For batch error codes (`BatchMachineClientError`, `BatchMachineInternalServerErr
 
 For non-batch error codes, the top-level error is distributed to all machines as `HandlableError`. We made an assumption that the top-level contains enough information for the calelr to handle. Can extend later if needed.
 
-An unsupported-zone error (`InvalidAvailabilityZone` or `AvailabilityZoneNotSupported`) is an exception when the batch spans different placements, including a mix of zonal and regional machines. Without per-machine attribution, it is returned as an operational error rather than a `HandlableError`, so callers do not exclude every attempted zone. Same-zone batches and attributed per-machine errors retain normal handling.
-
 Unexpected issues (e.g., parsing) will be treated as operational error rather than API error, thus being distributed through `err` field provided by the generic batcher instead of `HandlableError` defined by `aksmachinesheaderbatch` client.
 
 ##### Error parsing: implementation

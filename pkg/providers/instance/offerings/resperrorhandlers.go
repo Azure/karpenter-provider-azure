@@ -47,7 +47,7 @@ func NewResponseErrorHandler(unavailableOfferings *cache.UnavailableOfferings) *
 			{
 				match: func(err error) bool {
 					var responseError *azcore.ResponseError
-					return errors.As(err, &responseError) && IsUnsupportedAvailabilityZone(responseError.ErrorCode)
+					return errors.As(err, &responseError) && isUnsupportedAvailabilityZone(responseError.ErrorCode)
 				},
 				handle: handleInvalidAvailabilityZoneError,
 			},

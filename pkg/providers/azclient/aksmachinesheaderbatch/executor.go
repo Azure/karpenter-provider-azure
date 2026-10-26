@@ -18,12 +18,9 @@ package aksmachinesheaderbatch
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
@@ -98,17 +95,6 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMac
 		log.FromContext(ctx).V(2).Info(fmt.Sprintf("AKS machines header batch API call returned error: %s", apiError.Error()),
 			"ID", batch.ID)
 
-		var responseError *azcore.ResponseError
-		if errors.As(apiError, &responseError) && offerings.IsUnsupportedAvailabilityZone(responseError.ErrorCode) {
-			// A top-level error cannot identify the rejected placement in a mixed-zone batch.
-			for _, entry := range entries[1:] {
-				if !slices.Equal(entry.Zones, entries[0].Zones) {
-					distributeOperationalError(batch, fmt.Errorf("cannot attribute availability zone rejection to a placement in a mixed-zone batch: %w", apiError))
-					return
-				}
-			}
-		}
-
 		// Extract per-machine errors from the parsed API error.
 		perMachineErrors := make(map[string]*offerings.HandlableError)
 		for _, req := range batch.Requests {
@@ -161,7 +147,7 @@ func distributeSuccess(batch *batcher.Batch[aksMachineCreatePayload, *offerings.
 }
 
 // distributeOperationalError sends the same operational error (via Err) to all requests.
-// Use this for errors that cannot be safely handled per machine, such as parsing or attribution failures.
+// Use this only for errors that are not API responses (e.g., header build failure, parse failure).
 func distributeOperationalError(batch *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError], err error) {
 	for _, req := range batch.Requests {
 		req.ResponseChan <- &batcher.Response[*offerings.HandlableError]{Err: err}
