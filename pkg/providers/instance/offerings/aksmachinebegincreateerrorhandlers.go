@@ -28,6 +28,9 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
+// AKS Machines uses a different code from Compute for unsupported availability zones.
+var aksMachineAvailabilityZoneNotSupportedCode = "AvailabilityZoneNotSupported"
+
 // HandlableError is a code + message pair extracted from an API error response.
 // It is intentionally minimal and API-agnostic. This module decides how to interpret it.
 type HandlableError struct {
@@ -71,7 +74,7 @@ func NewAKSMachineBeginCreateErrorHandler(unavailableOfferings *cache.Unavailabl
 		handlerEntries: []aksMachineBeginCreateErrorHandlerEntry{
 			{
 				match: func(he *HandlableError) bool {
-					return isUnsupportedAvailabilityZone(he.Code)
+					return isAKSMachineUnsupportedAvailabilityZone(he.Code)
 				},
 				handle: handleInvalidAvailabilityZoneError,
 			},
@@ -118,6 +121,11 @@ func handleSKUNotAvailableForSubscriptionError(
 		"VM size %s is not supported for this subscription in this location, for more details please visit: https://aka.ms/aks/vm-size-selector",
 		instanceType.Name)
 	return corecloudprovider.NewCreateError(err, SKUNotAvailableReason, err.Error())
+}
+
+// Match both the AKS-specific code and underlying Compute errors.
+func isAKSMachineUnsupportedAvailabilityZone(code string) bool {
+	return code == aksMachineAvailabilityZoneNotSupportedCode || code == InvalidAvailabilityZoneReason
 }
 
 // For "Virtual Machine size: '%s' is not supported for subscription %s in location '%[3]s'. %s. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location '%[3]s'."

@@ -38,8 +38,9 @@ var (
 	OverconstrainedZonalAllocationFailureReason = "OverconstrainedZonalAllocationFailure"
 	OverconstrainedAllocationFailureReason      = "OverconstrainedAllocationFailure"
 	SKUNotAvailableReason                       = "SKUNotAvailable"
-	InvalidAvailabilityZoneReason               = "InvalidAvailabilityZone"
-	availabilityZoneNotSupportedCode            = "AvailabilityZoneNotSupported"
+	// InvalidAvailabilityZoneReason is the Compute error code and the normalized
+	// reporting reason for unsupported zones from both Compute and AKS Machines.
+	InvalidAvailabilityZoneReason = "InvalidAvailabilityZone"
 
 	// LowQuotaTTL is the TTL for offerings that return a quota error but the quota limit is not 0.
 	// This means there is still some quota available, just not enough to fulfill the current request.
@@ -236,11 +237,6 @@ func handleSKUNotAvailableError(
 		zone,
 		capacityType)
 	return corecloudprovider.NewCreateError(err, SKUNotAvailableReason, err.Error())
-}
-
-// isUnsupportedAvailabilityZone identifies zone-invalidity errors on the instance provisioning APIs.
-func isUnsupportedAvailabilityZone(code string) bool {
-	return code == InvalidAvailabilityZoneReason || code == availabilityZoneNotSupportedCode
 }
 
 var supportedAvailabilityZonesPattern = regexp.MustCompile(`The supported zones for location '[^'\r\n]*' are '([0-9]+(?:[ ,]+[0-9]+)*)'`)

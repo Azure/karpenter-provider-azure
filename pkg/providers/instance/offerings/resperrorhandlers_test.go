@@ -184,22 +184,11 @@ func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableO
 
 func setupTestCases() []responseErrorTestCase {
 	return []responseErrorTestCase{
-		newTestCase("AKS availability zone not supported").
-			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
+		newTestCase("AKS-specific availability zone error is not handled by VM").
+			withInstanceType(zone2OnDemand, regionalOnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError("AvailabilityZoneNotSupported", "The requested availability zone is not supported.").
-			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
-			expectReason(InvalidAvailabilityZoneReason).
-			expectUnavailable(
-				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
-				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
-				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
-			).
-			expectAvailable(
-				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
-				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
-			).
+			expectAvailable(allDefaultTestOfferingInfo()...).
 			build(),
 		newTestCase("Invalid availability zone for on-demand").
 			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
