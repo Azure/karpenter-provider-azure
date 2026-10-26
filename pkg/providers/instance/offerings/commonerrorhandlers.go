@@ -30,6 +30,8 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
+const availabilityZoneNotSupportedCode = "AvailabilityZoneNotSupported"
+
 var (
 	SubscriptionQuotaReachedReason              = "SubscriptionQuotaReached"
 	RegionalQuotaReachedReason                  = "RegionalQuotaReached"
@@ -239,7 +241,7 @@ func handleSKUNotAvailableError(
 
 // isUnsupportedAvailabilityZone identifies zone-invalidity errors on the instance provisioning APIs.
 func isUnsupportedAvailabilityZone(code string) bool {
-	return code == InvalidAvailabilityZoneReason || code == "AvailabilityZoneNotSupported"
+	return code == InvalidAvailabilityZoneReason || code == availabilityZoneNotSupportedCode
 }
 
 var supportedAvailabilityZonesPattern = regexp.MustCompile(`The supported zones for location '[^'\r\n]*' are '([0-9]+(?:[ ,]+[0-9]+)*)'`)
