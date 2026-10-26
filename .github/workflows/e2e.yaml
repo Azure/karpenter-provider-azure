@@ -65,6 +65,7 @@ on:
           - westus3
           - southcentralus
           - eastus
+          - eastus2
           - westus2
           - eastus2euap
           - centraluseuap
