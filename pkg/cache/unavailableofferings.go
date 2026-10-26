@@ -51,7 +51,11 @@ var (
 // until their cache entries expire.
 type UnavailableOfferings struct {
 	mu sync.Mutex
-	// Keys identify a single offering, all Spot offerings, or an unsupported zone.
+	// Key formats (all values are struct{}{}):
+	//   <capacityType>:<instanceType>:<zone> - unreserved offering
+	//   crg:<groupID>:<capacityType>:<instanceType>:<zone> - CRG-scoped offering
+	//   spot:: - all Spot offerings
+	//   zone:<zone> - all SKUs and capacity types in the zone
 	singleOfferingCache *cache.Cache
 	// key: <skuFamilyName>:<zone>:<capacityType> (lowercase), value: int64 (CPU count at or above which we block, or wholeVMFamilyBlockedSentinel if entire family is blocked)
 	vmFamilyCache *cache.Cache
