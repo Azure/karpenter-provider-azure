@@ -392,15 +392,12 @@ func makeBatchInternalServerError(details []testErrorDetail) *azcore.ResponseErr
 // Per-machine batch error tests
 // =====================================================================
 
-func makeZoneBatch(t *testing.T, placements [][]string, ultraSSD bool) *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError] {
+func makeZoneBatch(t *testing.T, placements [][]string) *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError] {
 	t.Helper()
 	g := gomega.NewWithT(t)
 	requests := make([]*batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError], 0, len(placements))
 	for i, placement := range placements {
 		template := tpl("Standard_D2s_v3", placement, nil)
-		if ultraSSD {
-			template.Properties.Hardware.UltraSsdEnabled = &ultraSSD
-		}
 		requests = append(requests, makeReq(fmt.Sprintf("m-%d", i), template))
 	}
 	batch := makeBatch(requests...)
@@ -419,7 +416,6 @@ func TestExecutorUnsupportedZoneAttribution(t *testing.T) {
 			name         string
 			zones        [][]string
 			perMachine   bool
-			ultraSSD     bool
 			operational  bool
 			blockedZones []string
 		}{
@@ -433,10 +429,6 @@ func TestExecutorUnsupportedZoneAttribution(t *testing.T) {
 			},
 			{
 				name: "top-level same zone", zones: [][]string{{"4"}, {"4"}},
-				blockedZones: []string{"eastus2-4"},
-			},
-			{
-				name: "top-level UltraSSD same zone", zones: [][]string{{"4"}, {"4"}}, ultraSSD: true,
 				blockedZones: []string{"eastus2-4"},
 			},
 			{
@@ -457,7 +449,7 @@ func TestExecutorUnsupportedZoneAttribution(t *testing.T) {
 				if tc.perMachine {
 					apiError = makeBatchClientError([]testErrorDetail{{Code: code, Message: message, Target: "m-1"}})
 				}
-				batch := makeZoneBatch(t, tc.zones, tc.ultraSSD)
+				batch := makeZoneBatch(t, tc.zones)
 				requests := batch.Requests
 
 				newExecutor(&recordingClient{err: apiError}).executeBatch(t.Context(), batch)

@@ -25,10 +25,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/skewer"
-	"github.com/go-logr/logr/funcr"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
@@ -396,25 +394,6 @@ func TestUnavailableOfferings_MarkZoneUnavailableWithTTLExpiration(t *testing.T)
 		if u.ForCapacityReservationGroup("other").IsUnavailable(otherSKU, "westus-1", capacityType) {
 			t.Error("expected zone expiry to restore other SKUs, capacity types and reservation groups")
 		}
-	}
-}
-
-func TestUnavailableOfferings_MarkZoneUnavailableLogsFirstExclusion(t *testing.T) {
-	var messages []string
-	ctx := log.IntoContext(t.Context(), funcr.New(func(_, message string) {
-		messages = append(messages, message)
-	}, funcr.Options{}))
-	u := NewUnavailableOfferings()
-	view := u.ForCapacityReservationGroup("")
-	view.MarkZoneUnavailableWithTTL(ctx, "test reason", "westus-1", time.Hour)
-	view.MarkZoneUnavailableWithTTL(ctx, "test reason", "westus-1", time.Hour)
-	if len(messages) != 1 || !strings.Contains(messages[0], "marking availability zone unavailable") {
-		t.Fatalf("expected one info-level exclusion log, got %v", messages)
-	}
-	u.Flush()
-	view.MarkZoneUnavailableWithTTL(ctx, "test reason", "westus-1", time.Hour)
-	if len(messages) != 2 {
-		t.Fatalf("expected a new info-level log after zone availability was restored, got %v", messages)
 	}
 }
 

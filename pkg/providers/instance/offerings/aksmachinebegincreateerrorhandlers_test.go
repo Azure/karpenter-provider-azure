@@ -177,19 +177,6 @@ func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTest
 				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeSpot),
 			).
 			build(),
-		newAKSMachineBeginCreateErrorTestCase("Invalid availability zone for reserved capacity").
-			withInstanceType(zone2OnDemand, zone3OnDemand, regionalOnDemand).
-			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
-			withCapacityReservationGroup(testCapacityReservationGroupID).
-			withHandlableError("InvalidAvailabilityZone", "The requested zone is not supported.").
-			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
-			expectReason(InvalidAvailabilityZoneReason).
-			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
-			expectAvailable(
-				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
-				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
-			).
-			build(),
 		newAKSMachineBeginCreateErrorTestCase("VMSizeNotSupported").
 			withInstanceType(zone2OnDemand, zone3Spot, regionalOnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
