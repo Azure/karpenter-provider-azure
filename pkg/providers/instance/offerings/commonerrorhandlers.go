@@ -30,8 +30,6 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-const availabilityZoneNotSupportedCode = "AvailabilityZoneNotSupported"
-
 var (
 	SubscriptionQuotaReachedReason              = "SubscriptionQuotaReached"
 	RegionalQuotaReachedReason                  = "RegionalQuotaReached"
@@ -41,6 +39,7 @@ var (
 	OverconstrainedAllocationFailureReason      = "OverconstrainedAllocationFailure"
 	SKUNotAvailableReason                       = "SKUNotAvailable"
 	InvalidAvailabilityZoneReason               = "InvalidAvailabilityZone"
+	availabilityZoneNotSupportedCode            = "AvailabilityZoneNotSupported"
 
 	// LowQuotaTTL is the TTL for offerings that return a quota error but the quota limit is not 0.
 	// This means there is still some quota available, just not enough to fulfill the current request.
