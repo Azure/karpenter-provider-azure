@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 )
 
@@ -46,7 +47,7 @@ func TestUtilization(t *testing.T) {
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()
-	nodeClass = env.DefaultAKSNodeClass()
+	nodeClass = azkarptest.AKSNodeClass()
 	nodePool = env.DefaultNodePool(nodeClass)
 })
 
@@ -56,7 +57,7 @@ var _ = AfterEach(func() { env.AfterEach() })
 var _ = Describe("Utilization", func() {
 	DescribeTable("should provision one pod per node",
 		func(imageFamily string, arch string) {
-			nodeClass := env.DefaultAKSNodeClass()
+			nodeClass := azkarptest.AKSNodeClass()
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			nodePool := lo.Ternary(arch == karpv1.ArchitectureAmd64, env.DefaultNodePool(nodeClass), env.ArmNodepool(nodeClass))
 			ExpectProvisionPodPerNode(nodeClass, nodePool)
