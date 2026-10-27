@@ -70,7 +70,7 @@ var _ = Describe("Repair Policy", func() {
 		selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 	})
 
-	// Core clamps backdated transitions to node creation, so Ready repairs still wait for the node to be 10 minutes old.
+	// Use conditions that kubelet does not own so the real signal producer cannot overwrite synthetic test state.
 	DescribeTable("Conditions", func(unhealthyCondition corev1.NodeCondition) {
 		env.ExpectCreated(nodeClass, nodePool, dep)
 		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
@@ -82,16 +82,6 @@ var _ = Describe("Repair Policy", func() {
 		env.EventuallyExpectNotFound(pod, node)
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 	},
-		Entry("Node Ready False", corev1.NodeCondition{
-			Type:               corev1.NodeReady,
-			Status:             corev1.ConditionFalse,
-			LastTransitionTime: metav1.Time{Time: time.Now().Add(-11 * time.Minute)},
-		}),
-		Entry("Node Ready Unknown", corev1.NodeCondition{
-			Type:               corev1.NodeReady,
-			Status:             corev1.ConditionUnknown,
-			LastTransitionTime: metav1.Time{Time: time.Now().Add(-11 * time.Minute)},
-		}),
 		Entry("Node Healthy False", corev1.NodeCondition{
 			Type:               corev1.NodeConditionType("kubernetes.azure.com/NodeHealthy"),
 			Status:             corev1.ConditionFalse,

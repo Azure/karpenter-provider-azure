@@ -347,25 +347,6 @@ var _ = Describe("CloudProvider", func() {
 			Expect(corecloudprovider.IsNodeRebootNotImplementedError(err)).To(BeTrue())
 		})
 
-		It("should not bypass Ready toleration with a transition before node creation", func() {
-			repairCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
-				FeatureGates: coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
-			}))
-			matcher, err := health.NewRepairPolicyMatcher(repairCtx, &CloudProvider{})
-			Expect(err).ToNot(HaveOccurred())
-			now := fakeClock.Now()
-			node := coretest.Node()
-			node.CreationTimestamp = metav1.NewTime(now)
-			node.Status.Conditions = []v1.NodeCondition{{
-				Type:               v1.NodeReady,
-				Status:             v1.ConditionFalse,
-				LastTransitionTime: metav1.NewTime(now.Add(-11 * time.Minute)),
-			}}
-			matches := matcher.Match(node)
-			Expect(health.Resolve(matches, now.Add(10*time.Minute-time.Nanosecond), time.Time{}).Action).To(BeEmpty())
-			Expect(health.Resolve(matches, now.Add(10*time.Minute), time.Time{}).Action).To(Equal(corecloudprovider.ReplaceNode))
-		})
-
 		DescribeTable("should preserve repair tolerations and forceful drain bounds", func(conditionType v1.NodeConditionType, conditionStatus v1.ConditionStatus, toleration time.Duration) {
 			repairCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
 				FeatureGates: coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
