@@ -162,11 +162,10 @@ var _ = Describe("Unit tests", func() {
 			Expect(hash1).ToNot(Equal(hash2))
 
 			// Hash should be the same with the same NodeClass tags
-			nodeClass2 := test.AKSNodeClass()
-			nodeClass2.Spec.Tags = map[string]string{
-				"nodeclass-tag1": "nodeclass-value",
-				"nodeclass-tag2": "nodeclass-value",
-			}
+			nodeClass2 := test.AKSNodeClass(test.WithTags(
+				"nodeclass-tag1", "nodeclass-value",
+				"nodeclass-tag2", "nodeclass-value",
+			))
 			hash3, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nodeClass2)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(hash1).To(Equal(hash3))

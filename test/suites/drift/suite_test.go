@@ -61,7 +61,7 @@ func TestDrift(t *testing.T) {
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()
-	nodeClass = env.DefaultAKSNodeClass()
+	nodeClass = test.AKSNodeClass()
 	nodePool = env.DefaultNodePool(nodeClass)
 })
 var _ = AfterEach(func() { env.Cleanup() })
@@ -441,7 +441,7 @@ var _ = Describe("Drift", func() {
 		}),
 	)
 	DescribeTable("AKSNodeClass", func(nodeClassSpec v1beta1.AKSNodeClassSpec) {
-		updatedNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *nodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: nodeClassSpec})
+		updatedNodeClass := test.AKSNodeClass(test.WithMergedSpec(nodeClass.Spec), test.WithMergedSpec(nodeClassSpec))
 		updatedNodeClass.ObjectMeta = nodeClass.ObjectMeta
 
 		env.ExpectCreated(dep, nodeClass, nodePool)
@@ -481,10 +481,10 @@ var _ = Describe("Drift", func() {
 
 		DescribeTable("AKSNodeClass FIPS", func(initialNodeClassSpec, updatedNodeClassSpec v1beta1.AKSNodeClassSpec) {
 			// Apply initial modifications to ensure we start with the right base state
-			initialNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *nodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: initialNodeClassSpec})
+			initialNodeClass := test.AKSNodeClass(test.WithMergedSpec(nodeClass.Spec), test.WithMergedSpec(initialNodeClassSpec))
 			initialNodeClass.ObjectMeta = nodeClass.ObjectMeta
 
-			updatedNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *initialNodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: updatedNodeClassSpec})
+			updatedNodeClass := test.AKSNodeClass(test.WithMergedSpec(initialNodeClass.Spec), test.WithMergedSpec(updatedNodeClassSpec))
 			updatedNodeClass.ObjectMeta = nodeClass.ObjectMeta
 
 			env.ExpectCreated(dep, initialNodeClass, nodePool)
@@ -545,7 +545,7 @@ var _ = Describe("Drift", func() {
 		})
 
 		It("should drift a Windows node when the NodePool template changes", func() {
-			windowsNodeClass := env.WindowsNodeClass(v1beta1.Windows2022ImageFamily)
+			windowsNodeClass := test.AKSNodeClass(test.WithImageFamily(v1beta1.Windows2022ImageFamily))
 			windowsNodePool := env.WindowsNodePool(windowsNodeClass)
 
 			env.ExpectCreated(windowsDep, windowsNodeClass, windowsNodePool)
@@ -574,7 +574,7 @@ var _ = Describe("Drift", func() {
 		// changed. Windows pins its node image at create time, so a mismatch between the pinned
 		// value and what the NodeClass reports would otherwise drift every Windows node forever.
 		It("should not drift a Windows node when nothing changes", func() {
-			windowsNodeClass := env.WindowsNodeClass(v1beta1.Windows2022ImageFamily)
+			windowsNodeClass := test.AKSNodeClass(test.WithImageFamily(v1beta1.Windows2022ImageFamily))
 			windowsNodePool := env.WindowsNodePool(windowsNodeClass)
 
 			env.ExpectCreated(windowsDep, windowsNodeClass, windowsNodePool)
