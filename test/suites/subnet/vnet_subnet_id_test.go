@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/ginkgo/v2"
@@ -241,7 +242,7 @@ var _ = Describe("Subnets", func() {
 			Skip("Skipping test: cluster uses managed VNet, custom subnets in managed VNets are blocked")
 		}
 
-		newNodeClass := env.DefaultAKSNodeClass()
+		newNodeClass := azkarptest.AKSNodeClass()
 		newNodepool := env.DefaultNodePool(newNodeClass)
 		newNodepool.Spec.Weight = lo.ToPtr(int32(10))
 
