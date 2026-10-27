@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
@@ -51,7 +52,7 @@ func TestSpot(t *testing.T) {
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()
-	nodeClass = env.DefaultAKSNodeClass()
+	nodeClass = azkarptest.AKSNodeClass()
 	nodePool = env.DefaultNodePool(nodeClass)
 })
 var _ = AfterEach(func() { env.Cleanup() })

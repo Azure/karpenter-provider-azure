@@ -29,8 +29,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	. "github.com/onsi/gomega"
 )
 
 type capturingTransport struct {
@@ -58,24 +57,25 @@ func (t *capturingTransport) Do(req *http.Request) (*http.Response, error) {
 
 func TestNewAKSMachinesClientSupportsOptInListExpansion(t *testing.T) {
 	t.Parallel()
+	g := NewWithT(t)
 
 	transport := &capturingTransport{}
 	options := &arm.ClientOptions{}
 	options.Transport = transport
 
 	client, err := newAKSMachinesClient("subscription", fakeCredential{}, options)
-	require.NoError(t, err)
+	g.Expect(err).ToNot(HaveOccurred())
 
 	_, err = client.NewListPager("resource-group", "cluster", "pool", nil).NextPage(context.Background())
-	require.NoError(t, err)
-	require.NotNil(t, transport.request)
-	assert.Empty(t, transport.request.URL.Query().Get("$expand"))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(transport.request).ToNot(BeNil())
+	g.Expect(transport.request.URL.Query().Get("$expand")).To(BeEmpty())
 
 	_, err = client.NewListPager("resource-group", "cluster", "pool", nil).NextPage(azapi.WithAKSMachineVMStateExpansion(context.Background()))
-	require.NoError(t, err)
-	require.NotNil(t, transport.request)
-	assert.Equal(t, "properties.status.vmState", transport.request.URL.Query().Get("$expand"))
-	assert.Empty(t, options.PerCallPolicies)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(transport.request).ToNot(BeNil())
+	g.Expect(transport.request.URL.Query().Get("$expand")).To(Equal("properties.status.vmState"))
+	g.Expect(options.PerCallPolicies).To(BeEmpty())
 }
 
 func TestMachinesListExpandPolicy(t *testing.T) {
@@ -124,6 +124,7 @@ func TestMachinesListExpandPolicy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			g := NewWithT(t)
 
 			transport := &capturingTransport{}
 			pipeline := runtime.NewPipeline("", "", runtime.PipelineOptions{}, &policy.ClientOptions{
@@ -135,13 +136,13 @@ func TestMachinesListExpandPolicy(t *testing.T) {
 				ctx = azapi.WithAKSMachineVMStateExpansion(ctx)
 			}
 			req, err := runtime.NewRequest(ctx, tt.method, tt.url)
-			require.NoError(t, err)
+			g.Expect(err).ToNot(HaveOccurred())
 
 			_, err = pipeline.Do(req)
-			require.NoError(t, err)
-			require.NotNil(t, transport.request)
-			assert.Equal(t, tt.expectedExpand, transport.request.URL.Query().Get("$expand"))
-			assert.Equal(t, "2026-06-02-preview", transport.request.URL.Query().Get("api-version"))
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(transport.request).ToNot(BeNil())
+			g.Expect(transport.request.URL.Query().Get("$expand")).To(Equal(tt.expectedExpand))
+			g.Expect(transport.request.URL.Query().Get("api-version")).To(Equal("2026-06-02-preview"))
 		})
 	}
 }

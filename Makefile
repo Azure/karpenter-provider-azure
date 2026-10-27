@@ -143,7 +143,7 @@ codegen-pricing: ## Generate pricing data -- if regenerating, all subs should ha
 codegen-locations: ## Generate locations data
 	./hack/codegen.sh locations
 
-codegen-skugen: ## Generate SKU test fakes
+codegen-skugen: ## Generate SKU test fakes - recommended to use the ACS - Test (Standalone) subscription for this
 	./hack/codegen.sh skugen
 
 codegen-allazureskus: ## Generate all Azure VM SKU names

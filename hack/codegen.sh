@@ -64,7 +64,9 @@ gen-allazureskus() {
 }
 
 skugen-all() {
-  AZURE_SUBSCRIPTION_ID=$(az account show --query 'id' --output tsv)
+  if [ -z "${AZURE_SUBSCRIPTION_ID:-}" ]; then
+    AZURE_SUBSCRIPTION_ID=$(az account show --query 'id' --output tsv)
+  fi
   export AZURE_SUBSCRIPTION_ID
   if [ -z "${AZURE_SUBSCRIPTION_ID}" ]; then
     echo "No subscription is set. Please login and set a subscription."
