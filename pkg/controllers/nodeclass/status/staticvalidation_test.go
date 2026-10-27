@@ -492,6 +492,102 @@ var _ = Describe("Validation Reconciler", func() {
 		)
 	})
 
+	Context("localDNS forward health knobs provision mode validation", func() {
+		withKnobs := func(vnetRoot, kubeClusterLocal func(*v1beta1.LocalDNSZoneOverride)) *v1beta1.LocalDNS {
+			vnet := []v1beta1.LocalDNSZoneOverride{createZoneOverride(".", true), createZoneOverride("cluster.local", false)}
+			kube := []v1beta1.LocalDNSZoneOverride{createZoneOverride(".", false), createZoneOverride("cluster.local", false)}
+			vnetRoot(&vnet[0])
+			kubeClusterLocal(&kube[1])
+			return &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired, VnetDNSOverrides: vnet, KubeDNSOverrides: kube}
+		}
+		none := func(*v1beta1.LocalDNSZoneOverride) {}
+		failfast := func(o *v1beta1.LocalDNSZoneOverride) { o.FailfastAllUnhealthyUpstreams = lo.ToPtr(true) }
+		healthCheck := func(o *v1beta1.LocalDNSZoneOverride) {
+			o.HealthCheck = &v1beta1.LocalDNSHealthCheck{Duration: karpv1.MustParseNillableDuration("5s")}
+		}
+
+		BeforeEach(func() {
+			nodeClass.Spec.LocalDNS = withKnobs(failfast, healthCheck)
+		})
+
+		DescribeTable("should reject provision modes that do not support the forward health knobs",
+			func(provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(status.LocalDNSHealthKnobsUnsupportedProvisionMode))
+				Expect(condition.Message).To(ContainSubstring(provisionMode))
+				Expect(condition.Message).To(ContainSubstring(consts.ProvisionModeBootstrappingClient))
+			},
+			Entry("aksscriptless", consts.ProvisionModeAKSScriptless),
+			Entry("aksmachineapi", consts.ProvisionModeAKSMachineAPI),
+			Entry("aksmachineapiheaderbatch", consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
+
+		DescribeTable("should reject each knob on its own, in either override list",
+			func(localDNS *v1beta1.LocalDNS) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeAKSMachineAPI})
+				nodeClass.Spec.LocalDNS = localDNS
+
+				_, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(status.LocalDNSHealthKnobsUnsupportedProvisionMode))
+			},
+			Entry("failfastAllUnhealthyUpstreams in vnetDNSOverrides", withKnobs(failfast, none)),
+			Entry("failfastAllUnhealthyUpstreams in kubeDNSOverrides", withKnobs(none, failfast)),
+			Entry("healthCheck in vnetDNSOverrides", withKnobs(healthCheck, none)),
+			Entry("healthCheck in kubeDNSOverrides", withKnobs(none, healthCheck)),
+		)
+
+		It("should accept the forward health knobs in the bootstrappingclient provision mode", func() {
+			ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeBootstrappingClient})
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+
+		It("should clear the failure after the knobs are removed", func() {
+			ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeAKSMachineAPI})
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsFalse()).To(BeTrue())
+
+			nodeClass.Spec.LocalDNS = withKnobs(none, none)
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+
+		DescribeTable("should not restrict configurations that do not set a forward health knob",
+			func(provisionMode string) {
+				explicitFalse := func(o *v1beta1.LocalDNSZoneOverride) { o.FailfastAllUnhealthyUpstreams = lo.ToPtr(false) }
+				for _, localDNS := range []*v1beta1.LocalDNS{nil, withKnobs(none, none), withKnobs(explicitFalse, explicitFalse)} {
+					ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+					nodeClass.Spec.LocalDNS = localDNS
+
+					result, err := reconciler.Reconcile(ctx, nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+					Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+				}
+			},
+			Entry("aksscriptless", consts.ProvisionModeAKSScriptless),
+			Entry("bootstrappingclient", consts.ProvisionModeBootstrappingClient),
+			Entry("aksmachineapi", consts.ProvisionModeAKSMachineAPI),
+			Entry("aksmachineapiheaderbatch", consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
+	})
+
 	Context("cluster-level FIPS validation", func() {
 		BeforeEach(func() {
 			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{EnableFIPS: lo.ToPtr(true)}))

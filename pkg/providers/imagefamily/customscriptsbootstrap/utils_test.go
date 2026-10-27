@@ -331,25 +331,35 @@ func TestConvertLocalDNSZoneOverrideToModel(t *testing.T) {
 		{
 			name: "Override with all fields",
 			override: &v1beta1.LocalDNSZoneOverride{
-				Zone:               "example.com",
-				QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-				Protocol:           v1beta1.LocalDNSProtocolForceTCP,
-				ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
-				ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-				MaxConcurrent:      lo.ToPtr(int32(50)),
-				CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-				ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-				ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+				Zone:                          "example.com",
+				QueryLogging:                  v1beta1.LocalDNSQueryLoggingError,
+				Protocol:                      v1beta1.LocalDNSProtocolForceTCP,
+				ForwardDestination:            v1beta1.LocalDNSForwardDestinationVnetDNS,
+				ForwardPolicy:                 v1beta1.LocalDNSForwardPolicySequential,
+				MaxConcurrent:                 lo.ToPtr(int32(50)),
+				CacheDuration:                 karpv1.MustParseNillableDuration("1h"),
+				ServeStaleDuration:            karpv1.MustParseNillableDuration("30m"),
+				ServeStale:                    v1beta1.LocalDNSServeStaleVerify,
+				FailfastAllUnhealthyUpstreams: lo.ToPtr(true),
+				HealthCheck: &v1beta1.LocalDNSHealthCheck{
+					Duration: karpv1.MustParseNillableDuration("5s"),
+					NoRec:    lo.ToPtr(true),
+				},
 			},
 			expected: &models.LocalDNSOverride{
-				QueryLogging:                lo.ToPtr("Error"),
-				Protocol:                    lo.ToPtr("ForceTCP"),
-				ForwardDestination:          lo.ToPtr("VnetDNS"),
-				ForwardPolicy:               lo.ToPtr("Sequential"),
-				MaxConcurrent:               lo.ToPtr(int32(50)),
-				CacheDurationInSeconds:      lo.ToPtr(int32(3600)), // 1 hour = 3600 seconds
-				ServeStaleDurationInSeconds: lo.ToPtr(int32(1800)), // 30 minutes = 1800 seconds
-				ServeStale:                  lo.ToPtr("Verify"),
+				QueryLogging:                  lo.ToPtr("Error"),
+				Protocol:                      lo.ToPtr("ForceTCP"),
+				ForwardDestination:            lo.ToPtr("VnetDNS"),
+				ForwardPolicy:                 lo.ToPtr("Sequential"),
+				MaxConcurrent:                 lo.ToPtr(int32(50)),
+				CacheDurationInSeconds:        lo.ToPtr(int32(3600)), // 1 hour = 3600 seconds
+				ServeStaleDurationInSeconds:   lo.ToPtr(int32(1800)), // 30 minutes = 1800 seconds
+				ServeStale:                    lo.ToPtr("Verify"),
+				FailfastAllUnhealthyUpstreams: lo.ToPtr(true),
+				HealthCheck: &models.LocalDNSHealthCheck{
+					Duration: lo.ToPtr("5s"),
+					NoRec:    lo.ToPtr(true),
+				},
 			},
 		},
 		{
@@ -411,6 +421,68 @@ func TestConvertLocalDNSZoneOverrideToModel(t *testing.T) {
 			},
 			expected: &models.LocalDNSOverride{
 				MaxConcurrent: lo.ToPtr(int32(200)),
+			},
+		},
+		{
+			name: "Override with healthCheck duration only",
+			override: &v1beta1.LocalDNSZoneOverride{
+				Zone: "example.com",
+				HealthCheck: &v1beta1.LocalDNSHealthCheck{
+					Duration: karpv1.MustParseNillableDuration("5s"),
+				},
+			},
+			expected: &models.LocalDNSOverride{
+				HealthCheck: &models.LocalDNSHealthCheck{
+					Duration: lo.ToPtr("5s"),
+				},
+			},
+		},
+		{
+			// time.Duration.String() normalizes, so the value the RP receives is not always the
+			// string the author wrote. The RP parses it with time.ParseDuration, which accepts both.
+			name: "Override with compound healthCheck duration",
+			override: &v1beta1.LocalDNSZoneOverride{
+				Zone: "example.com",
+				HealthCheck: &v1beta1.LocalDNSHealthCheck{
+					Duration: karpv1.MustParseNillableDuration("1h30m"),
+				},
+			},
+			expected: &models.LocalDNSOverride{
+				HealthCheck: &models.LocalDNSHealthCheck{
+					Duration: lo.ToPtr("1h30m0s"),
+				},
+			},
+		},
+		{
+			// A health check with no duration must not reach the RP at all: it would fail the RP's
+			// required-duration validation and turn a no-op into a provisioning failure. This also
+			// covers the nil *time.Duration that would panic an unguarded String() call.
+			name: "Override with healthCheck but no duration",
+			override: &v1beta1.LocalDNSZoneOverride{
+				Zone:        "example.com",
+				HealthCheck: &v1beta1.LocalDNSHealthCheck{NoRec: lo.ToPtr(true)},
+			},
+			expected: &models.LocalDNSOverride{},
+		},
+		{
+			// Explicit false must survive the hop; only nil means "unset".
+			name: "Override with failfastAllUnhealthyUpstreams false",
+			override: &v1beta1.LocalDNSZoneOverride{
+				Zone:                          "example.com",
+				FailfastAllUnhealthyUpstreams: lo.ToPtr(false),
+			},
+			expected: &models.LocalDNSOverride{
+				FailfastAllUnhealthyUpstreams: lo.ToPtr(false),
+			},
+		},
+		{
+			name: "Override with neither health knob set",
+			override: &v1beta1.LocalDNSZoneOverride{
+				Zone:         "example.com",
+				QueryLogging: v1beta1.LocalDNSQueryLoggingError,
+			},
+			expected: &models.LocalDNSOverride{
+				QueryLogging: lo.ToPtr("Error"),
 			},
 		},
 	}
