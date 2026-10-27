@@ -27,6 +27,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
@@ -120,7 +121,8 @@ func generatePricing(filePath string) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	fmt.Fprintf(src, "// generated at %s\n\n\n", now)
 	fmt.Fprintf(src, "var InitialPriceUpdate, _ = time.Parse(time.RFC3339, \"%s\")\n", now)
-	fmt.Fprintln(src, "var initialOnDemandPrices = map[string]map[string]float64{}")
+	fmt.Fprintln(src, "var initialBaseOnDemandPrices = map[string]map[string]float64{}")
+	fmt.Fprintln(src, "var initialWindowsOnDemandPrices = map[string]map[string]float64{}")
 	fmt.Fprintln(src, "func init() {")
 
 	// Pin cloud to public for now
@@ -129,13 +131,13 @@ func generatePricing(filePath string) {
 	// Fetch prices for each region concurrently
 	type regionResult struct {
 		region         string
-		onDemandPrices map[string]float64
+		onDemandPrices pricing.Prices
 	}
 	resultsChan := make(chan regionResult, len(regions))
 	for _, region := range regions {
 		log.Println("fetching pricing data in region", region)
 		go func(region string) {
-			var onDemandPrices map[string]float64
+			var onDemandPrices pricing.Prices
 			var err error
 			for attempt := range 10 {
 				onDemandPrices, _, err = pricing.FetchPricing(ctx, pricingAPI, region)
@@ -148,29 +150,38 @@ func generatePricing(filePath string) {
 			if err != nil {
 				log.Fatalf("failed to fetch pricing for region %s after 10 attempts: %v", region, err)
 			}
-			log.Printf("fetched pricing for region %s (%d instance types)\n", region, len(onDemandPrices))
+			log.Printf("fetched pricing for region %s (%d prices)\n", region, onDemandPrices.Len())
 			resultsChan <- regionResult{region: region, onDemandPrices: onDemandPrices}
 		}(region)
 	}
 
 	// Collect results
-	resultsByRegion := map[string]map[string]float64{}
+	resultsByRegion := map[string]pricing.Prices{}
 	for range regions {
 		r := <-resultsChan
 		resultsByRegion[r.region] = r.onDemandPrices
 	}
 
 	// Write output in deterministic order
+	products := []struct {
+		variableName string
+		product      pricing.BillingProduct
+	}{
+		{variableName: "initialBaseOnDemandPrices", product: pricing.BillingProductBaseCompute},
+		{variableName: "initialWindowsOnDemandPrices", product: pricing.BillingProductWindowsIncluded},
+	}
 	for _, region := range regions {
-		log.Println("writing output for", region)
-		onDemandPrices := resultsByRegion[region]
-		instanceTypes := lo.Keys(onDemandPrices)
-		sort.Strings(instanceTypes)
+		for _, output := range products {
+			log.Printf("writing %s output for %s", output.product, region)
+			onDemandPrices := resultsByRegion[region].For(output.product)
+			instanceTypes := lo.Keys(onDemandPrices)
+			sort.Strings(instanceTypes)
 
-		writePricing(src, instanceTypes, region, func(instanceType string) (float64, bool) {
-			price, ok := onDemandPrices[instanceType]
-			return price, ok
-		})
+			writePricing(src, output.variableName, instanceTypes, region, func(instanceType string) (float64, bool) {
+				price, ok := onDemandPrices[instanceType]
+				return price, ok
+			})
+		}
 	}
 	fmt.Fprintln(src, "}")
 	formatted, err := format.Source(src.Bytes())
@@ -191,9 +202,18 @@ func generatePricing(filePath string) {
 	log.Printf("successfully generated pricing file: \"%s\"\n", filePath)
 }
 
-func writePricing(src *bytes.Buffer, instanceNames []string, region string, getPrice func(instanceType string) (float64, bool)) {
+func formatPrice(price float64) string {
+	formatted := strconv.FormatFloat(price, 'f', 6, 64)
+	parsed, err := strconv.ParseFloat(formatted, 64)
+	if err == nil && parsed == price {
+		return formatted
+	}
+	return strconv.FormatFloat(price, 'g', -1, 64)
+}
+
+func writePricing(src *bytes.Buffer, variableName string, instanceNames []string, region string, getPrice func(instanceType string) (float64, bool)) {
 	fmt.Fprintf(src, "// %s\n", region)
-	fmt.Fprintf(src, "initialOnDemandPrices[%q] = map[string]float64{\n", region)
+	fmt.Fprintf(src, "%s[%q] = map[string]float64{\n", variableName, region)
 	sort.Strings(instanceNames)
 	for _, instanceName := range instanceNames {
 		price, ok := getPrice(instanceName)
@@ -202,7 +222,7 @@ func writePricing(src *bytes.Buffer, instanceNames []string, region string, getP
 		}
 
 		// TODO: look at grouping by families to make the generated output nicer
-		_, err := fmt.Fprintf(src, "\"%s\":%f, \n", instanceName, price)
+		_, err := fmt.Fprintf(src, "\"%s\":%s, \n", instanceName, formatPrice(price))
 		if err != nil {
 			log.Fatalf("error writing, %s", err)
 		}

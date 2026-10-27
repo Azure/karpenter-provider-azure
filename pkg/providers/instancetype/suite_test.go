@@ -82,6 +82,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
@@ -3326,7 +3327,7 @@ var _ = Describe("InstanceType Provider", func() {
 				})
 
 				// Verify this SKU has no known pricing
-				price, known := azureEnv.PricingProvider.OnDemandPrice("Standard_D2_v2_Promo")
+				price, known := azureEnv.PricingProvider.OnDemandPrice("Standard_D2_v2_Promo", pricing.BillingProductBaseCompute)
 				Expect(known).To(BeFalse(), "Standard_D2_v2_Promo should not have known pricing")
 				Expect(price).To(BeNumerically("==", pricing.MissingPrice))
 
@@ -3437,6 +3438,55 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		Context("Caching", func() {
+			It("should invalidate instance type cache when pricing data changes", func() {
+				const instanceTypeName = "Standard_D2_v3"
+				findInstanceType := func(instanceTypes []*corecloudprovider.InstanceType) *corecloudprovider.InstanceType {
+					instanceType, ok := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+						return instanceType.Name == instanceTypeName
+					})
+					Expect(ok).To(BeTrue())
+					return instanceType
+				}
+				findOnDemandPrice := func(instanceType *corecloudprovider.InstanceType) float64 {
+					offering, ok := lo.Find(instanceType.Offerings, func(offering *corecloudprovider.Offering) bool {
+						return offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand)
+					})
+					Expect(ok).To(BeTrue())
+					return offering.Price
+				}
+
+				azureEnv.PricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
+					Items: []client.Item{fake.NewProductPrice(instanceTypeName, 1.20)},
+				})
+				azureEnv.PricingProvider.Update(ctx)
+				firstSequence := azureEnv.PricingProvider.SeqNum()
+				firstList, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				firstInstanceType := findInstanceType(firstList)
+				Expect(findOnDemandPrice(firstInstanceType)).To(Equal(1.20))
+				Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
+
+				azureEnv.PricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
+					Items: []client.Item{fake.NewProductPrice(instanceTypeName, 1.30)},
+				})
+				azureEnv.PricingProvider.Update(ctx)
+				Expect(azureEnv.PricingProvider.SeqNum()).To(Equal(firstSequence + 1))
+				secondList, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				secondInstanceType := findInstanceType(secondList)
+				Expect(secondInstanceType).ToNot(BeIdenticalTo(firstInstanceType))
+				Expect(findOnDemandPrice(secondInstanceType)).To(Equal(1.30))
+				Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
+
+				azureEnv.PricingProvider.Update(ctx)
+				Expect(azureEnv.PricingProvider.SeqNum()).To(Equal(firstSequence + 1))
+				thirdList, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				thirdInstanceType := findInstanceType(thirdList)
+				Expect(thirdInstanceType).To(BeIdenticalTo(secondInstanceType))
+				Expect(findOnDemandPrice(thirdInstanceType)).To(Equal(1.30))
+			})
+
 			It("should isolate resolved disk profiles and kubelet overrides in cached instance types", func() {
 				cases := []struct {
 					name             string
