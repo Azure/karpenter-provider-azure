@@ -492,6 +492,123 @@ var _ = Describe("Validation Reconciler", func() {
 		)
 	})
 
+	Context("kubelet override provision mode validation", func() {
+		DescribeTable("should validate each restricted kubelet override field across all provision modes",
+			func(kubelet *v1beta1.KubeletConfiguration, field, provisionMode string, supported bool) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+				nodeClass.Spec.Kubelet = kubelet
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				if supported {
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+					Expect(condition.IsTrue()).To(BeTrue())
+					return
+				}
+
+				Expect(result).To(Equal(reconcile.Result{}))
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(status.KubeletOverridesUnsupportedProvisionMode))
+				Expect(condition.Message).To(Equal(fmt.Sprintf(
+					"kubelet override fields [%s] are not supported with provision-mode %q",
+					field,
+					provisionMode,
+				)))
+			},
+			Entry("kubeReserved on aksscriptless", &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250))}}, "spec.kubelet.kubeReserved", consts.ProvisionModeAKSScriptless, false),
+			Entry("kubeReserved on bootstrappingclient", &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250))}}, "spec.kubelet.kubeReserved", consts.ProvisionModeBootstrappingClient, false),
+			Entry("kubeReserved on aksmachineapi", &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250))}}, "spec.kubelet.kubeReserved", consts.ProvisionModeAKSMachineAPI, true),
+			Entry("kubeReserved on aksmachineapiheaderbatch", &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250))}}, "spec.kubelet.kubeReserved", consts.ProvisionModeAKSMachineAPIHeaderBatch, true),
+			Entry("evictionHard on aksscriptless", &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")}}, "spec.kubelet.evictionHard", consts.ProvisionModeAKSScriptless, false),
+			Entry("evictionHard on bootstrappingclient", &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")}}, "spec.kubelet.evictionHard", consts.ProvisionModeBootstrappingClient, false),
+			Entry("evictionHard on aksmachineapi", &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")}}, "spec.kubelet.evictionHard", consts.ProvisionModeAKSMachineAPI, true),
+			Entry("evictionHard on aksmachineapiheaderbatch", &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")}}, "spec.kubelet.evictionHard", consts.ProvisionModeAKSMachineAPIHeaderBatch, true),
+			Entry("evictionSoft on aksscriptless", &v1beta1.KubeletConfiguration{EvictionSoft: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")}}, "spec.kubelet.evictionSoft", consts.ProvisionModeAKSScriptless, false),
+			Entry("evictionSoft on bootstrappingclient", &v1beta1.KubeletConfiguration{EvictionSoft: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")}}, "spec.kubelet.evictionSoft", consts.ProvisionModeBootstrappingClient, false),
+			Entry("evictionSoft on aksmachineapi", &v1beta1.KubeletConfiguration{EvictionSoft: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")}}, "spec.kubelet.evictionSoft", consts.ProvisionModeAKSMachineAPI, true),
+			Entry("evictionSoft on aksmachineapiheaderbatch", &v1beta1.KubeletConfiguration{EvictionSoft: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")}}, "spec.kubelet.evictionSoft", consts.ProvisionModeAKSMachineAPIHeaderBatch, true),
+			Entry("evictionSoftGracePeriod on aksscriptless", &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))}}, "spec.kubelet.evictionSoftGracePeriod", consts.ProvisionModeAKSScriptless, false),
+			Entry("evictionSoftGracePeriod on bootstrappingclient", &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))}}, "spec.kubelet.evictionSoftGracePeriod", consts.ProvisionModeBootstrappingClient, false),
+			Entry("evictionSoftGracePeriod on aksmachineapi", &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))}}, "spec.kubelet.evictionSoftGracePeriod", consts.ProvisionModeAKSMachineAPI, true),
+			Entry("evictionSoftGracePeriod on aksmachineapiheaderbatch", &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))}}, "spec.kubelet.evictionSoftGracePeriod", consts.ProvisionModeAKSMachineAPIHeaderBatch, true),
+			Entry("evictionMaxPodGracePeriod on aksscriptless", &v1beta1.KubeletConfiguration{EvictionMaxPodGracePeriod: lo.ToPtr(int32(0))}, "spec.kubelet.evictionMaxPodGracePeriod", consts.ProvisionModeAKSScriptless, false),
+			Entry("evictionMaxPodGracePeriod on bootstrappingclient", &v1beta1.KubeletConfiguration{EvictionMaxPodGracePeriod: lo.ToPtr(int32(0))}, "spec.kubelet.evictionMaxPodGracePeriod", consts.ProvisionModeBootstrappingClient, false),
+			Entry("evictionMaxPodGracePeriod on aksmachineapi", &v1beta1.KubeletConfiguration{EvictionMaxPodGracePeriod: lo.ToPtr(int32(0))}, "spec.kubelet.evictionMaxPodGracePeriod", consts.ProvisionModeAKSMachineAPI, true),
+			Entry("evictionMaxPodGracePeriod on aksmachineapiheaderbatch", &v1beta1.KubeletConfiguration{EvictionMaxPodGracePeriod: lo.ToPtr(int32(0))}, "spec.kubelet.evictionMaxPodGracePeriod", consts.ProvisionModeAKSMachineAPIHeaderBatch, true),
+		)
+
+		It("should report all configured fields in deterministic API order", func() {
+			ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeBootstrappingClient})
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250))},
+				EvictionHard:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
+				EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
+				EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))},
+				EvictionMaxPodGracePeriod: lo.ToPtr(int32(0)),
+			}
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.KubeletOverridesUnsupportedProvisionMode))
+			Expect(condition.Message).To(Equal(fmt.Sprintf(
+				"kubelet override fields [spec.kubelet.kubeReserved, spec.kubelet.evictionHard, spec.kubelet.evictionSoft, spec.kubelet.evictionSoftGracePeriod, spec.kubelet.evictionMaxPodGracePeriod] are not supported with provision-mode %q",
+				consts.ProvisionModeBootstrappingClient,
+			)))
+		})
+
+		legacyOnlyKubelet := &v1beta1.KubeletConfiguration{
+			CPUManagerPolicy:            lo.ToPtr("static"),
+			CPUCFSQuota:                 lo.ToPtr(false),
+			ImageGCHighThresholdPercent: lo.ToPtr(int32(90)),
+			AllowedUnsafeSysctls:        []string{"net.ipv4.ip_local_port_range"},
+		}
+		DescribeTable("should not restrict unconfigured or legacy-only kubelet configuration",
+			func(kubelet *v1beta1.KubeletConfiguration, provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+				nodeClass.Spec.Kubelet = kubelet
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+			},
+			Entry("nil on aksscriptless", nil, consts.ProvisionModeAKSScriptless),
+			Entry("empty on aksscriptless", &v1beta1.KubeletConfiguration{}, consts.ProvisionModeAKSScriptless),
+			Entry("empty kubeReserved on aksscriptless", &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{}}, consts.ProvisionModeAKSScriptless),
+			Entry("empty evictionHard on aksscriptless", &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{}}, consts.ProvisionModeAKSScriptless),
+			Entry("empty evictionSoft on aksscriptless", &v1beta1.KubeletConfiguration{EvictionSoft: &v1beta1.EvictionThreshold{}}, consts.ProvisionModeAKSScriptless),
+			Entry("empty evictionSoftGracePeriod on aksscriptless", &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{}}, consts.ProvisionModeAKSScriptless),
+			Entry("legacy-only on aksscriptless", legacyOnlyKubelet, consts.ProvisionModeAKSScriptless),
+			Entry("nil on bootstrappingclient", nil, consts.ProvisionModeBootstrappingClient),
+			Entry("empty on bootstrappingclient", &v1beta1.KubeletConfiguration{}, consts.ProvisionModeBootstrappingClient),
+			Entry("empty kubeReserved on bootstrappingclient", &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{}}, consts.ProvisionModeBootstrappingClient),
+			Entry("empty evictionHard on bootstrappingclient", &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{}}, consts.ProvisionModeBootstrappingClient),
+			Entry("empty evictionSoft on bootstrappingclient", &v1beta1.KubeletConfiguration{EvictionSoft: &v1beta1.EvictionThreshold{}}, consts.ProvisionModeBootstrappingClient),
+			Entry("empty evictionSoftGracePeriod on bootstrappingclient", &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{}}, consts.ProvisionModeBootstrappingClient),
+			Entry("legacy-only on bootstrappingclient", legacyOnlyKubelet, consts.ProvisionModeBootstrappingClient),
+			Entry("nil on aksmachineapi", nil, consts.ProvisionModeAKSMachineAPI),
+			Entry("empty on aksmachineapi", &v1beta1.KubeletConfiguration{}, consts.ProvisionModeAKSMachineAPI),
+			Entry("empty kubeReserved on aksmachineapi", &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{}}, consts.ProvisionModeAKSMachineAPI),
+			Entry("empty evictionHard on aksmachineapi", &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{}}, consts.ProvisionModeAKSMachineAPI),
+			Entry("empty evictionSoft on aksmachineapi", &v1beta1.KubeletConfiguration{EvictionSoft: &v1beta1.EvictionThreshold{}}, consts.ProvisionModeAKSMachineAPI),
+			Entry("empty evictionSoftGracePeriod on aksmachineapi", &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{}}, consts.ProvisionModeAKSMachineAPI),
+			Entry("legacy-only on aksmachineapi", legacyOnlyKubelet, consts.ProvisionModeAKSMachineAPI),
+			Entry("nil on aksmachineapiheaderbatch", nil, consts.ProvisionModeAKSMachineAPIHeaderBatch),
+			Entry("empty on aksmachineapiheaderbatch", &v1beta1.KubeletConfiguration{}, consts.ProvisionModeAKSMachineAPIHeaderBatch),
+			Entry("empty kubeReserved on aksmachineapiheaderbatch", &v1beta1.KubeletConfiguration{KubeReserved: &v1beta1.KubeReserved{}}, consts.ProvisionModeAKSMachineAPIHeaderBatch),
+			Entry("empty evictionHard on aksmachineapiheaderbatch", &v1beta1.KubeletConfiguration{EvictionHard: &v1beta1.EvictionThreshold{}}, consts.ProvisionModeAKSMachineAPIHeaderBatch),
+			Entry("empty evictionSoft on aksmachineapiheaderbatch", &v1beta1.KubeletConfiguration{EvictionSoft: &v1beta1.EvictionThreshold{}}, consts.ProvisionModeAKSMachineAPIHeaderBatch),
+			Entry("empty evictionSoftGracePeriod on aksmachineapiheaderbatch", &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{}}, consts.ProvisionModeAKSMachineAPIHeaderBatch),
+			Entry("legacy-only on aksmachineapiheaderbatch", legacyOnlyKubelet, consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
+	})
+
 	Context("cluster-level FIPS validation", func() {
 		BeforeEach(func() {
 			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{EnableFIPS: lo.ToPtr(true)}))
