@@ -209,7 +209,7 @@ func TestHandleInvalidAvailabilityZoneError(t *testing.T) {
 				g.Expect(unavailableOfferings.IsUnavailable(otherSKU, zones.Regional, capacityType)).To(BeFalse())
 			}
 			for _, item := range singleInstanceCache.Items() {
-				g.Expect(time.Until(time.Unix(0, item.Expiration))).To(BeNumerically("~", AllocationFailureTTL, time.Second))
+				g.Expect(time.Until(time.Unix(0, item.Expiration))).To(BeNumerically("~", 23*time.Hour, time.Second))
 			}
 		})
 	}
