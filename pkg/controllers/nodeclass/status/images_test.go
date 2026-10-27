@@ -17,12 +17,12 @@ limitations under the License.
 package status_test
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 
 	"github.com/samber/lo"
@@ -30,6 +30,7 @@ import (
 	opstatus "github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/version"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -44,10 +45,34 @@ const (
 	rollbackImageVersion = "202409.03.0"
 )
 
-func getExpectedTestCommunityImages(version string) []v1beta1.NodeImage {
+func getExpectedTestCommunityImages(
+	k8sVersion string,
+	apiVersion string,
+) []v1beta1.NodeImage {
+	//TODO: This is too close to replicating the logic in the actual controller;
+	// We should instead assert on properties of the resulting NodeImage objects rather than replicating the controller logic.
+	var kubernetesVersion *version.Version
+	if k8sVersion != "" {
+		kubernetesVersion = version.MustParseSemantic(k8sVersion)
+	}
+
+	galleryURL := "AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2"
+	gen1 := imagefamily.Ubuntu2204Gen1ImageDefinition
+	gen2 := imagefamily.Ubuntu2204Gen2ImageDefinition
+	arm := imagefamily.Ubuntu2204Gen2ArmImageDefinition
+
+	// From Kubernetes version 1.34, default to Ubuntu 2404
+	v134 := version.MustParse("1.34.0")
+	if kubernetesVersion != nil && kubernetesVersion.AtLeast(v134) {
+		// Logic for Ubuntu 2404 images can be added here
+		gen1 = imagefamily.Ubuntu2404Gen1ImageDefinition
+		gen2 = imagefamily.Ubuntu2404Gen2ImageDefinition
+		arm = imagefamily.Ubuntu2404Gen2ArmImageDefinition
+	}
+
 	return []v1beta1.NodeImage{
 		{
-			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/%s", version),
+			ID: imagefamily.BuildImageIDCIG(galleryURL, gen2, apiVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
 				{
 					Key:      corev1.LabelArchStable,
@@ -62,7 +87,7 @@ func getExpectedTestCommunityImages(version string) []v1beta1.NodeImage {
 			},
 		},
 		{
-			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204containerd/versions/%s", version),
+			ID: imagefamily.BuildImageIDCIG(galleryURL, gen1, apiVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
 				{
 					Key:      corev1.LabelArchStable,
@@ -77,7 +102,7 @@ func getExpectedTestCommunityImages(version string) []v1beta1.NodeImage {
 			},
 		},
 		{
-			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2arm64containerd/versions/%s", version),
+			ID: imagefamily.BuildImageIDCIG(galleryURL, arm, apiVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
 				{
 					Key:      corev1.LabelArchStable,
@@ -95,7 +120,7 @@ func getExpectedTestCommunityImages(version string) []v1beta1.NodeImage {
 }
 
 func getExpectedTestSIGImages(version string) []v1beta1.NodeImage {
-	nodeClass := test.AKSNodeClass()
+	nodeClass := test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 	nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
 	test.ApplySIGImagesWithVersion(nodeClass, version)
 	return nodeClass.Status.Images
@@ -161,10 +186,12 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		expectedImages func(string) []v1beta1.NodeImage
 	}{
 		{
-			name:           "CIG",
-			oldVersion:     oldcigImageVersion,
-			latestVersion:  newCIGImageVersion,
-			expectedImages: getExpectedTestCommunityImages,
+			name:          "CIG",
+			oldVersion:    oldcigImageVersion,
+			latestVersion: newCIGImageVersion,
+			expectedImages: func(api string) []v1beta1.NodeImage {
+				return getExpectedTestCommunityImages(env.Version.String(), api)
+			},
 		},
 		{
 			name:           "SIG",
@@ -475,7 +502,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 			nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
-			nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
+			nodeClass.Status.Images = getExpectedTestCommunityImages(testK8sVersion, oldcigImageVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 			imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, "")
 		})

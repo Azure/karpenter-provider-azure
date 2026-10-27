@@ -200,7 +200,7 @@ var _ = Describe("VMInstanceProvider", func() {
 	testOptions := options.FromContext(ctx)
 
 	BeforeEach(func() {
-		nodeClass = test.AKSNodeClass()
+		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
 		nodePool = coretest.NodePool(karpv1.NodePool{

@@ -40,6 +40,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
@@ -103,7 +104,7 @@ var _ = Describe("CapacityReservation", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 
 	BeforeEach(func() {
-		nodeClass = env.DefaultAKSNodeClass()
+		nodeClass = azkarptest.AKSNodeClass()
 	})
 
 	It("should launch a node into the reserved capacity", func(ctx SpecContext) {
@@ -268,7 +269,7 @@ var _ = Describe("CapacityReservation operational shapes", func() {
 			Skip("requires granting the Karpenter workload identity a role on the capacity reservation group")
 		}
 		requireCapacityReservationLaunchSupport()
-		nodeClass = env.DefaultAKSNodeClass()
+		nodeClass = azkarptest.AKSNodeClass()
 	})
 
 	// The playbook's stable-baseline recipe: one static NodePool per member reservation,
