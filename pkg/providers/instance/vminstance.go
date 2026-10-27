@@ -130,6 +130,8 @@ type Resource = map[string]interface{}
 type VirtualMachinePromise struct {
 	VM       *armcompute.VirtualMachine
 	WaitFunc func() error
+	// CreateIssued is false when an existing VM was reused.
+	CreateIssued bool
 
 	providerRef VMProvider
 }
@@ -952,7 +954,8 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
 
 	return &VirtualMachinePromise{
-		providerRef: p,
+		providerRef:  p,
+		CreateIssued: result.Poller != nil, // Poller is nil means the VM existed already.
 		WaitFunc: func() error {
 			if result.Poller == nil {
 				// Poller is nil means the VM existed already and we're done.

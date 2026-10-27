@@ -60,6 +60,7 @@ func main() {
 		op.GetClient(),
 		op.ImageProvider,
 		op.InstanceTypeStore,
+		op.QuotaProvider,
 		coreoptions.FromContext(ctx).LegacyNodeRepair,
 	)
 

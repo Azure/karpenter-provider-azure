@@ -124,9 +124,9 @@ func TestAzure(t *testing.T) {
 	azureEnvBootstrap = test.NewEnvironment(ctxBootstrap, env)
 
 	fakeClock = &clock.FakeClock{}
-	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
-	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
-	cloudProviderBootstrap = cloudprovider.New(azureEnvBootstrap.InstanceTypesProvider, azureEnvBootstrap.VMInstanceProvider, azureEnvBootstrap.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvBootstrap.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctxBootstrap).LegacyNodeRepair)
+	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, azureEnv.QuotaProvider, coreoptions.FromContext(ctx).LegacyNodeRepair)
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnv.InstanceTypeStore, azureEnvNonZonal.QuotaProvider, coreoptions.FromContext(ctx).LegacyNodeRepair)
+	cloudProviderBootstrap = cloudprovider.New(azureEnvBootstrap.InstanceTypesProvider, azureEnvBootstrap.VMInstanceProvider, azureEnvBootstrap.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvBootstrap.ImageProvider, azureEnv.InstanceTypeStore, azureEnvBootstrap.QuotaProvider, coreoptions.FromContext(ctxBootstrap).LegacyNodeRepair)
 
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
@@ -4330,7 +4330,7 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 		})
 
-		It("should invalidate instance type cache when quota data changes", func() {
+		It("should reapply quota without invalidating the instance type cache", func() {
 			targetFamily := defaultTestSKU.GetFamilyName()
 			Expect(targetFamily).ToNot(BeEmpty())
 			Expect(azureEnv.InstanceTypeCache.ItemCount()).To(BeZero())
@@ -4373,7 +4373,7 @@ var _ = Describe("InstanceType Provider", func() {
 			)
 			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
 
-			// Second call should reflect the new quota (cache invalidated by SeqNum change)
+			// Second call should reflect the new quota without rebuilding the base cache.
 			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 			Expect(err).To(BeNil())
 			Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
@@ -4390,6 +4390,58 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 			}
 			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
+		})
+
+		It("should apply local quota adjustments over a warm instance type cache", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			vCPUs := lo.Must(defaultTestSKU.VCPU())
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+				CurrentValue: lo.ToPtr(int32(100 - vCPUs)),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			// Warm the cache and retain the quota-independent base instance type.
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			base, found := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+				return instanceType.Name == defaultTestSKU.GetName()
+			})
+			Expect(found).To(BeTrue())
+			Expect(lo.Filter(base.Offerings, func(offering *corecloudprovider.Offering, _ int) bool {
+				return offering.CapacityType() == karpv1.CapacityTypeOnDemand && offering.Available
+			})).ToNot(BeEmpty())
+			Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
+
+			generation := azureEnv.QuotaProvider.SnapshotGeneration()
+			quotaNodeClaim := &karpv1.NodeClaim{ObjectMeta: metav1.ObjectMeta{Name: "claim", UID: "uid"}}
+			Expect(azureEnv.QuotaProvider.RecordCreate(generation, quotaNodeClaim, targetFamily, vCPUs)).To(BeTrue())
+
+			// Exhausting quota must return a modified copy without flushing or mutating the cached base.
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			exhausted, found := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+				return instanceType.Name == defaultTestSKU.GetName()
+			})
+			Expect(found).To(BeTrue())
+			Expect(exhausted).ToNot(BeIdenticalTo(base))
+			Expect(lo.Filter(exhausted.Offerings, func(offering *corecloudprovider.Offering, _ int) bool {
+				return offering.CapacityType() == karpv1.CapacityTypeOnDemand && offering.Available
+			})).To(BeEmpty())
+			Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
+
+			Expect(azureEnv.QuotaProvider.RecordDelete(quotaNodeClaim, targetFamily, vCPUs)).To(BeTrue())
+
+			// Releasing quota should reuse the original cached pointer since no projection change is needed.
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			released, found := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+				return instanceType.Name == defaultTestSKU.GetName()
+			})
+			Expect(found).To(BeTrue())
+			Expect(released).To(BeIdenticalTo(base))
+			Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
 		})
 	})
 
