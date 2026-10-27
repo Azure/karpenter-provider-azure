@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"

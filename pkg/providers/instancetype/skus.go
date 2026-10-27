@@ -19,7 +19,7 @@ package instancetype
 import (
 	_ "embed"
 
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 	"github.com/samber/lo"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/util/sets"

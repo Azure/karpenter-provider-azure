@@ -20,11 +20,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
@@ -130,7 +130,7 @@ func createTestSKU(name, size, family, cpuCount string) *skewer.SKU {
 		Name:   &name,
 		Size:   &size,
 		Family: &family,
-		Capabilities: &[]compute.ResourceSkuCapabilities{
+		Capabilities: []*armcompute.ResourceSKUCapabilities{
 			{
 				Name:  lo.ToPtr(skewer.VCPUs),
 				Value: &cpuCount,
@@ -146,7 +146,7 @@ func createCommonErrorTestSKU(name, size, family, cpuCount string) *skewer.SKU {
 		Name:   &name,
 		Size:   &size,
 		Family: &family,
-		Capabilities: &[]compute.ResourceSkuCapabilities{
+		Capabilities: []*armcompute.ResourceSKUCapabilities{
 			{
 				Name:  lo.ToPtr(skewer.VCPUs),
 				Value: &cpuCount,

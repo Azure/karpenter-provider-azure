@@ -25,11 +25,11 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/samber/lo"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 )
 
 const (

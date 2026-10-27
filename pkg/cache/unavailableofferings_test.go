@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
-	"github.com/Azure/skewer"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v9"
+	"github.com/Azure/skewer/v2"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -39,7 +39,7 @@ func createTestSKU(name, familyName, size string, cpuCount int) *skewer.SKU {
 		Name:   &name,
 		Family: &familyName,
 		Size:   &size,
-		Capabilities: &[]compute.ResourceSkuCapabilities{
+		Capabilities: []*armcompute.ResourceSKUCapabilities{
 			{
 				Name:  lo.ToPtr(skewer.VCPUs),
 				Value: lo.ToPtr(strconv.Itoa(cpuCount)),

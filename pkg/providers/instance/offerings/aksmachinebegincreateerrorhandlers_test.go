@@ -23,7 +23,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 	. "github.com/onsi/gomega"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	cloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
