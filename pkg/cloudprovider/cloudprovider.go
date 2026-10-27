@@ -54,6 +54,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	labelspkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
@@ -84,6 +85,7 @@ type CloudProvider struct {
 	aksMachineInstanceProvider instance.AKSMachineProvider
 	kubeClient                 client.Client
 	imageProvider              imagefamily.NodeImageProvider
+	quotaProvider              quota.Provider
 	recorder                   events.Recorder
 	instanceTypeStore          *nodeoverlay.InstanceTypeStore
 	instancePromiseWg          sync.WaitGroup
@@ -97,6 +99,7 @@ func New(
 	kubeClient client.Client,
 	imageProvider imagefamily.NodeImageProvider,
 	store *nodeoverlay.InstanceTypeStore,
+	quotaProvider quota.Provider,
 ) *CloudProvider {
 	return &CloudProvider{
 		instanceTypeProvider:       instanceTypeProvider,
@@ -104,6 +107,7 @@ func New(
 		aksMachineInstanceProvider: aksMachineInstanceProvider,
 		kubeClient:                 kubeClient,
 		imageProvider:              imageProvider,
+		quotaProvider:              quotaProvider,
 		recorder:                   recorder,
 		instanceTypeStore:          store,
 	}
@@ -177,9 +181,13 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 }
 
 func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
+	quotaGeneration := c.quotaProvider.SnapshotGeneration()
 	vmPromise, err := c.vmInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		return nil, toCreateError(err, "creating instance failed")
+	}
+	if vmPromise.CreateIssued && nodeClass.GetCapacityReservationGroupID() == "" && instance.GetCapacityTypeFromVM(vmPromise.VM) == karpv1.CapacityTypeOnDemand {
+		c.addQuota(ctx, nodeClaim, string(lo.FromPtr(vmPromise.VM.Properties.HardwareProfile.VMSize)), quotaGeneration)
 	}
 
 	if err := c.handleInstancePromise(ctx, vmPromise, nodeClaim); err != nil {
@@ -211,9 +219,13 @@ func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1
 
 func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
 	// Begin the creation of the instance
+	quotaGeneration := c.quotaProvider.SnapshotGeneration()
 	aksMachinePromise, err := c.aksMachineInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		return nil, toCreateError(err, "creating AKS machine failed")
+	}
+	if aksMachinePromise.CreateIssued && nodeClass.GetCapacityReservationGroupID() == "" && aksMachinePromise.CapacityType == karpv1.CapacityTypeOnDemand {
+		c.addQuota(ctx, nodeClaim, aksMachinePromise.InstanceType.Name, quotaGeneration)
 	}
 
 	// Handle the promise
@@ -496,17 +508,67 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("NodeClaim", nodeClaim.Name))
 
+	var err error
 	// AKS machine-based node
 	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
-		return c.aksMachineInstanceProvider.Delete(ctx, aksMachineName)
+		err = c.aksMachineInstanceProvider.Delete(ctx, aksMachineName)
+	} else {
+		// VM-based node
+		var vmName string
+		vmName, err = nodeclaimutils.GetVMName(nodeClaim.Status.ProviderID)
+		if err != nil {
+			return fmt.Errorf("getting VM name, %w", err)
+		}
+		err = c.vmInstanceProvider.Delete(ctx, vmName)
 	}
+	if cloudprovider.IsNodeClaimNotFoundError(err) {
+		c.deleteQuota(ctx, nodeClaim)
+	}
+	return err
+}
 
-	// VM-based node
-	vmName, err := nodeclaimutils.GetVMName(nodeClaim.Status.ProviderID)
-	if err != nil {
-		return fmt.Errorf("getting VM name, %w", err)
+func (c *CloudProvider) addQuota(ctx context.Context, nodeClaim *karpv1.NodeClaim, instanceType string, generation uint64) {
+	familyName, vCPUs, ok := c.quotaDetails(ctx, instanceType)
+	if !ok {
+		return
 	}
-	return c.vmInstanceProvider.Delete(ctx, vmName)
+	c.quotaProvider.RecordCreate(generation, nodeClaim, familyName, vCPUs)
+}
+
+func (c *CloudProvider) deleteQuota(ctx context.Context, nodeClaim *karpv1.NodeClaim) {
+	if nodeClaim.Labels[karpv1.CapacityTypeLabelKey] != karpv1.CapacityTypeOnDemand {
+		return
+	}
+	nodeClass, err := nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
+	if err != nil {
+		log.FromContext(ctx).V(1).Info("skipping quota delete adjustment, failed to resolve node class", "error", err)
+		return
+	}
+	if nodeClass.GetCapacityReservationGroupID() != "" {
+		return
+	}
+	familyName, vCPUs, ok := c.quotaDetails(ctx, nodeClaim.Labels[corev1.LabelInstanceTypeStable])
+	if !ok {
+		return
+	}
+	c.quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)
+}
+
+func (c *CloudProvider) quotaDetails(ctx context.Context, instanceType string) (string, int64, bool) {
+	if instanceType == "" {
+		return "", 0, false
+	}
+	sku, err := c.instanceTypeProvider.Get(ctx, instanceType)
+	if err != nil {
+		log.FromContext(ctx).V(1).Info("skipping quota adjustment, failed to resolve instance type", "instanceType", instanceType, "error", err)
+		return "", 0, false
+	}
+	vCPUs, err := sku.VCPU()
+	if err != nil || sku.GetFamilyName() == "" {
+		log.FromContext(ctx).V(1).Info("skipping quota adjustment, failed to resolve SKU quota details", "instanceType", instanceType, "error", err)
+		return "", 0, false
+	}
+	return sku.GetFamilyName(), vCPUs, true
 }
 
 // IsDrifted checks if the NodeClaim has drifted from our goal state.

@@ -70,6 +70,8 @@ type AKSMachinePromise struct {
 	AKSMachineNodeImageVersion string
 	VMResourceID               string
 	CreationTimestamp          time.Time
+	// CreateIssued is false when an existing AKS Machine was reused.
+	CreateIssued bool
 }
 
 func NewAKSMachinePromise(
@@ -84,6 +86,7 @@ func NewAKSMachinePromise(
 	aksMachineNodeImageVersion string,
 	vmResourceID string,
 	creationTimestamp time.Time,
+	createIssued bool,
 ) *AKSMachinePromise {
 	return &AKSMachinePromise{
 		providerRef:                providerRef,
@@ -97,6 +100,7 @@ func NewAKSMachinePromise(
 		AKSMachineNodeImageVersion: aksMachineNodeImageVersion,
 		VMResourceID:               vmResourceID,
 		CreationTimestamp:          creationTimestamp,
+		CreateIssued:               createIssued,
 	}
 }
 
@@ -550,6 +554,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 		lo.FromPtr(gotAKSMachine.Properties.NodeImageVersion),
 		lo.FromPtr(gotAKSMachine.Properties.ResourceID),
 		lo.FromPtr(gotAKSMachine.Properties.Status.CreationTimestamp),
+		true,
 	), nil
 }
 
@@ -620,6 +625,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 		lo.FromPtr(gotAKSMachine.Properties.NodeImageVersion),
 		lo.FromPtr(gotAKSMachine.Properties.ResourceID),
 		lo.FromPtr(gotAKSMachine.Properties.Status.CreationTimestamp),
+		true,
 	), nil
 }
 
@@ -726,6 +732,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		existingAKSMachineNodeImageVersion,
 		existingAKSMachineVMResourceID,
 		existingAKSMachineCreationTimestamp,
+		false,
 	), nil
 }
 
