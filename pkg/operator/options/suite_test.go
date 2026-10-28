@@ -81,6 +81,8 @@ var _ = Describe("Options", func() {
 		"PROVIDER_BATCH_MAX_SIZE",
 		"COMPUTE_RECOMMENDATION_MODE",
 		"SYSTEM_NAMESPACE",
+		"LEGACY_NODE_REPAIR",
+		"FEATURE_GATES",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -109,6 +111,45 @@ var _ = Describe("Options", func() {
 		for ev, val := range envState {
 			os.Setenv(ev, val)
 		}
+	})
+
+	Context("Core repair defaults", func() {
+		It("should register Azure's core option defaults for both entry points", func() {
+			Expect(coreoptions.Injectables).To(ContainElement(BeAssignableToTypeOf(&options.CoreOptions{})))
+		})
+
+		It("should leave NodeRepair disabled by default", func() {
+			coreOpts := &options.CoreOptions{}
+			coreOpts.AddFlags(fs)
+			Expect(coreOpts.Parse(fs)).To(Succeed())
+			Expect(coreOpts.FeatureGates.NodeRepair).To(BeFalse())
+			Expect(coreOpts.LegacyNodeRepair).To(BeTrue())
+		})
+
+		DescribeTable("should select legacy repair unless explicitly disabled", func(envValue string, args []string, expected bool) {
+			if envValue != "" {
+				Expect(os.Setenv("LEGACY_NODE_REPAIR", envValue)).To(Succeed())
+			}
+			coreOpts := &options.CoreOptions{}
+			coreOpts.AddFlags(fs)
+			Expect(coreOpts.Parse(fs, args...)).To(Succeed())
+			Expect(coreoptions.FromContext(coreOpts.ToContext(ctx)).LegacyNodeRepair).To(Equal(expected))
+		},
+			Entry("unset", "", nil, true),
+			Entry("NodeRepair enabled without changing the repair controller", "", []string{"--feature-gates=NodeRepair=true"}, true),
+			Entry("environment enables legacy repair", "true", nil, true),
+			Entry("environment opts into budget-aware repair", "false", nil, false),
+			Entry("flag enables legacy repair", "", []string{"--legacy-node-repair=true"}, true),
+			Entry("flag opts into budget-aware repair", "", []string{"--legacy-node-repair=false"}, false),
+			Entry("false flag overrides true environment", "true", []string{"--legacy-node-repair=false"}, false),
+			Entry("true flag overrides false environment", "false", []string{"--legacy-node-repair=true"}, true),
+		)
+
+		It("should reject an invalid repair flag value", func() {
+			coreOpts := &options.CoreOptions{}
+			coreOpts.AddFlags(fs)
+			Expect(coreOpts.Parse(fs, "--legacy-node-repair=invalid")).ToNot(Succeed())
+		})
 	})
 
 	Context("Env Vars", func() {
