@@ -17,7 +17,6 @@ limitations under the License.
 package quota_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -553,23 +552,6 @@ func Test_DeleteTombstonesDeduplicateAcrossRefreshes(t *testing.T) {
 		fakeClock.Step(quota.DeleteTombstoneTTL + time.Second)
 		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
 	})
-}
-
-func Test_UpdateTimeoutFailsOpen(t *testing.T) {
-	t.Parallel()
-	ctx := TestContextWithLogger(t)
-	g := NewWithT(t)
-	usageAPI, _, quotaProvider := newTestProvider(t)
-	sku := fake.MakeSKU("Standard_D4s_v3")
-	familyName := sku.GetFamilyName()
-
-	usageAPI.Usages.Append(newUsage(familyName, 100))
-	g.Expect(quotaProvider.Update(ctx)).To(Succeed())
-	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
-
-	usageAPI.Error = context.DeadlineExceeded
-	g.Expect(quotaProvider.Update(ctx)).To(MatchError(context.DeadlineExceeded))
-	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
 }
 
 func newTestProvider(t *testing.T) (*fake.UsageAPI, *fake.QuotaCategoryVMFamilyMappingAPI, *quota.DefaultProvider) {

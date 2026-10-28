@@ -170,12 +170,12 @@ func (p *DefaultProvider) Update(ctx context.Context) error {
 
 	freshUsages, err := p.listUsages(ctx)
 	if err != nil {
-		p.failOpenOnTimeoutLocked(ctx, err)
+		p.logTimeout(ctx, err)
 		return err
 	}
 	freshFamilyToQuotaName, err := p.buildFamilyToQuotaName(ctx, freshUsages)
 	if err != nil {
-		p.failOpenOnTimeoutLocked(ctx, err)
+		p.logTimeout(ctx, err)
 		return err
 	}
 
@@ -183,14 +183,13 @@ func (p *DefaultProvider) Update(ctx context.Context) error {
 	return nil
 }
 
-func (p *DefaultProvider) failOpenOnTimeoutLocked(ctx context.Context, err error) {
+func (p *DefaultProvider) logTimeout(ctx context.Context, err error) {
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		timeoutErr := err
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			timeoutErr = ctx.Err()
 		}
-		log.FromContext(ctx).Error(timeoutErr, "quota refresh timed out, resetting to fail open", "timeout", UpdateTimeout)
-		p.resetLocked()
+		log.FromContext(ctx).Error(timeoutErr, "quota refresh timed out", "timeout", UpdateTimeout)
 	}
 }
 
