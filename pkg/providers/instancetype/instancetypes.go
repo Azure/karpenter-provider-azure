@@ -94,6 +94,12 @@ type instanceTypesSourceDataGeneration struct {
 	unavailableOfferings uint64
 }
 
+type cachedInstanceTypes struct {
+	base        []*cloudprovider.InstanceType
+	quotaSeqNum uint64
+	quota       []*cloudprovider.InstanceType
+}
+
 type Provider interface {
 	LivenessProbe(*http.Request) error
 	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
@@ -195,21 +201,31 @@ func (p *DefaultProvider) List(
 		p.instanceTypesCache.Flush()
 		p.instanceTypesCacheGeneration = generation
 	}
-	var result []*cloudprovider.InstanceType
+	var cached *cachedInstanceTypes
 	if item, ok := p.instanceTypesCache.Get(key); ok {
-		result = item.([]*cloudprovider.InstanceType)
+		cached = item.(*cachedInstanceTypes)
 	} else {
-		result = p.buildInstanceTypes(ctx, instanceTypeParams)
-		p.instanceTypesCache.SetDefault(key, result)
+		cached = &cachedInstanceTypes{base: p.buildInstanceTypes(ctx, instanceTypeParams)}
+		p.instanceTypesCache.SetDefault(key, cached)
 	}
-	p.muInstanceTypesCache.Unlock()
+	// If quota hasn't changed, return the cached data
+	quotaSeqNum := p.quotaProvider.SeqNum()
+	if cached.quota != nil && cached.quotaSeqNum == quotaSeqNum {
+		result := slices.Clone(cached.quota)
+		p.muInstanceTypesCache.Unlock()
+		return result, nil
+	}
 
 	// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
 	// so that modifications to the ordering of the data don't affect the original
-	result = slices.Clone(result)
+	result := slices.Clone(cached.base)
 
 	// Add quota overlay before returning
-	return p.applyQuota(ctx, result, instanceTypeParams.CapacityReservationGroupID), nil
+	result, quotaSeqNum = p.applyQuota(ctx, result, instanceTypeParams.CapacityReservationGroupID)
+	cached.quota = result
+	cached.quotaSeqNum = quotaSeqNum
+	p.muInstanceTypesCache.Unlock()
+	return slices.Clone(result), nil
 }
 
 // KubeReservedOverrides converts typed kube-reserved overrides to kubelet resource quantities.
@@ -290,9 +306,9 @@ func (p *DefaultProvider) currentInstanceTypesSourceDataGeneration() instanceTyp
 // deep-copying only instance types whose offerings change.
 // This is not applied as part of the cached offerings because availability changes every time we create/delete a node which would result in a significant
 // amount of addition work to constant regenerate instance types.
-func (p *DefaultProvider) applyQuota(ctx context.Context, instanceTypes []*cloudprovider.InstanceType, capacityReservationGroupID string) []*cloudprovider.InstanceType {
+func (p *DefaultProvider) applyQuota(ctx context.Context, instanceTypes []*cloudprovider.InstanceType, capacityReservationGroupID string) ([]*cloudprovider.InstanceType, uint64) {
 	if capacityReservationGroupID != "" {
-		return instanceTypes
+		return instanceTypes, p.quotaProvider.SeqNum()
 	}
 	skus := make([]*skewer.SKU, 0, len(instanceTypes))
 	for _, instanceType := range instanceTypes {
@@ -300,7 +316,7 @@ func (p *DefaultProvider) applyQuota(ctx context.Context, instanceTypes []*cloud
 			skus = append(skus, sku)
 		}
 	}
-	hasQuotaMap := p.quotaProvider.HasQuotaForSKUs(ctx, skus)
+	hasQuotaMap, quotaSeqNum := p.quotaProvider.HasQuotaForSKUs(ctx, skus)
 	for i, instanceType := range instanceTypes {
 		available, ok := hasQuotaMap[instanceType.Name]
 		// If the SKU is not found in the quota map, assume it has quota.
@@ -322,7 +338,7 @@ func (p *DefaultProvider) applyQuota(ctx context.Context, instanceTypes []*cloud
 		}
 		instanceTypes[i] = copied
 	}
-	return instanceTypes
+	return instanceTypes, quotaSeqNum
 }
 
 func (p *DefaultProvider) LivenessProbe(req *http.Request) error {

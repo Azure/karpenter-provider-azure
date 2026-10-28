@@ -4431,6 +4431,15 @@ var _ = Describe("InstanceType Provider", func() {
 			})).To(BeEmpty())
 			Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
 
+			// Repeated reads at the same quota sequence number reuse the cached adjusted instance type.
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			cachedExhausted, found := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+				return instanceType.Name == defaultTestSKU.GetName()
+			})
+			Expect(found).To(BeTrue())
+			Expect(cachedExhausted).To(BeIdenticalTo(exhausted))
+
 			Expect(azureEnv.QuotaProvider.RecordDelete(quotaNodeClaim, targetFamily, vCPUs)).To(BeTrue())
 
 			// Releasing quota should reuse the original cached pointer since no projection change is needed.
