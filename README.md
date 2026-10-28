@@ -70,19 +70,6 @@ and the separate `VM_MEMORY_OVERHEAD_PERCENT` safety margin remain unchanged.
 
 ## Known limitations
 
-Explicit `AKSNodeClass.spec.imageFamily` values `Ubuntu2204` and `Ubuntu2404`
-are validated against the Kubernetes version selected in NodeClass status,
-including an explicitly pinned Kubernetes version. Unsupported combinations set
-`ValidationSucceeded=False` with reason
-`ImageFamilyKubernetesVersionIncompatible`, blocking new nodes from that NodeClass.
-This condition alone does not mark existing nodes as drifted.
-
-The enforced ranges are `>= 1.25.2 and < 1.37.0` for Ubuntu2204,
-`>= 1.25.2 and < 1.39.0` for Ubuntu2204 with FIPS, and `>= 1.32.0` for Ubuntu2404.
-Generic `Ubuntu`, an unset image family, and other image families are not subject
-to this pinned-Ubuntu check. See the [AKS OS version documentation](https://learn.microsoft.com/azure/aks/upgrade-os-version)
-for OS support and migration guidance.
-
 The following AKS features are not supported:
 * Windows nodes require the AKS Machine API provision mode. This mode is used by Node Auto Provisioning and can also be used with self-hosted Karpenter; the scriptless and bootstrapping-client provision modes do not support Windows. Windows2025 requires Kubernetes 1.32 or newer and AKS Windows2025 availability for the subscription and region.
 * Kubenet and Calico.
