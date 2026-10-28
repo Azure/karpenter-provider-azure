@@ -554,6 +554,109 @@ func Test_DeleteTombstonesDeduplicateAcrossRefreshes(t *testing.T) {
 	})
 }
 
+func Test_UpdatePreservesDeleteRecordedDuringFetch(t *testing.T) {
+	t.Parallel()
+	ctx := TestContextWithLogger(t)
+	g := NewWithT(t)
+	usageAPI, _, quotaProvider := newTestProvider(t)
+	sku := fake.MakeSKU("Standard_D4s_v3")
+	familyName := sku.GetFamilyName()
+	vCPUs := lo.Must(sku.VCPU())
+	nodeClaim := testNodeClaim("delete-during-refresh")
+
+	usageAPI.Usages.Append(newUsage(familyName, 100))
+	g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+
+	fetchStarted := make(chan struct{})
+	continueFetch := make(chan struct{})
+	usageAPI.BeforeFetch = func() {
+		close(fetchStarted)
+		<-continueFetch
+	}
+	updateDone := make(chan error, 1)
+	go func() {
+		updateDone <- quotaProvider.Update(ctx)
+	}()
+
+	<-fetchStarted
+	g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
+	close(continueFetch)
+	g.Expect(<-updateDone).To(Succeed())
+
+	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue(), "the delete recorded during the fetch must survive publication")
+	g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeFalse(), "the retained tombstone must deduplicate later observations")
+}
+
+func Test_UpdatePreservesCreateFollowedByDeleteDuringFetch(t *testing.T) {
+	t.Parallel()
+	ctx := TestContextWithLogger(t)
+	g := NewWithT(t)
+	usageAPI, _, quotaProvider := newTestProvider(t)
+	sku := fake.MakeSKU("Standard_D4s_v3")
+	familyName := sku.GetFamilyName()
+	vCPUs := lo.Must(sku.VCPU())
+	nodeClaim := testNodeClaim("create-delete-during-refresh")
+
+	usageAPI.Usages.Append(newUsage(familyName, 96))
+	g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+	g.Expect(quotaProvider.RecordCreate(quotaProvider.SnapshotGeneration(), nodeClaim, familyName, vCPUs)).To(BeTrue())
+	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+
+	// The refresh observes the create at 100/100, so the later delete must survive publication
+	// as -4 for this SKU to become available.
+	usageAPI.Usages.Reset()
+	usageAPI.Usages.Append(newUsage(familyName, 100))
+	fetchStarted := make(chan struct{})
+	continueFetch := make(chan struct{})
+	usageAPI.BeforeFetch = func() {
+		close(fetchStarted)
+		<-continueFetch
+	}
+	updateDone := make(chan error, 1)
+	go func() {
+		updateDone <- quotaProvider.Update(ctx)
+	}()
+
+	<-fetchStarted
+	g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
+	close(continueFetch)
+	g.Expect(<-updateDone).To(Succeed())
+
+	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue(), "the post-watermark delete must replace the pre-refresh create adjustment")
+	g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeFalse())
+}
+
+func Test_RecordCreateSkipsRefreshInProgress(t *testing.T) {
+	t.Parallel()
+	ctx := TestContextWithLogger(t)
+	g := NewWithT(t)
+	usageAPI, _, quotaProvider := newTestProvider(t)
+	sku := fake.MakeSKU("Standard_D4s_v3")
+	familyName := sku.GetFamilyName()
+	vCPUs := lo.Must(sku.VCPU())
+
+	usageAPI.Usages.Append(newUsage(familyName, 96))
+	g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+	generation := quotaProvider.SnapshotGeneration()
+
+	fetchStarted := make(chan struct{})
+	continueFetch := make(chan struct{})
+	usageAPI.BeforeFetch = func() {
+		close(fetchStarted)
+		<-continueFetch
+	}
+	updateDone := make(chan error, 1)
+	go func() {
+		updateDone <- quotaProvider.Update(ctx)
+	}()
+
+	<-fetchStarted
+	g.Expect(quotaProvider.RecordCreate(generation, testNodeClaim("create-during-refresh"), familyName, vCPUs)).To(BeFalse())
+	close(continueFetch)
+	g.Expect(<-updateDone).To(Succeed())
+	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue(), "the ambiguous create must not be double-counted")
+}
+
 func newTestProvider(t *testing.T) (*fake.UsageAPI, *fake.QuotaCategoryVMFamilyMappingAPI, *quota.DefaultProvider) {
 	t.Helper()
 	return newTestProviderWithClock(t, clock.RealClock{})

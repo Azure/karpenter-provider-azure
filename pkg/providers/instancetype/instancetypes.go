@@ -196,6 +196,7 @@ func (p *DefaultProvider) List(
 	key := fmt.Sprintf("%016x", paramsHash)
 
 	p.muInstanceTypesCache.Lock()
+	defer p.muInstanceTypesCache.Unlock()
 	generation := p.currentInstanceTypesSourceDataGeneration()
 	if generation != p.instanceTypesCacheGeneration {
 		p.instanceTypesCache.Flush()
@@ -211,9 +212,7 @@ func (p *DefaultProvider) List(
 	// If quota hasn't changed, return the cached data
 	quotaSeqNum := p.quotaProvider.SeqNum()
 	if cached.quota != nil && cached.quotaSeqNum == quotaSeqNum {
-		result := slices.Clone(cached.quota)
-		p.muInstanceTypesCache.Unlock()
-		return result, nil
+		return slices.Clone(cached.quota), nil
 	}
 
 	// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -224,7 +223,6 @@ func (p *DefaultProvider) List(
 	result, quotaSeqNum = p.applyQuota(ctx, result, instanceTypeParams.CapacityReservationGroupID)
 	cached.quota = result
 	cached.quotaSeqNum = quotaSeqNum
-	p.muInstanceTypesCache.Unlock()
 	return slices.Clone(result), nil
 }
 

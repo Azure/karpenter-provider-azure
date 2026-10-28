@@ -60,6 +60,7 @@ const (
 type adjustment struct {
 	quotaName string
 	vCPUs     int64
+	seqNum    uint64
 }
 
 type deleteTombstone struct {
@@ -104,8 +105,11 @@ type DefaultProvider struct {
 	quotaCategoryVMFamilyMappingClient QuotaCategoryVMFamilyMappingAPI
 	location                           string
 	clock                              clock.PassiveClock
-	// mu protects quota snapshots and lifecycle state. Update holds it across its bounded Azure
-	// calls so publication is atomic with respect to creates, deletes, and quota reads.
+	// updateMu serializes Azure refreshes so older snapshots cannot publish after newer ones.
+	// It is not held by quota reads or lifecycle adjustments.
+	updateMu sync.Mutex
+	// mu protects the published snapshot and in-flight lifecycle state. Update releases it during
+	// Azure calls so creates, deletes, and quota reads can continue against cached data.
 	mu          sync.RWMutex
 	snapshot    snapshot
 	initialized bool
@@ -121,6 +125,7 @@ type DefaultProvider struct {
 	// a refresh.
 	snapshotGeneration     uint64
 	seqNum                 uint64
+	refreshInProgress      bool
 	adjustments            map[string]adjustment
 	adjustmentsByQuotaName map[string]int64
 	// deleteTombstones suppress repeated not-found observations across refreshes.
@@ -159,12 +164,18 @@ func NewProvider(
 }
 
 func (p *DefaultProvider) Update(ctx context.Context) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.pruneDeleteTombstonesLocked(p.clock.Now())
+	p.updateMu.Lock()
+	defer p.updateMu.Unlock()
 
-	// From testing, quota API should respond within a reasonable time frame, so we set a timeout to avoid hanging indefinitely, especially since
-	// we're holding a lock and don't want to block indefinitely.
+	adjustmentWatermark := p.beginRefresh()
+	refreshSucceeded := false
+	defer func() {
+		if !refreshSucceeded {
+			p.finishFailedRefresh()
+		}
+	}()
+
+	// Bound both Azure calls without holding the state lock.
 	ctx, cancel := context.WithTimeout(ctx, UpdateTimeout)
 	defer cancel()
 
@@ -179,8 +190,28 @@ func (p *DefaultProvider) Update(ctx context.Context) error {
 		return err
 	}
 
-	p.publishSnapshotLocked(ctx, freshUsages, freshFamilyToQuotaName)
+	p.publishSnapshot(ctx, freshUsages, freshFamilyToQuotaName, adjustmentWatermark)
+	refreshSucceeded = true
 	return nil
+}
+
+func (p *DefaultProvider) beginRefresh() uint64 {
+	// Hold mu so marking the refresh and capturing its SeqNum watermark are atomic with
+	// RecordCreate/RecordDelete. After unlock, deletes receive a newer SeqNum while creates
+	// observe refreshInProgress and skip local accounting.
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pruneDeleteTombstonesLocked(p.clock.Now())
+	p.refreshInProgress = true
+	return p.seqNum
+}
+
+func (p *DefaultProvider) finishFailedRefresh() {
+	// Synchronize clearing refreshInProgress with RecordCreate after a failed Azure call.
+	// The snapshot and adjustments are left unchanged.
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.refreshInProgress = false
 }
 
 func (p *DefaultProvider) logTimeout(ctx context.Context, err error) {
@@ -210,7 +241,9 @@ func (p *DefaultProvider) buildFamilyToQuotaName(ctx context.Context, usages map
 	return familyToQuotaName, nil
 }
 
-func (p *DefaultProvider) publishSnapshotLocked(ctx context.Context, freshUsages map[string]*armcompute.Usage, freshFamilyToQuotaName map[string]string) {
+func (p *DefaultProvider) publishSnapshot(ctx context.Context, freshUsages map[string]*armcompute.Usage, freshFamilyToQuotaName map[string]string, adjustmentWatermark uint64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.snapshot = snapshot{
 		usages:            freshUsages,
 		familyToQuotaName: freshFamilyToQuotaName,
@@ -218,8 +251,20 @@ func (p *DefaultProvider) publishSnapshotLocked(ctx context.Context, freshUsages
 	p.initialized = true
 	p.snapshotGeneration++
 	p.seqNum++
-	p.adjustments = map[string]adjustment{}
-	p.adjustmentsByQuotaName = map[string]int64{}
+	survivingAdjustments := map[string]adjustment{}
+	survivingAdjustmentsByQuotaName := map[string]int64{}
+	// The new snapshot supersedes adjustments recorded before the fetch. Keep only
+	// post-watermark deletes that Azure may not have observed when it read usage.
+	for key, pending := range p.adjustments {
+		if pending.seqNum <= adjustmentWatermark {
+			continue
+		}
+		survivingAdjustments[key] = pending
+		survivingAdjustmentsByQuotaName[pending.quotaName] += pending.vCPUs
+	}
+	p.adjustments = survivingAdjustments
+	p.adjustmentsByQuotaName = survivingAdjustmentsByQuotaName
+	p.refreshInProgress = false
 	// Note: We don't clear delete tombstones here. They are pruned separately based on their age.
 	usagesChanged := p.cm.HasChanged("quota-usages", freshUsages)
 	mappingsChanged := p.cm.HasChanged("quota-family-mappings", freshFamilyToQuotaName)
@@ -353,7 +398,9 @@ func (p *DefaultProvider) RecordCreate(expectedGeneration uint64, nodeClaim *kar
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if !p.initialized || expectedGeneration != p.snapshotGeneration || vCPUs <= 0 {
+	// If refreshInProgress is true, we are in the middle of an Azure refresh and should not record adjustments.
+	// This is because we prefer to err on the side of undercounting than overcounting quota usage.
+	if !p.initialized || p.refreshInProgress || expectedGeneration != p.snapshotGeneration || vCPUs <= 0 {
 		return false
 	}
 	quotaName := p.quotaNameLocked(familyName)
@@ -368,9 +415,9 @@ func (p *DefaultProvider) RecordCreate(expectedGeneration uint64, nodeClaim *kar
 	// A NodeClaim can have a create accepted but fail in the LRO. That produces a RecordCreate -> RecordDelete -> RecordCreate sequence.
 	// If we have no adjustment but we do have a deleteTombstones this is what happened. We clean the tombstone in this case.
 	delete(p.deleteTombstones, key)
-	p.adjustments[key] = adjustment{quotaName: quotaName, vCPUs: vCPUs}
-	p.adjustmentsByQuotaName[quotaName] += vCPUs
 	p.seqNum++
+	p.adjustments[key] = adjustment{quotaName: quotaName, vCPUs: vCPUs, seqNum: p.seqNum}
+	p.adjustmentsByQuotaName[quotaName] += vCPUs
 	return true
 }
 
@@ -409,16 +456,25 @@ func (p *DefaultProvider) RecordDelete(nodeClaim *karpv1.NodeClaim, familyName s
 		if existing.vCPUs < 0 {
 			return false
 		}
+		// If we have a creation adjustment, we remove it (create + delete sums to 0)
 		p.adjustmentsByQuotaName[existing.quotaName] -= existing.vCPUs
 		delete(p.adjustments, key)
 		p.seqNum++
+
+		// If a refresh is in progress, there is a chance that Azure observed the create usage but not the delete (since
+		// delete came in during refresh in progress), so we conservatively record the delete adjustment to prefer undercounting.
+		if p.refreshInProgress {
+			p.adjustments[key] = adjustment{quotaName: quotaName, vCPUs: -vCPUs, seqNum: p.seqNum}
+			p.adjustmentsByQuotaName[quotaName] -= vCPUs
+		}
+
 		return true
 	}
 	// No existing adjustment for this instance, so we should insert a new deletion adjustment and subtract its vCPUs from the quota.
 	p.insertDeleteTombstoneLocked(key, now)
-	p.adjustments[key] = adjustment{quotaName: quotaName, vCPUs: -vCPUs}
-	p.adjustmentsByQuotaName[quotaName] -= vCPUs
 	p.seqNum++
+	p.adjustments[key] = adjustment{quotaName: quotaName, vCPUs: -vCPUs, seqNum: p.seqNum}
+	p.adjustmentsByQuotaName[quotaName] -= vCPUs
 	return true
 }
 
@@ -483,6 +539,7 @@ func (p *DefaultProvider) resetLocked() {
 	p.initialized = false
 	p.snapshotGeneration++
 	p.seqNum++
+	p.refreshInProgress = false
 	p.adjustments = map[string]adjustment{}
 	p.adjustmentsByQuotaName = map[string]int64{}
 	p.deleteTombstones = map[string]deleteTombstone{}

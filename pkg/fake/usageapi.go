@@ -26,8 +26,9 @@ import (
 )
 
 type UsageAPI struct {
-	Usages AtomicPtrSlice[armcompute.Usage]
-	Error  error
+	Usages      AtomicPtrSlice[armcompute.Usage]
+	Error       error
+	BeforeFetch func()
 }
 
 // assert that the fake implements the interface
@@ -39,6 +40,9 @@ func (u *UsageAPI) NewListPager(_ string, _ *armcompute.UsageClientListOptions) 
 			return false
 		},
 		Fetcher: func(ctx context.Context, _ *armcompute.UsageClientListResponse) (armcompute.UsageClientListResponse, error) {
+			if u.BeforeFetch != nil {
+				u.BeforeFetch()
+			}
 			if u.Error != nil {
 				return armcompute.UsageClientListResponse{}, u.Error
 			}
@@ -60,4 +64,5 @@ func (u *UsageAPI) Reset() {
 	}
 	u.Usages.Reset()
 	u.Error = nil
+	u.BeforeFetch = nil
 }
