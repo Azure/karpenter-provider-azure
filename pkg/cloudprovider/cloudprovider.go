@@ -74,6 +74,10 @@ const (
 	InstanceTypeResolutionFailedReason = "InstanceTypeResolutionFailed"
 	CreateInstanceFailedReason         = "CreateInstanceFailed"
 	SpotConditionPreemptionScheduled   = "PreemptionScheduled"
+
+	// Named values for New's legacyRepairPolicies argument, not separate switches.
+	LegacyRepairPolicies      = true
+	BudgetAwareRepairPolicies = false
 )
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
@@ -90,12 +94,6 @@ type CloudProvider struct {
 	legacyRepairPolicies       bool
 }
 
-type Option func(*CloudProvider)
-
-func WithLegacyRepairPolicies(enabled bool) Option {
-	return func(c *CloudProvider) { c.legacyRepairPolicies = enabled }
-}
-
 func New(
 	instanceTypeProvider instancetype.Provider,
 	vmInstanceProvider instance.VMProvider,
@@ -104,9 +102,9 @@ func New(
 	kubeClient client.Client,
 	imageProvider imagefamily.NodeImageProvider,
 	store *nodeoverlay.InstanceTypeStore,
-	opts ...Option,
+	legacyRepairPolicies bool,
 ) *CloudProvider {
-	provider := &CloudProvider{
+	return &CloudProvider{
 		instanceTypeProvider:       instanceTypeProvider,
 		vmInstanceProvider:         vmInstanceProvider,
 		aksMachineInstanceProvider: aksMachineInstanceProvider,
@@ -114,12 +112,8 @@ func New(
 		imageProvider:              imageProvider,
 		recorder:                   recorder,
 		instanceTypeStore:          store,
-		legacyRepairPolicies:       true,
+		legacyRepairPolicies:       legacyRepairPolicies,
 	}
-	for _, opt := range opts {
-		opt(provider)
-	}
-	return provider
 }
 
 // WaitForInstancePromises blocks until all in-flight async Create goroutines have completed.

@@ -60,7 +60,7 @@ func main() {
 		op.GetClient(),
 		op.ImageProvider,
 		op.InstanceTypeStore,
-		cloudprovider.WithLegacyRepairPolicies(coreoptions.FromContext(ctx).LegacyNodeRepair),
+		coreoptions.FromContext(ctx).LegacyNodeRepair,
 	)
 
 	lo.Must0(op.AddHealthzCheck("cloud-provider", aksCloudProvider.LivenessProbe))

@@ -351,7 +351,7 @@ var _ = Describe("CloudProvider", func() {
 			repairCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
 				FeatureGates: coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
 			}))
-			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil)
+			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil, LegacyRepairPolicies)
 			Expect(legacyProvider.RepairPolicies()).To(HaveLen(4))
 			Expect(legacyProvider.RepairPolicies()).To(ContainElement(corecloudprovider.RepairPolicy{
 				ConditionType:      conditionType,
@@ -360,7 +360,7 @@ var _ = Describe("CloudProvider", func() {
 				Action:             corecloudprovider.ReplaceNode,
 			}))
 
-			provider := New(nil, nil, nil, nil, nil, nil, nil, WithLegacyRepairPolicies(false))
+			provider := New(nil, nil, nil, nil, nil, nil, nil, BudgetAwareRepairPolicies)
 			matcher, err := health.NewRepairPolicyMatcher(repairCtx, provider)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(matcher).ToNot(BeNil())
@@ -391,7 +391,7 @@ var _ = Describe("CloudProvider", func() {
 		)
 
 		It("should select the legacy policy set explicitly", func() {
-			provider := New(nil, nil, nil, nil, nil, nil, nil, WithLegacyRepairPolicies(true))
+			provider := New(nil, nil, nil, nil, nil, nil, nil, LegacyRepairPolicies)
 			policies := provider.RepairPolicies()
 			Expect(policies).To(HaveLen(4))
 			for _, policy := range policies {
@@ -406,15 +406,15 @@ var _ = Describe("CloudProvider", func() {
 				FeatureGates:     coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
 				LegacyNodeRepair: lo.ToPtr(true),
 			}))
-			provider := New(nil, nil, nil, nil, nil, nil, nil, WithLegacyRepairPolicies(true))
+			provider := New(nil, nil, nil, nil, nil, nil, nil, LegacyRepairPolicies)
 			matcher, err := health.NewRepairPolicyMatcher(repairCtx, provider)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(matcher).To(BeNil())
 		})
 
 		It("should keep returned repair policy profiles independent", func() {
-			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil, WithLegacyRepairPolicies(true))
-			provider := New(nil, nil, nil, nil, nil, nil, nil, WithLegacyRepairPolicies(false))
+			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil, LegacyRepairPolicies)
+			provider := New(nil, nil, nil, nil, nil, nil, nil, BudgetAwareRepairPolicies)
 			legacyPolicies := legacyProvider.RepairPolicies()
 			policies := provider.RepairPolicies()
 			legacyPolicies[0].TolerationDuration = time.Hour
@@ -438,7 +438,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, LegacyRepairPolicies)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
@@ -585,7 +585,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, LegacyRepairPolicies)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
