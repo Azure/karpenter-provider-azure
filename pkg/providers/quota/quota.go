@@ -83,7 +83,10 @@ type Provider interface {
 	// the SKU's family name or vCPU count cannot be determined.
 	HasQuotaFor(ctx context.Context, sku *skewer.SKU) bool
 	// HasQuotaForSKUs evaluates all SKUs against one coherent effective quota view.
-	HasQuotaForSKUs(ctx context.Context, skus []*skewer.SKU) map[string]bool
+	HasQuotaForSKUs(ctx context.Context, skus []*skewer.SKU) (map[string]bool, uint64)
+	// SeqNum returns a monotonically increasing identifier for effective quota state. It changes
+	// whenever a refresh, create, delete, or reset can alter quota-dependent SKU availability.
+	SeqNum() uint64
 	// SnapshotGeneration identifies the latest successfully published Azure quota snapshot.
 	SnapshotGeneration() uint64
 	// RecordCreate records quota consumed by an accepted create if expectedGeneration is current.
@@ -117,6 +120,7 @@ type DefaultProvider struct {
 	// snapshotGeneration prevents creates issued against an older usages baseline from being recorded after
 	// a refresh.
 	snapshotGeneration     uint64
+	seqNum                 uint64
 	adjustments            map[string]adjustment
 	adjustmentsByQuotaName map[string]int64
 	// deleteTombstones suppress repeated not-found observations across refreshes.
@@ -214,6 +218,7 @@ func (p *DefaultProvider) publishSnapshotLocked(ctx context.Context, freshUsages
 	}
 	p.initialized = true
 	p.snapshotGeneration++
+	p.seqNum++
 	p.adjustments = map[string]adjustment{}
 	p.adjustmentsByQuotaName = map[string]int64{}
 	// Note: We don't clear delete tombstones here. They are pruned separately based on their age.
@@ -296,7 +301,7 @@ func (p *DefaultProvider) HasQuotaFor(ctx context.Context, sku *skewer.SKU) bool
 	return p.hasQuotaForLocked(ctx, sku)
 }
 
-func (p *DefaultProvider) HasQuotaForSKUs(ctx context.Context, skus []*skewer.SKU) map[string]bool {
+func (p *DefaultProvider) HasQuotaForSKUs(ctx context.Context, skus []*skewer.SKU) (map[string]bool, uint64) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -304,7 +309,13 @@ func (p *DefaultProvider) HasQuotaForSKUs(ctx context.Context, skus []*skewer.SK
 	for _, sku := range skus {
 		result[sku.GetName()] = p.hasQuotaForLocked(ctx, sku)
 	}
-	return result
+	return result, p.seqNum
+}
+
+func (p *DefaultProvider) SeqNum() uint64 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.seqNum
 }
 
 func (p *DefaultProvider) hasQuotaForLocked(ctx context.Context, sku *skewer.SKU) bool {
@@ -360,6 +371,7 @@ func (p *DefaultProvider) RecordCreate(expectedGeneration uint64, nodeClaim *kar
 	delete(p.deleteTombstones, key)
 	p.adjustments[key] = adjustment{quotaName: quotaName, vCPUs: vCPUs}
 	p.adjustmentsByQuotaName[quotaName] += vCPUs
+	p.seqNum++
 	return true
 }
 
@@ -400,12 +412,14 @@ func (p *DefaultProvider) RecordDelete(nodeClaim *karpv1.NodeClaim, familyName s
 		}
 		p.adjustmentsByQuotaName[existing.quotaName] -= existing.vCPUs
 		delete(p.adjustments, key)
+		p.seqNum++
 		return true
 	}
 	// No existing adjustment for this instance, so we should insert a new deletion adjustment and subtract its vCPUs from the quota.
 	p.insertDeleteTombstoneLocked(key, now)
 	p.adjustments[key] = adjustment{quotaName: quotaName, vCPUs: -vCPUs}
 	p.adjustmentsByQuotaName[quotaName] -= vCPUs
+	p.seqNum++
 	return true
 }
 
@@ -469,6 +483,7 @@ func (p *DefaultProvider) resetLocked() {
 	}
 	p.initialized = false
 	p.snapshotGeneration++
+	p.seqNum++
 	p.adjustments = map[string]adjustment{}
 	p.adjustmentsByQuotaName = map[string]int64{}
 	p.deleteTombstones = map[string]deleteTombstone{}

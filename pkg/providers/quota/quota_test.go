@@ -365,6 +365,40 @@ func Test_Reset_InvalidatesQuotaDataAndSubsequentRecovery(t *testing.T) {
 	g.Expect(found).To(BeTrue())
 }
 
+func Test_SeqNumTracksEffectiveQuotaChanges(t *testing.T) {
+	t.Parallel()
+	ctx := TestContextWithLogger(t)
+	g := NewWithT(t)
+	usageAPI, _, quotaProvider := newTestProvider(t)
+	sku := fake.MakeSKU("Standard_D4s_v3")
+	familyName := sku.GetFamilyName()
+	vCPUs := lo.Must(sku.VCPU())
+	nodeClaim := testNodeClaim("seqnum")
+
+	initialSeqNum := quotaProvider.SeqNum()
+	usageAPI.Usages.Append(newUsage(familyName, 96))
+	g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+	g.Expect(quotaProvider.SeqNum()).To(BeNumerically(">", initialSeqNum))
+
+	updateSeqNum := quotaProvider.SeqNum()
+	g.Expect(quotaProvider.RecordCreate(quotaProvider.SnapshotGeneration(), nodeClaim, familyName, vCPUs)).To(BeTrue())
+	g.Expect(quotaProvider.SeqNum()).To(BeNumerically(">", updateSeqNum))
+
+	createSeqNum := quotaProvider.SeqNum()
+	g.Expect(quotaProvider.RecordCreate(quotaProvider.SnapshotGeneration(), nodeClaim, familyName, vCPUs)).To(BeFalse())
+	g.Expect(quotaProvider.SeqNum()).To(Equal(createSeqNum))
+
+	g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
+	g.Expect(quotaProvider.SeqNum()).To(BeNumerically(">", createSeqNum))
+
+	deleteSeqNum := quotaProvider.SeqNum()
+	g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeFalse())
+	g.Expect(quotaProvider.SeqNum()).To(Equal(deleteSeqNum))
+
+	quotaProvider.Reset()
+	g.Expect(quotaProvider.SeqNum()).To(BeNumerically(">", deleteSeqNum))
+}
+
 func Test_LocalAdjustments(t *testing.T) {
 	t.Parallel()
 	sku := fake.MakeSKU("Standard_D4s_v3")
