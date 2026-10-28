@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 )
@@ -84,7 +85,7 @@ var _ = Describe("Windows", func() {
 			Fail(fmt.Sprintf("unsupported WINDOWS_IMAGE_FAMILY %q", imageFamily))
 		}
 
-		nodeClass := env.WindowsNodeClass(imageFamily)
+		nodeClass := azkarptest.AKSNodeClass(azkarptest.WithImageFamily(imageFamily))
 		nodePool := env.WindowsNodePool(nodeClass)
 		// Keep the test as simple and portable as possible: pin to the regional (zoneless)
 		// offering so it provisions in subscriptions/regions without availability-zone support.

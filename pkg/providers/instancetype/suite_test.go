@@ -156,7 +156,7 @@ var _ = Describe("InstanceType Provider", func() {
 		testOptions = test.Options()
 		ctx = options.ToContext(ctx, testOptions)
 
-		nodeClass = test.AKSNodeClass()
+		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
 		nodePool = coretest.NodePool(karpv1.NodePool{
@@ -1200,9 +1200,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Context("OS disk placement resolution", func() {
 				DescribeTable("should not select an ephemeral placement when Managed is requested",
 					func(skuName string, sizeGiB int32) {
-						testNodeClass := test.AKSNodeClass()
-						testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr(sizeGiB)
-						testNodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+						testNodeClass := test.AKSNodeClass(test.WithManagedOSDiskSizeGB(sizeGiB))
 
 						sku := fake.MakeSKU(skuName)
 						profile := resolveOSDiskProfile(sku, testNodeClass)
@@ -1215,8 +1213,7 @@ var _ = Describe("InstanceType Provider", func() {
 				)
 				DescribeTable("should keep fit boundaries independent from legacy label values",
 					func(skuName string, maxSizeGiB int32, expectedPlacement armcompute.DiffDiskPlacement) {
-						testNodeClass := test.AKSNodeClass()
-						testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr(maxSizeGiB)
+						testNodeClass := test.AKSNodeClass(test.WithEphemeralOSDiskGB(maxSizeGiB))
 						profile := resolveOSDiskProfile(fake.MakeSKU(skuName), testNodeClass)
 						Expect(profile.Placement).ToNot(BeNil())
 						Expect(*profile.Placement).To(Equal(expectedPlacement))
@@ -1232,8 +1229,7 @@ var _ = Describe("InstanceType Provider", func() {
 				)
 				DescribeTable("should enforce the global ephemeral OS disk size limit",
 					func(sizeGiB int32, expectEphemeral bool) {
-						testNodeClass := test.AKSNodeClass()
-						testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr(sizeGiB)
+						testNodeClass := test.AKSNodeClass(test.WithEphemeralOSDiskGB(sizeGiB))
 						profile := resolveOSDiskProfile(fake.MakeSKU("Standard_D128ds_v6"), testNodeClass)
 						Expect(profile.Type).To(Equal(lo.Ternary(expectEphemeral, armcontainerservice.OSDiskTypeEphemeral, armcontainerservice.OSDiskTypeManaged)))
 					},
@@ -1244,8 +1240,7 @@ var _ = Describe("InstanceType Provider", func() {
 					func(placements string, expected armcompute.DiffDiskPlacement) {
 						sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", placements)
 						sku = withSKUCapability(sku, "NvmeDiskSizeInMiB", strconv.FormatInt(2048*int64(units.GiB)/int64(units.MiB), 10))
-						testNodeClass := test.AKSNodeClass()
-						testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+						testNodeClass := test.AKSNodeClass(test.WithEphemeralOSDiskGB(128))
 
 						profile := resolveOSDiskProfile(sku, testNodeClass)
 						Expect(profile.Placement).ToNot(BeNil())
@@ -1258,15 +1253,13 @@ var _ = Describe("InstanceType Provider", func() {
 				)
 				It("should reject present placement metadata with no recognized tokens", func() {
 					sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", "NvmeDiskV2")
-					testNodeClass := test.AKSNodeClass()
-					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+					testNodeClass := test.AKSNodeClass(test.WithEphemeralOSDiskGB(128))
 
 					Expect(resolveOSDiskProfile(sku, testNodeClass).Placement).To(BeNil())
 				})
 				It("should retain legacy placement inference when placement metadata is absent", func() {
 					sku := withoutEphemeralOSDiskPlacementCapability(fake.MakeSKU("Standard_D64s_v3"))
-					testNodeClass := test.AKSNodeClass()
-					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+					testNodeClass := test.AKSNodeClass(test.WithEphemeralOSDiskGB(128))
 
 					profile := resolveOSDiskProfile(sku, testNodeClass)
 					Expect(profile.Placement).ToNot(BeNil())
@@ -1276,8 +1269,7 @@ var _ = Describe("InstanceType Provider", func() {
 					sku := withoutEphemeralOSDiskPlacementCapability(fake.MakeSKU("Standard_D64s_v3"))
 					sku = withSKUCapability(sku, "CachedDiskBytes", strconv.FormatInt(50*int64(units.GiB), 10))
 					sku = withSKUCapability(sku, "MaxResourceVolumeMB", strconv.FormatInt(75*int64(units.GiB)/int64(units.MiB), 10))
-					testNodeClass := test.AKSNodeClass()
-					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](60)
+					testNodeClass := test.AKSNodeClass(test.WithEphemeralOSDiskGB(60))
 
 					profile := resolveOSDiskProfile(sku, testNodeClass)
 					Expect(profile.Placement).ToNot(BeNil())
@@ -1286,8 +1278,7 @@ var _ = Describe("InstanceType Provider", func() {
 				It("should prefer resource disk over NVMe when cache does not fit", func() {
 					sku := withSKUCapability(fake.MakeSKU("Standard_B20ms"), "SupportedEphemeralOSDiskPlacements", "CacheDisk,ResourceDisk,NvmeDisk")
 					sku = withSKUCapability(sku, "NvmeDiskSizeInMiB", strconv.FormatInt(2048*int64(units.GiB)/int64(units.MiB), 10))
-					testNodeClass := test.AKSNodeClass()
-					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+					testNodeClass := test.AKSNodeClass(test.WithEphemeralOSDiskGB(128))
 
 					profile := resolveOSDiskProfile(sku, testNodeClass)
 					Expect(profile.Placement).ToNot(BeNil())
@@ -1296,15 +1287,13 @@ var _ = Describe("InstanceType Provider", func() {
 				It("should ignore a malformed eligible placement capacity", func() {
 					sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", "CacheDisk")
 					sku = withSKUCapability(sku, "CachedDiskBytes", "invalid")
-					testNodeClass := test.AKSNodeClass()
-					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1)
+					testNodeClass := test.AKSNodeClass(test.WithEphemeralOSDiskGB(1))
 					Expect(resolveOSDiskProfile(sku, testNodeClass).Placement).To(BeNil())
 				})
 			})
 			DescribeTable("should reserve exactly one GiB of local storage for Trusted Launch",
 				func(sku *skewer.SKU, sizeGiB int32, trustedLaunch *v1beta1.TrustedLaunch, expected bool) {
-					testNodeClass := test.AKSNodeClass()
-					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr(sizeGiB)
+					testNodeClass := test.AKSNodeClass(test.WithEphemeralOSDiskGB(sizeGiB))
 					testNodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: trustedLaunch}
 
 					Expect(resolveOSDiskProfile(sku, testNodeClass).Type).To(Equal(lo.Ternary(expected, armcontainerservice.OSDiskTypeEphemeral, armcontainerservice.OSDiskTypeManaged)))
@@ -1322,8 +1311,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should allow a 2040-GiB disk when the placement has one GiB of Trusted Launch headroom", func() {
 				sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", "ResourceDisk")
 				sku = withSKUCapability(sku, "MaxResourceVolumeMB", strconv.FormatInt(2041*int64(units.GiB)/int64(units.MiB), 10))
-				testNodeClass := test.AKSNodeClass()
-				testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](2040)
+				testNodeClass := test.AKSNodeClass(test.WithEphemeralOSDiskGB(2040))
 				testNodeClass.Spec.Security = &v1beta1.Security{
 					TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
 				}
@@ -1333,8 +1321,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(*profile.Placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
 			})
 			It("should continue to resource disk when Trusted Launch consumes an exact-fit cache boundary", func() {
-				testNodeClass := test.AKSNodeClass()
-				testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](30)
+				testNodeClass := test.AKSNodeClass(test.WithEphemeralOSDiskGB(30))
 				testNodeClass.Spec.Security = &v1beta1.Security{
 					TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
 				}
@@ -3122,12 +3109,11 @@ var _ = Describe("InstanceType Provider", func() {
 					})
 				}
 				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
-				nc := test.AKSNodeClass()
+				nc := test.AKSNodeClass(test.WithImageFamily(v1beta1.Ubuntu2204ImageFamily))
 				// GPU driver installation is independent of OS compatibility; don't let it mask filtering.
 				nc.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}
 				nc.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
 				getName := func(it *corecloudprovider.InstanceType) string { return it.Name }
-				nc.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 				baseline, err := azureEnv.InstanceTypesProvider.List(ctx, nc)
 				Expect(err).ToNot(HaveOccurred())
 				for _, name := range []string{"Standard_NC24ads_A100_v4", "Standard_NC144ds_xl_RTXPRO6000BSE_v6", "Standard_NV4ads_V710_v5"} {
@@ -3285,8 +3271,7 @@ var _ = Describe("InstanceType Provider", func() {
 			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
 
 			listFor := func(runtime *v1beta1.WorkloadRuntime) corecloudprovider.InstanceTypes {
-				nc := test.AKSNodeClass()
-				nc.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				nc := test.AKSNodeClass(test.WithImageFamily(v1beta1.AzureLinuxImageFamily))
 				nc.Spec.WorkloadRuntime = runtime
 				ExpectApplied(ctx, env.Client, nc)
 				its, err := azureEnv.InstanceTypesProvider.List(ctx, nc)
