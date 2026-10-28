@@ -56,9 +56,28 @@ assumed to apply to header-batch creation. The zone-4 Machine reported
 was also observed with zone `4`. A historically rejected placement therefore
 cannot be assumed to remain deployment-invalid.
 
-No asynchronous `InvalidAvailabilityZone` was obtained in this follow-up.
-It does not verify the predicted loss of that code, nor exercise mixed-zone
-multi-Machine partial failures or the UltraSSD shared-zone path.
+No asynchronous `InvalidAvailabilityZone` was obtained in this comparison.
+These requests did not exercise mixed-zone multi-Machine partial failures or
+the UltraSSD shared-zone path.
+
+### Synthetic unsupported-zone wire probe
+
+A separate one-entry header-batch request on 2026-10-28 deliberately requested
+`Standard_D2ds_v5` in synthetic zone `9`. This tested the asynchronous error
+response, not the original zone-4 incident.
+
+The PUT was accepted, then Machine GET reported `provisioningState: Failed`.
+Its `provisioningError` contained only `code` and `message`:
+
+- Code: `FailedToCreateOrUpdateVirtualMachine`.
+- Message: the requested zone `9` was unsupported; the supported zones for
+  East US 2 were `1,2,3,4`.
+- No `details`, subcode, or `InvalidAvailabilityZone` identifier was present.
+
+This confirms that a Machine unsupported-zone failure can reach the provider
+without a specific machine-readable zone error code. The underlying Compute
+response was not captured, so the precise internal code/subcode conversion
+remains unverified.
 
 ## Error paths and limitations
 
@@ -80,16 +99,18 @@ or capacity reservation groups.
 
 ### Machine asynchronous failures
 
-Machine GET errors can have nested details. A source-derived explanation predicts
-that an underlying Compute `InvalidAvailabilityZone` can be converted into a
-generic VM-create failure with its specific code omitted from public details.
-That exact wire shape has not been captured by these probes; the historical
-zone-4 case succeeded through header-batch creation during the follow-up.
+Machine GET errors can have nested details, but the synthetic zone-9 probe
+returned only a generic VM-create code and an unsupported-zone message, without
+details or a specific zone code. This verifies the public-response limitation,
+not the precise internal conversion of an underlying Compute error. The
+historical zone-4 case succeeded through header-batch creation during the
+follow-up.
 
 The SDK can preserve received details but cannot reconstruct an omitted code.
 Do not classify a generic VM-create failure as zone invalidity or infer it by
 parsing raw messages. Preserve explicit unhandled-error reporting when no
-recognized code is available.
+recognized code is available. Such failures do not trigger this zone exclusion;
+reliable classification requires the service to preserve a specific error code.
 
 ### Header-batch creation
 
@@ -99,8 +120,9 @@ retains zones in the shared template and groups by them. Direct-create validatio
 results therefore do not establish equivalent behavior for header batches.
 
 The live direct/batch comparison above confirms that those paths can differ.
-The predicted GET serialization of a Compute `InvalidAvailabilityZone` remains
-unverified; do not broaden classification to a generic error to compensate.
+The synthetic probe also confirms that a public asynchronous failure can lack
+a specific zone code; do not broaden classification to a generic error to
+compensate.
 
 ## Provider policy
 
