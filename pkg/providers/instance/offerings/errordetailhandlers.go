@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/skewer"
+	"github.com/samber/lo"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
@@ -48,7 +49,7 @@ func NewErrorDetailHandler(unavailableOfferings *cache.UnavailableOfferings) *Er
 		HandlerEntries: []errorDetailHandlerEntry{
 			{
 				match: func(detail armcontainerservice.ErrorDetail) bool {
-					return detail.Code != nil && *detail.Code == InvalidAvailabilityZoneReason
+					return lo.FromPtr(detail.Code) == InvalidAvailabilityZoneReason
 				},
 				handle: handleInvalidAvailabilityZoneError,
 			},

@@ -376,7 +376,7 @@ func TestUnavailableOfferings_MarkSKUZoneUnavailableWithTTLExpiration(t *testing
 	u := NewUnavailableOfferingsWithCache(singleInstanceCache, cache.New(testUnavailableOfferingsTTL, time.Hour))
 	view := u.ForCapacityReservationGroup("")
 	sku := createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8)
-	view.MarkSKUZoneUnavailableWithTTL(t.Context(), "test reason", sku.GetName(), "westus-1", testUnavailableOfferingsTTL)
+	u.MarkSKUZoneUnavailableWithTTL(t.Context(), "test reason", sku.GetName(), "westus-1", testUnavailableOfferingsTTL)
 	if u.SeqNum() != 1 {
 		t.Fatal("expected the first mark to advance the cache generation")
 	}

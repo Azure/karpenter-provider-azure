@@ -295,8 +295,7 @@ func (v *CapacityReservationGroupUnavailableOfferings) MarkUnavailableWithTTL(ct
 
 // MarkSKUZoneUnavailableWithTTL excludes one SKU and zone across capacity types and
 // reservation groups. The cache belongs to one provider's subscription, region and mode.
-func (v *CapacityReservationGroupUnavailableOfferings) MarkSKUZoneUnavailableWithTTL(ctx context.Context, unavailableReason, instanceType, zone string, ttl time.Duration) {
-	u := v.offerings
+func (u *UnavailableOfferings) MarkSKUZoneUnavailableWithTTL(ctx context.Context, unavailableReason, instanceType, zone string, ttl time.Duration) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	key := skuZoneKey(instanceType, zone)
@@ -310,6 +309,11 @@ func (v *CapacityReservationGroupUnavailableOfferings) MarkSKUZoneUnavailableWit
 			"ttl", ttl)
 		u.seqNum.Add(1)
 	}
+}
+
+// MarkSKUZoneUnavailableWithTTL applies the SKU-zone exclusion across all scopes.
+func (v *CapacityReservationGroupUnavailableOfferings) MarkSKUZoneUnavailableWithTTL(ctx context.Context, unavailableReason, instanceType, zone string, ttl time.Duration) {
+	v.offerings.MarkSKUZoneUnavailableWithTTL(ctx, unavailableReason, instanceType, zone, ttl)
 }
 
 func (u *UnavailableOfferings) markUnavailableWithTTL(ctx context.Context, scope unavailableOfferingsScope, unavailableReason string, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) {
