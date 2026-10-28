@@ -272,6 +272,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).ProvisionMode,
 		options.FromContext(ctx).DiskEncryptionSetID,
 		env,
+		quotaProvider,
 	)
 
 	aksMachineCache := machinecache.New(
@@ -295,6 +296,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch,
 		aksMachineCache,
+		quotaProvider,
 	)
 
 	return ctx, &Operator{

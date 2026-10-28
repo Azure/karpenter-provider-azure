@@ -17,6 +17,7 @@ limitations under the License.
 package quota_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -341,62 +342,6 @@ func Test_HasQuotaFor_IgnoresCategoryMappingInFailedProvisioningState(t *testing
 	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
 }
 
-func Test_SeqNum_IncrementsOnlyWhenDataChanges(t *testing.T) {
-	t.Parallel()
-	t.Run("usage changes", func(t *testing.T) {
-		t.Parallel()
-		ctx := TestContextWithLogger(t)
-		g := NewWithT(t)
-		usageAPI, _, quotaProvider := newTestProvider(t)
-
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(0)))
-
-		// First update with empty data → changes from initial state
-		lo.Must0(quotaProvider.Update(ctx))
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
-
-		// Second update with same empty data → no change, seqNum stays
-		lo.Must0(quotaProvider.Update(ctx))
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
-
-		// Third update with new data → changes, seqNum increments
-		usageAPI.Usages.Append(&armcompute.Usage{
-			Name:         &armcompute.UsageName{Value: lo.ToPtr("standardDSv3Family")},
-			CurrentValue: lo.ToPtr[int32](10),
-			Limit:        lo.ToPtr[int64](100),
-		})
-		lo.Must0(quotaProvider.Update(ctx))
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
-
-		// Fourth update with same data → no change, seqNum stays
-		lo.Must0(quotaProvider.Update(ctx))
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
-	})
-
-	t.Run("mapping changes", func(t *testing.T) {
-		t.Parallel()
-		ctx := TestContextWithLogger(t)
-		g := NewWithT(t)
-		sku := fake.MakeSKU("Standard_D4s_v3")
-		usageAPI, quotaCategoryVMFamilyMappingAPI, quotaProvider := newTestProvider(t)
-
-		usageAPI.Usages.Append(
-			newUsage(sku.GetFamilyName(), 0),
-			newUsage(quota.GeneralPurposeCategory, 0),
-		)
-		quotaCategoryVMFamilyMappingAPI.VMFamilies.Append(newVMFamily(sku.GetFamilyName()))
-		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
-
-		quotaCategoryVMFamilyMappingAPI.VMFamilies.Reset()
-		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
-
-		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
-	})
-}
-
 func Test_Reset_InvalidatesQuotaDataAndSubsequentRecovery(t *testing.T) {
 	t.Parallel()
 	ctx := TestContextWithLogger(t)
@@ -409,18 +354,15 @@ func Test_Reset_InvalidatesQuotaDataAndSubsequentRecovery(t *testing.T) {
 		Limit:        lo.ToPtr[int64](100),
 	})
 	lo.Must0(quotaProvider.Update(ctx))
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
 
 	quotaProvider.Reset()
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
 	found, _ := quotaProvider.GetUsage("standardDSv3Family")
 	g.Expect(found).To(BeFalse())
 
 	quotaProvider.Reset()
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
-
 	lo.Must0(quotaProvider.Update(ctx))
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(3)))
+	found, _ = quotaProvider.GetUsage("standardDSv3Family")
+	g.Expect(found).To(BeTrue())
 }
 
 func Test_LocalAdjustments(t *testing.T) {
@@ -455,19 +397,6 @@ func Test_LocalAdjustments(t *testing.T) {
 		g.Expect(quotaProvider.RecordCreate(generation, nodeClaim, familyName, createVCPUs)).To(BeFalse())
 		g.Expect(quotaProvider.HasQuotaFor(ctx, createSKU)).To(BeTrue(), "one debit should leave an exact fit for another 2-vCPU VM")
 		g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse(), "the accepted create should consume 2 vCPUs")
-	})
-
-	t.Run("local adjustments do not change SeqNum", func(t *testing.T) {
-		t.Parallel()
-		ctx := TestContextWithLogger(t)
-		g := NewWithT(t)
-		usageAPI, _, quotaProvider := newTestProvider(t)
-		usageAPI.Usages.Append(newUsage(familyName, 96))
-		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
-		seqNum := quotaProvider.SeqNum()
-
-		g.Expect(quotaProvider.RecordCreate(quotaProvider.SnapshotGeneration(), testNodeClaim("create"), familyName, vCPUs)).To(BeTrue())
-		g.Expect(quotaProvider.SeqNum()).To(Equal(seqNum))
 	})
 
 	t.Run("delete cancels create", func(t *testing.T) {
@@ -590,6 +519,23 @@ func Test_DeleteTombstonesDeduplicateAcrossRefreshes(t *testing.T) {
 		fakeClock.Step(quota.DeleteTombstoneTTL + time.Second)
 		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
 	})
+}
+
+func Test_UpdateTimeoutFailsOpen(t *testing.T) {
+	t.Parallel()
+	ctx := TestContextWithLogger(t)
+	g := NewWithT(t)
+	usageAPI, _, quotaProvider := newTestProvider(t)
+	sku := fake.MakeSKU("Standard_D4s_v3")
+	familyName := sku.GetFamilyName()
+
+	usageAPI.Usages.Append(newUsage(familyName, 100))
+	g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+
+	usageAPI.Error = context.DeadlineExceeded
+	g.Expect(quotaProvider.Update(ctx)).To(MatchError(context.DeadlineExceeded))
+	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
 }
 
 func newTestProvider(t *testing.T) (*fake.UsageAPI, *fake.QuotaCategoryVMFamilyMappingAPI, *quota.DefaultProvider) {

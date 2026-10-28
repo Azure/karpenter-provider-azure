@@ -18,11 +18,11 @@ package quota
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -54,6 +54,7 @@ const (
 	DeleteTombstoneTTL             = 25 * time.Minute
 	DeleteTombstoneCleanupInterval = 10 * time.Minute
 	MaxDeleteTombstones            = 50000
+	UpdateTimeout                  = 10 * time.Second
 )
 
 type adjustment struct {
@@ -89,9 +90,6 @@ type Provider interface {
 	RecordCreate(expectedGeneration uint64, nodeClaim *karpv1.NodeClaim, familyName string, vCPUs int64) bool
 	// RecordDelete records quota released by an instance that the provider reports as not found.
 	RecordDelete(nodeClaim *karpv1.NodeClaim, familyName string, vCPUs int64) bool
-	// SeqNum returns a monotonically increasing counter that is incremented
-	// when the authoritative quota snapshot or family mapping changes.
-	SeqNum() uint64
 	// Reset clears cached quota data and active adjustments, causing HasQuotaFor to fail open for all SKUs.
 	Reset()
 }
@@ -103,11 +101,12 @@ type DefaultProvider struct {
 	quotaCategoryVMFamilyMappingClient QuotaCategoryVMFamilyMappingAPI
 	location                           string
 	clock                              clock.PassiveClock
-	mu                                 sync.RWMutex
-	snapshot                           snapshot
-	initialized                        bool
-	cm                                 *pretty.ChangeMonitor
-	seqNum                             atomic.Uint64
+	// mu protects quota snapshots and lifecycle state. Update holds it across its bounded Azure
+	// calls so publication is atomic with respect to creates, deletes, and quota reads.
+	mu          sync.RWMutex
+	snapshot    snapshot
+	initialized bool
+	cm          *pretty.ChangeMonitor
 
 	// In-flight quota management bridges the gap between periodic Azure usage snapshots and accepted
 	// creates/deletes. It overlays one signed net adjustment per NodeClaim on the last successful
@@ -115,8 +114,8 @@ type DefaultProvider struct {
 	// When lifecycle ordering is ambiguous, it prefers the lowest plausible usage; Azure
 	// remains authoritative and each successful refresh clears all active adjustments.
 	//
-	// snapshotGeneration prevents creates issued against an older baseline from being recorded after
-	// a refresh, while delete tombstones suppress repeated not-found observations across refreshes.
+	// snapshotGeneration prevents creates issued against an older usages baseline from being recorded after
+	// a refresh.
 	snapshotGeneration     uint64
 	adjustments            map[string]adjustment
 	adjustmentsByQuotaName map[string]int64
@@ -157,29 +156,58 @@ func NewProvider(
 
 func (p *DefaultProvider) Update(ctx context.Context) error {
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.pruneDeleteTombstonesLocked(p.clock.Now())
-	p.mu.Unlock()
+
+	// From testing, quota API should respond within a reasonable time frame, so we set a timeout to avoid hanging indefinitely, especially since
+	// we're holding a lock and don't want to block indefinitely.
+	ctx, cancel := context.WithTimeout(ctx, UpdateTimeout)
+	defer cancel()
 
 	freshUsages, err := p.listUsages(ctx)
 	if err != nil {
+		p.failOpenOnTimeoutLocked(ctx, err)
 		return err
 	}
-	// Build mapping of family to quota (for quota categories)
-	freshFamilyToQuotaName := map[string]string{}
-	if _, enabled := freshUsages[GeneralPurposeCategory]; enabled {
-		familyToCategory, err := p.listQuotaCategoryToFamilyMappings(ctx)
-		if err != nil {
-			return err
-		}
-		for familyName, categoryName := range familyToCategory {
-			if _, ok := freshUsages[categoryName]; ok {
-				freshFamilyToQuotaName[familyName] = categoryName
-			}
-		}
+	freshFamilyToQuotaName, err := p.buildFamilyToQuotaName(ctx, freshUsages)
+	if err != nil {
+		p.failOpenOnTimeoutLocked(ctx, err)
+		return err
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.publishSnapshotLocked(ctx, freshUsages, freshFamilyToQuotaName)
+	return nil
+}
+
+func (p *DefaultProvider) failOpenOnTimeoutLocked(ctx context.Context, err error) {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		timeoutErr := err
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			timeoutErr = ctx.Err()
+		}
+		log.FromContext(ctx).Error(timeoutErr, "quota refresh timed out, resetting to fail open", "timeout", UpdateTimeout)
+		p.resetLocked()
+	}
+}
+
+func (p *DefaultProvider) buildFamilyToQuotaName(ctx context.Context, usages map[string]*armcompute.Usage) (map[string]string, error) {
+	familyToQuotaName := map[string]string{}
+	if _, enabled := usages[GeneralPurposeCategory]; !enabled {
+		return familyToQuotaName, nil
+	}
+	familyToCategory, err := p.listQuotaCategoryToFamilyMappings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for familyName, categoryName := range familyToCategory {
+		if _, ok := usages[categoryName]; ok {
+			familyToQuotaName[familyName] = categoryName
+		}
+	}
+	return familyToQuotaName, nil
+}
+
+func (p *DefaultProvider) publishSnapshotLocked(ctx context.Context, freshUsages map[string]*armcompute.Usage, freshFamilyToQuotaName map[string]string) {
 	p.snapshot = snapshot{
 		usages:            freshUsages,
 		familyToQuotaName: freshFamilyToQuotaName,
@@ -191,16 +219,12 @@ func (p *DefaultProvider) Update(ctx context.Context) error {
 	// Note: We don't clear delete tombstones here. They are pruned separately based on their age.
 	usagesChanged := p.cm.HasChanged("quota-usages", freshUsages)
 	mappingsChanged := p.cm.HasChanged("quota-family-mappings", freshFamilyToQuotaName)
-	if usagesChanged || mappingsChanged {
-		p.seqNum.Add(1)
-	}
 	if usagesChanged {
 		log.FromContext(ctx).V(1).Info("updated quota usages", "familyQuotas", formatFamilyQuotas(freshUsages))
 	}
 	if mappingsChanged {
 		log.FromContext(ctx).V(1).Info("updated quota category VM family mappings", "mappedFamilies", len(freshFamilyToQuotaName))
 	}
-	return nil
 }
 
 func (p *DefaultProvider) listUsages(ctx context.Context) (map[string]*armcompute.Usage, error) {
@@ -331,6 +355,9 @@ func (p *DefaultProvider) RecordCreate(expectedGeneration uint64, nodeClaim *kar
 	if _, ok := p.adjustments[key]; ok {
 		return false
 	}
+	// A NodeClaim can have a create accepted but fail in the LRO. That produces a RecordCreate -> RecordDelete -> RecordCreate sequence.
+	// If we have no adjustment but we do have a deleteTombstones this is what happened. We clean the tombstone in this case.
+	delete(p.deleteTombstones, key)
 	p.adjustments[key] = adjustment{quotaName: quotaName, vCPUs: vCPUs}
 	p.adjustmentsByQuotaName[quotaName] += vCPUs
 	return true
@@ -371,9 +398,8 @@ func (p *DefaultProvider) RecordDelete(nodeClaim *karpv1.NodeClaim, familyName s
 		if existing.vCPUs < 0 {
 			return false
 		}
-		// Otherwise, this is the first deletion adjustment for this instance, so we should remove the existing adjustment and subtract its vCPUs from the quota.
-		delete(p.adjustments, key)
 		p.adjustmentsByQuotaName[existing.quotaName] -= existing.vCPUs
+		delete(p.adjustments, key)
 		return true
 	}
 	// No existing adjustment for this instance, so we should insert a new deletion adjustment and subtract its vCPUs from the quota.
@@ -426,14 +452,14 @@ func (p *DefaultProvider) insertDeleteTombstoneLocked(instanceKey string, now ti
 	p.deleteTombstones[instanceKey] = deleteTombstone{lastSeen: now}
 }
 
-func (p *DefaultProvider) SeqNum() uint64 {
-	return p.seqNum.Load()
-}
-
 func (p *DefaultProvider) Reset() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	// pre-check to avoid unnecessarily updating snapshotGeneration or seqNum
+	p.resetLocked()
+}
+
+func (p *DefaultProvider) resetLocked() {
+	// pre-check to avoid unnecessarily updating snapshotGeneration
 	if !p.initialized && len(p.snapshot.usages) == 0 && len(p.snapshot.familyToQuotaName) == 0 && len(p.adjustments) == 0 && len(p.deleteTombstones) == 0 {
 		return
 	}
@@ -448,7 +474,6 @@ func (p *DefaultProvider) Reset() {
 	p.deleteTombstones = map[string]deleteTombstone{}
 	p.lastDeleteTombstoneCleanup = time.Time{}
 	p.cm = pretty.NewChangeMonitor()
-	p.seqNum.Add(1)
 }
 
 // formatFamilyQuotas returns a compact summary of family quotas like "standardDSv3Family: 78/500, standardDv5Family: 20/100".
