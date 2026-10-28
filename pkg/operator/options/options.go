@@ -38,12 +38,21 @@ import (
 )
 
 func init() {
-	for i, injectable := range coreoptions.Injectables {
+	overrideCoreOptions(coreoptions.Injectables)
+	coreoptions.Injectables = append(coreoptions.Injectables, &Options{})
+}
+
+func overrideCoreOptions(injectables []coreoptions.Injectable) {
+	found := false
+	for i, injectable := range injectables {
 		if opts, ok := injectable.(*coreoptions.Options); ok {
-			coreoptions.Injectables[i] = &CoreOptions{Options: *opts}
+			injectables[i] = &CoreOptions{Options: *opts}
+			found = true
 		}
 	}
-	coreoptions.Injectables = append(coreoptions.Injectables, &Options{})
+	if !found {
+		panic("cannot apply Azure legacy repair defaults: *coreoptions.Options not found in coreoptions.Injectables")
+	}
 }
 
 // CoreOptions preserves Azure's legacy repair default while allowing explicit core flag overrides.

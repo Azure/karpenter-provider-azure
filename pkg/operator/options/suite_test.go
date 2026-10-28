@@ -118,6 +118,29 @@ var _ = Describe("Options", func() {
 			Expect(coreoptions.Injectables).To(ContainElement(BeAssignableToTypeOf(&options.CoreOptions{})))
 		})
 
+		It("should preserve core option values and unrelated injectables when overriding defaults", func() {
+			before := &options.Options{ClusterName: "before"}
+			after := &options.Options{ClusterName: "after"}
+			coreOpts := &coreoptions.Options{IgnoreDRARequests: true, LegacyNodeRepair: true}
+			injectables := []coreoptions.Injectable{before, coreOpts, after}
+
+			options.OverrideCoreOptions(injectables)
+
+			Expect(injectables).To(HaveLen(3))
+			Expect(injectables[0]).To(BeIdenticalTo(before))
+			Expect(injectables[1]).To(Equal(&options.CoreOptions{Options: *coreOpts}))
+			Expect(injectables[2]).To(BeIdenticalTo(after))
+		})
+
+		DescribeTable("should panic when upstream core options are missing", func(injectables []coreoptions.Injectable) {
+			Expect(func() {
+				options.OverrideCoreOptions(injectables)
+			}).To(PanicWith("cannot apply Azure legacy repair defaults: *coreoptions.Options not found in coreoptions.Injectables"))
+		},
+			Entry("empty registry", []coreoptions.Injectable{}),
+			Entry("different registered type", []coreoptions.Injectable{&options.Options{}}),
+		)
+
 		It("should leave NodeRepair disabled by default", func() {
 			coreOpts := &options.CoreOptions{}
 			coreOpts.AddFlags(fs)
