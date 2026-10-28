@@ -51,7 +51,7 @@ func newTestCase(name string) *testCaseBuilder {
 }
 
 func (b *testCaseBuilder) withInstanceType(offerings ...offering) *testCaseBuilder {
-	b.tc.instanceType = createInstanceType(testInstanceName, offerings...)
+	b.tc.instanceType = createInstanceType(offerings...)
 	return b
 }
 

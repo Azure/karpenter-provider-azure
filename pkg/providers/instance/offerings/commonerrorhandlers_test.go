@@ -80,9 +80,9 @@ type offeringToCheck struct {
 	capacityType string
 }
 
-func createInstanceType(instanceName string, offerings ...offering) *cloudprovider.InstanceType {
+func createInstanceType(offerings ...offering) *cloudprovider.InstanceType {
 	it := &cloudprovider.InstanceType{
-		Name: instanceName,
+		Name: testInstanceName,
 		Requirements: scheduling.NewRequirements(
 			scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, "2"),
 		),

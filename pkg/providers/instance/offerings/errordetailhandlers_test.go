@@ -46,7 +46,7 @@ func newErrorDetailTestCase(name string) *errorDetailTestCaseBuilder {
 }
 
 func (b *errorDetailTestCaseBuilder) withInstanceType(offerings ...offering) *errorDetailTestCaseBuilder {
-	b.tc.instanceType = createInstanceType(testInstanceName, offerings...)
+	b.tc.instanceType = createInstanceType(offerings...)
 	return b
 }
 
@@ -376,7 +376,7 @@ func TestHandleErrorDetails(t *testing.T) {
 
 func TestHandleErrorDetailWithoutCode(t *testing.T) {
 	provider := newTestErrorDetailHandling()
-	err := provider.Handle(t.Context(), createDefaultTestSKU(), createInstanceType(testInstanceName, zone2OnDemand),
+	err := provider.Handle(t.Context(), createDefaultTestSKU(), createInstanceType(zone2OnDemand),
 		testZone2, karpv1.CapacityTypeOnDemand, "", armcontainerservice.ErrorDetail{
 			Message: lo.ToPtr("The requested zone is not supported. The supported zones for location 'westus' are '3,1'"),
 		})

@@ -45,7 +45,7 @@ func newAKSMachineBeginCreateErrorTestCase(name string) *aksMachineBeginCreateEr
 }
 
 func (b *aksMachineBeginCreateErrorTestCaseBuilder) withInstanceType(offerings ...offering) *aksMachineBeginCreateErrorTestCaseBuilder {
-	b.tc.instanceType = createInstanceType(testInstanceName, offerings...)
+	b.tc.instanceType = createInstanceType(offerings...)
 	return b
 }
 
