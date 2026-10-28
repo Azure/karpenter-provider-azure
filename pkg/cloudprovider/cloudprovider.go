@@ -162,7 +162,8 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, err
 	}
 
-	// Note: This filters out any instance types which we're out of capacity for
+	// Filter static requirement and resource incompatibilities here. Offering availability is
+	// checked by the instance provider after it first gets a chance to reuse an existing resource.
 	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
@@ -665,6 +666,7 @@ func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePo
 	}
 	return nodeClass, nil
 }
+
 func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
 	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
@@ -679,9 +681,18 @@ func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *kar
 		}
 	}
 
+	// Filter instance type compatibility here, so we avoid considering instance types that
+	// cannot satisfy the node claim's requirements and resource requests.
+	// Note that offering availability is checked in pkg/providers/allocationstrategy/allocation_strategy.go
+	// NOT here. That is because availability can change moment to moment due to things like quota/capacity, but
+	// we need to still consider instance types in case of something like NodeClaim recreate (to make CloudProvider.Create idempotent)
+	// If we consider availability here, we may filter out the instance type that we actually previously created.
+	// Then a subsequent call to Create will not adopt the already-created instance because it was filtered out here due to max quota (for example),
+	// even though since we aren't actually creating a NEW VM, for the purposes of adopting an existing VM to a NodeClaim availability doesn't matter.
 	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 	return lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
 		return reqs.Compatible(i.Requirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil &&
+			len(i.Offerings.Compatible(reqs)) > 0 &&
 			resources.Fits(nodeClaim.Spec.Resources.Requests, i.Allocatable())
 	}), nil
 
