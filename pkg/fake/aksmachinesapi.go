@@ -115,6 +115,11 @@ func AKSMachineAPIErrorVMSizeNotSupportedBadRequest(vmSize, subscription, locati
 	return newResponseError("BadRequest", http.StatusBadRequest, message)
 }
 
+func AKSMachineAPIErrorAvailabilityZoneNotSupported(zone, location string) *azcore.ResponseError {
+	message := fmt.Sprintf("The zone(s) '%s' for resource 'dummy' is not supported. The supported zones for location '%s' are '2,3'", zone, location)
+	return newResponseError("AvailabilityZoneNotSupported", http.StatusBadRequest, message)
+}
+
 // AKSMachineAPIErrorLinkedAuthorizationFailed is ARM's synchronous rejection of a Machine PUT when
 // Karpenter's identity can't join the public IP prefix, or the prefix doesn't exist (as seen in E2E).
 func AKSMachineAPIErrorLinkedAuthorizationFailed(prefixID string) *azcore.ResponseError {
