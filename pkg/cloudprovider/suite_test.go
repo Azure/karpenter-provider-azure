@@ -556,6 +556,38 @@ var _ = Describe("CloudProvider", func() {
 			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
 		})
 
+		It("should not adjust family quota for Spot VM create or delete", func() {
+			spotSKU := fake.MakeSKU("Standard_D2s_v3")
+			largerSKU := fake.MakeSKU("Standard_D4s_v3")
+			Expect(largerSKU.GetFamilyName()).To(Equal(spotSKU.GetFamilyName()))
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(spotSKU.GetFamilyName())},
+				CurrentValue: lo.ToPtr[int32](98),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{spotSKU.GetName()}},
+				{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot}},
+			}
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+
+			created, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeSpot))
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, spotSKU)).To(BeTrue(), "Spot create must not consume family quota")
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, largerSKU)).To(BeFalse())
+
+			// Clear any create adjustment before verifying delete independently.
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			nodeClaim.Status = created.Status
+			nodeClaim.Labels = created.Labels
+			nodeClaim.Annotations = created.Annotations
+			Expect(cloudProvider.Delete(ctx, nodeClaim)).To(Succeed())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, largerSKU)).To(BeFalse(), "Spot delete must not release family quota")
+		})
+
 		It("should release quota after failed VM creation cleanup", func() {
 			sku := fake.MakeSKU("Standard_D2_v3")
 			vCPUs := lo.Must(sku.VCPU())
