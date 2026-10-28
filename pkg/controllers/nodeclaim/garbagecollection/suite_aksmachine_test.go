@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/node/termination"
 	"sigs.k8s.io/karpenter/pkg/controllers/node/termination/terminator"
 	"sigs.k8s.io/karpenter/pkg/controllers/nodeclaim/lifecycle"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	"sigs.k8s.io/karpenter/pkg/state/nodepoolhealth"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
@@ -329,7 +330,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			Expect(node.DeletionTimestamp.IsZero()).To(BeFalse())
 
 			recorder := events.NewRecorder(&record.FakeRecorder{})
-			queue := terminator.NewQueue(env.Client, recorder)
+			queue := terminator.NewQueue(fakeClock, env.Client, recorder)
 			terminationController := termination.NewController(
 				fakeClock,
 				env.Client,
@@ -348,6 +349,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 				env.Client,
 				cloudProvider,
 				recorder,
+				state.NewCluster(fakeClock, env.Client, cloudProvider),
 				nodepoolhealth.NewState(),
 				nil,
 			)

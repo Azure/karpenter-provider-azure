@@ -134,7 +134,9 @@ spec:
               value: "{{ join "," . }}"
           {{- end }}
             - name: FEATURE_GATES
-              value: "CapacityBuffer={{ dig "capacityBuffer" false .Values.settings.featureGates }},ReservedCapacity={{ dig "reservedCapacity" false .Values.settings.featureGates }},SpotToSpotConsolidation={{ dig "spotToSpotConsolidation" false .Values.settings.featureGates }},NodeRepair={{ dig "nodeRepair" false .Values.settings.featureGates }},NodeOverlay={{ dig "nodeOverlay" false .Values.settings.featureGates }},StaticCapacity={{ dig "staticCapacity" false .Values.settings.featureGates }}"
+              value: "CapacityBuffer={{ dig "capacityBuffer" false .Values.settings.featureGates }},ReservedCapacity={{ dig "reservedCapacity" false .Values.settings.featureGates }},SpotToSpotConsolidation={{ dig "spotToSpotConsolidation" false .Values.settings.featureGates }},NodeRepair={{ dig "nodeRepair" false .Values.settings.featureGates }},NodeOverlay={{ dig "nodeOverlay" false .Values.settings.featureGates }},StaticCapacity={{ dig "staticCapacity" false .Values.settings.featureGates }},TerminateFirstDrift={{ dig "terminateFirstDrift" false .Values.settings.featureGates }},TerminateFirstRepair={{ dig "terminateFirstRepair" false .Values.settings.featureGates }},PodDeletionCostManagement={{ dig "podDeletionCostManagement" false .Values.settings.featureGates }}"
+            - name: LEGACY_NODE_REPAIR
+              value: "{{ dig "legacyNodeRepair" true .Values.settings }}"
           {{- with .Values.settings.batchMaxDuration }}
             - name: BATCH_MAX_DURATION
               value: "{{ . }}"
