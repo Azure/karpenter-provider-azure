@@ -19,7 +19,6 @@ package offerings
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -241,8 +240,6 @@ func handleSKUNotAvailableError(
 	return corecloudprovider.NewCreateError(err, SKUNotAvailableReason, err.Error())
 }
 
-var supportedAvailabilityZonesPattern = regexp.MustCompile(`The supported zones for location '[^'\r\n]*' are '([0-9]+(?:[ ,]+[0-9]+)*)'`)
-
 func handleInvalidAvailabilityZoneError(
 	ctx context.Context,
 	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
@@ -251,7 +248,7 @@ func handleInvalidAvailabilityZoneError(
 	zone,
 	_,
 	_,
-	errorMessage string,
+	_ string,
 ) error {
 	if zone == "" || zone == zones.Regional {
 		return nil
@@ -259,11 +256,6 @@ func handleInvalidAvailabilityZoneError(
 	// Zone validity is treated as SKU-specific, independent of priority or reservations.
 	unavailableOfferings.MarkSKUZoneUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, instanceType.Name, zone, InvalidAvailabilityZoneTTL)
 	err := fmt.Errorf("availability zone %s is not supported for instance type %s (will try another available placement)", zone, instanceType.Name)
-	// Azure messages can contain resource identifiers; retain only the numeric zone list.
-	if matches := supportedAvailabilityZonesPattern.FindStringSubmatch(errorMessage); len(matches) == 2 {
-		supportedZones := strings.FieldsFunc(matches[1], func(r rune) bool { return r == ',' || r == ' ' })
-		err = fmt.Errorf("%w; supported Azure zones for this SKU: %s", err, strings.Join(supportedZones, ", "))
-	}
 	return corecloudprovider.NewCreateError(err, InvalidAvailabilityZoneReason, err.Error())
 }
 

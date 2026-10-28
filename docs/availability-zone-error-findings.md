@@ -136,8 +136,8 @@ compensate.
 - The cache belongs to the configured provider subscription, region and
   provisioning mode; mode changes do not preserve these in-memory exclusions.
 - Other zones and regional placement stay eligible.
-- Retain sanitized numeric supported-zone hints, described as applying to the
-  attempted SKU rather than every SKU in the region.
+- Report the rejected SKU and zone without parsing supported-zone lists or
+  copying raw Azure response text, which can contain resource identifiers.
 - Keep ordinary allocation, quota, and reservation isolation behavior unchanged.
 - Test healthy SKUs and larger same-family sizes in the rejected zone, both
   capacity types, reservation scoping, cache generation/expiry, and scheduling

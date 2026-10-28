@@ -195,7 +195,7 @@ func TestHandleInvalidAvailabilityZoneError(t *testing.T) {
 				sku := createDefaultCommonErrorTestSKU()
 				err := handleInvalidAvailabilityZoneError(t.Context(), unavailableOfferings.ForCapacityReservationGroup(groupID),
 					sku, createCommonErrorInstanceType(zone2OnDemand, regionalOnDemand),
-					zone, karpv1.CapacityTypeOnDemand, "", "original Azure response")
+					zone, karpv1.CapacityTypeOnDemand, "", "The zone is not supported for resource '/subscriptions/private-sub/resourceGroups/private-rg/virtualMachines/private-vm'.")
 
 				if zone == "" || zone == zones.Regional {
 					g.Expect(err).ToNot(HaveOccurred())
@@ -203,6 +203,7 @@ func TestHandleInvalidAvailabilityZoneError(t *testing.T) {
 					return
 				}
 				assertHandledError(t, err, fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, zone, testInstanceName), InvalidAvailabilityZoneReason)
+				g.Expect(err.Error()).ToNot(ContainSubstring("private"))
 				g.Expect(singleInstanceCache.ItemCount()).To(Equal(1))
 				otherSKU := createCommonErrorTestSKU("Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2")
 				largerSKU := createCommonErrorTestSKU("Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16")
@@ -221,40 +222,6 @@ func TestHandleInvalidAvailabilityZoneError(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestHandleInvalidAvailabilityZoneErrorDiagnostics(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		message string
-		details string
-	}{
-		{
-			name: "numeric supported zones",
-			message: "The zone(s) '2' for resource '/subscriptions/private-sub/resourceGroups/private-rg/virtualMachines/private-vm' " +
-				"is not supported. The supported zones for location 'private-location' are '3, 1'",
-			details: "; supported Azure zones for this SKU: 3, 1",
-		},
-		{
-			name:    "no supported zones",
-			message: "private Azure response",
-		},
-		{
-			name:    "non-numeric supported zones",
-			message: "The supported zones for location 'private-location' are 'private-zone'",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			err := handleInvalidAvailabilityZoneError(t.Context(), cache.NewUnavailableOfferings().ForCapacityReservationGroup(""),
-				createDefaultCommonErrorTestSKU(), createCommonErrorInstanceType(zone2OnDemand),
-				testZone2, karpv1.CapacityTypeOnDemand, "InvalidAvailabilityZone", tc.message)
-			assertHandledError(t, err,
-				fmt.Errorf("%s%s", fmt.Sprintf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName), tc.details),
-				InvalidAvailabilityZoneReason)
-			g.Expect(err.Error()).ToNot(ContainSubstring("private"))
-		})
 	}
 }
 
