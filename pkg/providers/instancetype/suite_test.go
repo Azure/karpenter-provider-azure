@@ -546,7 +546,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(zone).To(Equal(fakeZone1))
 				ExpectUnavailable(testEnv, defaultTestSKU, fakeZone1, karpv1.CapacityTypeOnDemand)
-				Expect(testEnv.UnavailableOfferingsCache.IsUnavailable(defaultTestSKU, fakeZone1, karpv1.CapacityTypeSpot)).To(BeFalse())
+				ExpectUnavailable(testEnv, defaultTestSKU, fakeZone1, karpv1.CapacityTypeSpot)
 				Expect(testEnv.UnavailableOfferingsCache.IsUnavailable(defaultTestSKU, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeFalse())
 
 				otherSKU := fake.MakeSKU("Standard_D2_v5")

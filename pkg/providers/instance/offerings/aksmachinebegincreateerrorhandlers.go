@@ -24,7 +24,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/skewer"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
@@ -77,7 +76,7 @@ func NewAKSMachineBeginCreateErrorHandler(unavailableOfferings *cache.Unavailabl
 				match: func(he *HandlableError) bool {
 					return he.Code == aksMachineAvailabilityZoneNotSupportedCode
 				},
-				handle: handleAKSMachineAvailabilityZoneNotSupportedError,
+				handle: handleInvalidAvailabilityZoneError,
 			},
 			{
 				match:  isSKUNotAvailableForSubscription,
@@ -122,24 +121,6 @@ func handleSKUNotAvailableForSubscriptionError(
 		"VM size %s is not supported for this subscription in this location, for more details please visit: https://aka.ms/aks/vm-size-selector",
 		instanceType.Name)
 	return corecloudprovider.NewCreateError(err, SKUNotAvailableReason, err.Error())
-}
-
-func handleAKSMachineAvailabilityZoneNotSupportedError(
-	ctx context.Context,
-	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
-	_ *skewer.SKU,
-	instanceType *corecloudprovider.InstanceType,
-	zone,
-	_,
-	_,
-	errorMessage string,
-) error {
-	if zone == "" || zone == zones.Regional {
-		return nil
-	}
-	// Frontend zone membership is SKU-specific and independent of priority or reservations.
-	unavailableOfferings.MarkSKUZoneUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, instanceType.Name, zone, InvalidAvailabilityZoneTTL)
-	return invalidAvailabilityZoneError(instanceType.Name, zone, errorMessage)
 }
 
 // For "Virtual Machine size: '%s' is not supported for subscription %s in location '%[3]s'. %s. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location '%[3]s'."

@@ -186,17 +186,14 @@ func createCommonErrorInstanceType(offerings ...offering) *cloudprovider.Instanc
 }
 
 func TestHandleInvalidAvailabilityZoneError(t *testing.T) {
-	for name, handler := range map[string]errorHandle{
-		"Compute": handleInvalidAvailabilityZoneError,
-		"Machine": handleAKSMachineAvailabilityZoneNotSupportedError,
-	} {
+	for _, groupID := range []string{"", testCapacityReservationGroupID} {
 		for _, zone := range []string{testZone2, zones.Regional, ""} {
-			t.Run(name+"/zone="+zone, func(t *testing.T) {
+			t.Run("scope="+groupID+"/zone="+zone, func(t *testing.T) {
 				g := NewWithT(t)
 				singleInstanceCache := gocache.New(time.Hour, time.Hour)
 				unavailableOfferings := cache.NewUnavailableOfferingsWithCache(singleInstanceCache, gocache.New(time.Hour, time.Hour))
 				sku := createDefaultCommonErrorTestSKU()
-				err := handler(t.Context(), unavailableOfferings.ForCapacityReservationGroup(""),
+				err := handleInvalidAvailabilityZoneError(t.Context(), unavailableOfferings.ForCapacityReservationGroup(groupID),
 					sku, createCommonErrorInstanceType(zone2OnDemand, regionalOnDemand),
 					zone, karpv1.CapacityTypeOnDemand, "", "original Azure response")
 
@@ -207,12 +204,18 @@ func TestHandleInvalidAvailabilityZoneError(t *testing.T) {
 				}
 				assertHandledError(t, err, fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, zone, testInstanceName), InvalidAvailabilityZoneReason)
 				g.Expect(singleInstanceCache.ItemCount()).To(Equal(1))
-				g.Expect(unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
-				g.Expect(unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)).To(Equal(name == "Machine"))
-				g.Expect(unavailableOfferings.IsUnavailable(sku, testZone3, karpv1.CapacityTypeOnDemand)).To(BeFalse())
-				g.Expect(unavailableOfferings.IsUnavailable(sku, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeFalse())
 				otherSKU := createCommonErrorTestSKU("Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2")
-				g.Expect(unavailableOfferings.IsUnavailable(otherSKU, zone, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+				largerSKU := createCommonErrorTestSKU("Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16")
+				for _, viewGroupID := range []string{"", testCapacityReservationGroupID, testCapacityReservationGroupID + "-other"} {
+					view := unavailableOfferings.ForCapacityReservationGroup(viewGroupID)
+					for _, capacityType := range []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot} {
+						g.Expect(view.IsUnavailable(sku, zone, capacityType)).To(BeTrue())
+						g.Expect(view.IsUnavailable(sku, testZone3, capacityType)).To(BeFalse())
+						g.Expect(view.IsUnavailable(sku, zones.Regional, capacityType)).To(BeFalse())
+						g.Expect(view.IsUnavailable(otherSKU, zone, capacityType)).To(BeFalse())
+						g.Expect(view.IsUnavailable(largerSKU, zone, capacityType)).To(BeFalse())
+					}
+				}
 				for _, item := range singleInstanceCache.Items() {
 					g.Expect(time.Until(time.Unix(0, item.Expiration))).To(BeNumerically("~", 4*time.Hour, time.Second))
 				}

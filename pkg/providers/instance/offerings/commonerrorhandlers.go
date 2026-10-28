@@ -246,22 +246,19 @@ var supportedAvailabilityZonesPattern = regexp.MustCompile(`The supported zones 
 func handleInvalidAvailabilityZoneError(
 	ctx context.Context,
 	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
-	sku *skewer.SKU,
+	_ *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
-	capacityType,
+	_,
 	_,
 	errorMessage string,
 ) error {
 	if zone == "" || zone == zones.Regional {
 		return nil
 	}
-	unavailableOfferings.MarkOfferingUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, sku, zone, capacityType, InvalidAvailabilityZoneTTL)
-	return invalidAvailabilityZoneError(instanceType.Name, zone, errorMessage)
-}
-
-func invalidAvailabilityZoneError(instanceType, zone, errorMessage string) error {
-	err := fmt.Errorf("availability zone %s is not supported for instance type %s (will try another available placement)", zone, instanceType)
+	// Zone validity is treated as SKU-specific, independent of priority or reservations.
+	unavailableOfferings.MarkSKUZoneUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, instanceType.Name, zone, InvalidAvailabilityZoneTTL)
+	err := fmt.Errorf("availability zone %s is not supported for instance type %s (will try another available placement)", zone, instanceType.Name)
 	// Azure messages can contain resource identifiers; retain only the numeric zone list.
 	if matches := supportedAvailabilityZonesPattern.FindStringSubmatch(errorMessage); len(matches) == 2 {
 		supportedZones := strings.FieldsFunc(matches[1], func(r rune) bool { return r == ',' || r == ' ' })

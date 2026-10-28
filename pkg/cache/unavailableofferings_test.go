@@ -403,32 +403,6 @@ func TestUnavailableOfferings_MarkSKUZoneUnavailableWithTTLExpiration(t *testing
 	}
 }
 
-func TestUnavailableOfferings_MarkOfferingUnavailableWithTTL(t *testing.T) {
-	for _, groupID := range []string{"", "reserved"} {
-		t.Run("scope="+groupID, func(t *testing.T) {
-			u := NewUnavailableOfferings()
-			view := u.ForCapacityReservationGroup(groupID)
-			small := createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8)
-			large := createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16)
-
-			view.MarkOfferingUnavailableWithTTL(t.Context(), "test reason", small, "westus-1", karpv1.CapacityTypeOnDemand, time.Hour)
-
-			if !view.IsUnavailable(small, "westus-1", karpv1.CapacityTypeOnDemand) {
-				t.Error("expected the attempted offering to be excluded")
-			}
-			if view.IsUnavailable(small, "westus-1", karpv1.CapacityTypeSpot) ||
-				view.IsUnavailable(small, "westus-2", karpv1.CapacityTypeOnDemand) ||
-				view.IsUnavailable(large, "westus-1", karpv1.CapacityTypeOnDemand) ||
-				u.ForCapacityReservationGroup(groupID+"-other").IsUnavailable(small, "westus-1", karpv1.CapacityTypeOnDemand) {
-				t.Error("expected other capacities, zones, sizes and groups to remain available")
-			}
-			if groupID != "" && u.IsUnavailable(small, "westus-1", karpv1.CapacityTypeOnDemand) {
-				t.Error("expected unreserved capacity to remain available")
-			}
-		})
-	}
-}
-
 // Each member of a group is a separately reserved block, so a failure on one size must not
 // suppress a larger sibling the user has also reserved.
 func TestUnavailableOfferings_CapacityReservationGroupDoesNotWidenByFamily(t *testing.T) {

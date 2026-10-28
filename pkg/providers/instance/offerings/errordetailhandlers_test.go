@@ -81,6 +81,11 @@ func (b *errorDetailTestCaseBuilder) expectReason(reason string) *errorDetailTes
 	return b
 }
 
+func (b *errorDetailTestCaseBuilder) expectSharedAcrossGroups() *errorDetailTestCaseBuilder {
+	b.tc.expectedSharedAcrossGroups = true
+	return b
+}
+
 func (b *errorDetailTestCaseBuilder) expectUnavailable(offerings ...offeringToCheck) *errorDetailTestCaseBuilder {
 	b.tc.expectedUnavailableOfferingsInformation = offerings
 	return b
@@ -105,6 +110,7 @@ type errorDetailTestCase struct {
 	cloudErr                                armcontainerservice.ErrorDetail
 	expectedErr                             error
 	expectedReason                          string
+	expectedSharedAcrossGroups              bool
 	expectedUnavailableOfferingsInformation []offeringToCheck
 	expectedAvailableOfferingsInformation   []offeringToCheck
 }
@@ -141,11 +147,12 @@ func setupErrorDetailTestCases() []errorDetailTestCase {
 			withErrorDetail("InvalidAvailabilityZone", "The requested zone is not supported.").
 			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
 			expectReason(InvalidAvailabilityZoneReason).
+			expectSharedAcrossGroups().
 			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
 			).
 			expectAvailable(
-				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
 				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
@@ -161,7 +168,11 @@ func setupErrorDetailTestCases() []errorDetailTestCase {
 			withErrorDetail("InvalidAvailabilityZone", "The requested zone is not supported.").
 			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
 			expectReason(InvalidAvailabilityZoneReason).
-			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			expectSharedAcrossGroups().
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+			).
 			expectAvailable(
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
@@ -369,7 +380,7 @@ func TestHandleErrorDetails(t *testing.T) {
 			)
 
 			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
-			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, false, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, tc.expectedSharedAcrossGroups, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
 }

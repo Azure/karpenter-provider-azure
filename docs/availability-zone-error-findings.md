@@ -93,9 +93,12 @@ zone; other SKUs and sizes must remain eligible.
 
 ### Compute provisioning
 
-Treat `InvalidAvailabilityZone` as rejection of the attempted offering. Without
-a broader service contract, do not propagate it to other sizes, capacity types,
-or capacity reservation groups.
+Use the same exact SKU-zone exclusion for `InvalidAvailabilityZone` and Machine
+frontend `AvailabilityZoneNotSupported`. These are zone-validity errors rather
+than capacity signals: changing priority or reservation group is not a remedy
+for an unsupported SKU-zone combination. Share the exclusion across those
+choices, but do not infer that other SKUs or larger family sizes are invalid.
+This is a bounded provider policy, not a verified region-wide Compute contract.
 
 ### Machine asynchronous failures
 
@@ -126,10 +129,9 @@ compensate.
 
 ## Provider policy
 
-- Machine frontend `AvailabilityZoneNotSupported`: exact SKU and zone, shared
-  across priority types and reservation groups, without family-size widening.
-- Compute `InvalidAvailabilityZone`: exact attempted SKU, zone, capacity type,
-  and reservation scope, without family-size widening.
+- Machine frontend `AvailabilityZoneNotSupported` and Compute
+  `InvalidAvailabilityZone`: the same exact SKU and zone, shared across priority
+  types and reservation groups, without family-size widening.
 - Four-hour TTL for these exclusions; in-memory state clears on restart.
 - The cache belongs to the configured provider subscription, region and
   provisioning mode; mode changes do not preserve these in-memory exclusions.
