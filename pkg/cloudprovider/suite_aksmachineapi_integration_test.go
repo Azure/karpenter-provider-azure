@@ -837,6 +837,36 @@ var _ = Describe("CloudProvider", func() {
 			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
 		})
 
+		It("should retain quota when AKS Machine promise cleanup cannot delete the instance", func() {
+			sku := fake.MakeSKU("Standard_D2_v3")
+			vCPUs := lo.Must(sku.VCPU())
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+				CurrentValue: lo.ToPtr(int32(100 - vCPUs)),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}},
+				{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+			}
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			instanceTypes = lo.Filter(instanceTypes, func(instanceType *corecloudprovider.InstanceType, _ int) bool {
+				return instanceType.Name == sku.GetName()
+			})
+			Expect(instanceTypes).To(HaveLen(1))
+			promise, err := azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+
+			azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.BeginError.Set(fake.AKSMachineAPIErrorAny)
+
+			err = promise.Cleanup(ctx)
+			Expect(err).To(HaveOccurred())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse(), "failed cleanup must retain the accepted-create debit")
+		})
+
 		// Run shared AKS Machine API tests
 		runSharedAKSMachineAPITests()
 	})
