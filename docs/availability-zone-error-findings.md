@@ -37,6 +37,29 @@ that this code invalidates a zone for all SKUs and configurations.
 All disposable clusters, Machines, resource groups, and SSH keys used for these
 probes were removed and their absence verified.
 
+### Direct versus header-batch follow-up
+
+On 2026-10-28, a new disposable East US 2 cluster exercised the same Machines API
+version and Kubernetes version. Header probes used one entry in `BatchPutMachine`,
+with zones absent from the shared body and UltraSSD disabled.
+
+| SKU | Zone | Request path | Result |
+| --- | --- | --- | --- |
+| `Standard_DC2s_v3` | 1 | Direct PUT | Synchronous `AvailabilityZoneNotSupported` |
+| `Standard_DC2s_v3` | 1 | Header batch | Provisioning succeeded |
+| `Standard_D2ads_v7` | 1 | Header batch | PUT accepted; asynchronous `OverconstrainedZonalAllocationRequest` |
+| `Standard_D2ds_v5` | 4 | Header batch | Provisioning succeeded |
+
+The DC comparison proves that the direct-create metadata rejection must not be
+assumed to apply to header-batch creation. The zone-4 Machine reported
+`provisioningState: Succeeded` and `vmState: Running`; its underlying Compute VM
+was also observed with zone `4`. A historically rejected placement therefore
+cannot be assumed to remain deployment-invalid.
+
+No asynchronous `InvalidAvailabilityZone` was obtained in this follow-up.
+It does not verify the predicted loss of that code, nor exercise mixed-zone
+multi-Machine partial failures or the UltraSSD shared-zone path.
+
 ## Error paths and limitations
 
 ### Machine frontend validation
@@ -60,7 +83,8 @@ or capacity reservation groups.
 Machine GET errors can have nested details. A source-derived explanation predicts
 that an underlying Compute `InvalidAvailabilityZone` can be converted into a
 generic VM-create failure with its specific code omitted from public details.
-That exact wire shape has not yet been captured by these probes.
+That exact wire shape has not been captured by these probes; the historical
+zone-4 case succeeded through header-batch creation during the follow-up.
 
 The SDK can preserve received details but cannot reconstruct an omitted code.
 Do not classify a generic VM-create failure as zone invalidity or infer it by
@@ -74,8 +98,9 @@ normally omits zones and supplies them per Machine in the header. UltraSSD
 retains zones in the shared template and groups by them. Direct-create validation
 results therefore do not establish equivalent behavior for header batches.
 
-Raw GET errors for header-batch invalid-zone requests, and a direct/batch
-comparison for the catalog disagreement, still need live verification.
+The live direct/batch comparison above confirms that those paths can differ.
+The predicted GET serialization of a Compute `InvalidAvailabilityZone` remains
+unverified; do not broaden classification to a generic error to compensate.
 
 ## Provider policy
 
