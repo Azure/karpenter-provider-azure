@@ -45,6 +45,13 @@ func NewResponseErrorHandler(unavailableOfferings *cache.UnavailableOfferings) *
 		UnavailableOfferings: unavailableOfferings,
 		HandlerEntries: []responseErrorHandlerEntry{
 			{
+				match: func(err error) bool {
+					var responseError *azcore.ResponseError
+					return errors.As(err, &responseError) && responseError.ErrorCode == InvalidAvailabilityZoneReason
+				},
+				handle: handleInvalidAvailabilityZoneError,
+			},
+			{
 				match:  sdkerrors.LowPriorityQuotaHasBeenReached,
 				handle: handleLowPriorityQuotaError,
 			},
@@ -88,8 +95,8 @@ func (h *ResponseErrorHandler) extractErrorCodeAndMessage(err error) (string, st
 	return "", err.Error()
 }
 
-// Handle records the failure against capacityReservationGroupID, or against unreserved
-// capacity when it is empty, so the two never mask each other.
+// Handle scopes capacity failures to capacityReservationGroupID, or to unreserved capacity
+// when it is empty.
 func (h *ResponseErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, capacityReservationGroupID string, responseError error) error {
 	for _, handler := range h.HandlerEntries {
 		if handler.match(responseError) {

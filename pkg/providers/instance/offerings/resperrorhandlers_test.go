@@ -28,6 +28,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/skewer"
 	. "github.com/onsi/gomega"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -50,7 +51,7 @@ func newTestCase(name string) *testCaseBuilder {
 }
 
 func (b *testCaseBuilder) withInstanceType(offerings ...offering) *testCaseBuilder {
-	b.tc.instanceType = createInstanceType(testInstanceName, offerings...)
+	b.tc.instanceType = createInstanceType(offerings...)
 	return b
 }
 
@@ -85,6 +86,11 @@ func (b *testCaseBuilder) expectReason(reason string) *testCaseBuilder {
 	return b
 }
 
+func (b *testCaseBuilder) expectSharedAcrossGroups() *testCaseBuilder {
+	b.tc.expectedSharedAcrossGroups = true
+	return b
+}
+
 func (b *testCaseBuilder) expectUnavailable(offerings ...offeringToCheck) *testCaseBuilder {
 	b.tc.expectedUnavailableOfferingsInformation = offerings
 	return b
@@ -109,6 +115,7 @@ type responseErrorTestCase struct {
 	responseErr                             error
 	expectedErr                             error
 	expectedReason                          string
+	expectedSharedAcrossGroups              bool
 	expectedUnavailableOfferingsInformation []offeringToCheck
 	expectedAvailableOfferingsInformation   []offeringToCheck
 }
@@ -155,7 +162,7 @@ func newTestResponseErrorHandling() *ResponseErrorHandler {
 	return NewResponseErrorHandler(cache.NewUnavailableOfferings())
 }
 
-func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableOfferings, capacityReservationGroupID string, unavailable, available []offeringToCheck) {
+func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableOfferings, capacityReservationGroupID string, sharedAcrossGroups bool, unavailable, available []offeringToCheck) {
 	t.Helper()
 	g := NewWithT(t)
 	view := unavailableOfferings.ForCapacityReservationGroup(capacityReservationGroupID)
@@ -166,8 +173,8 @@ func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableO
 			info.skuToCheck.GetName(), info.zone, info.capacityType,
 		)
 		if capacityReservationGroupID != "" {
-			g.Expect(unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeFalse(),
-				"Expected unreserved offering %s in zone %s with capacity type %s to be unaffected by a capacity reservation group failure",
+			g.Expect(unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(Equal(sharedAcrossGroups),
+				"Unexpected propagation from reserved to unreserved offering %s in zone %s with capacity type %s",
 				info.skuToCheck.GetName(), info.zone, info.capacityType,
 			)
 		}
@@ -183,6 +190,55 @@ func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableO
 
 func setupTestCases() []responseErrorTestCase {
 	return []responseErrorTestCase{
+		newTestCase("AKS-specific availability zone error is not handled by VM").
+			withInstanceType(zone2OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withResponseError("AvailabilityZoneNotSupported", "The requested availability zone is not supported.").
+			expectAvailable(allDefaultTestOfferingInfo()...).
+			build(),
+		newTestCase("Invalid availability zone for on-demand").
+			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withResponseError("InvalidAvailabilityZone", "The requested zone is not supported.").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectSharedAcrossGroups().
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+			).
+			expectAvailable(
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeSpot),
+			).
+			build(),
+		newTestCase("Invalid availability zone for reserved capacity").
+			withInstanceType(zone2OnDemand, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withCapacityReservationGroup(testCapacityReservationGroupID).
+			withResponseError("InvalidAvailabilityZone", "The requested zone is not supported.").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectSharedAcrossGroups().
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+			).
+			expectAvailable(
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+			).
+			build(),
+		newTestCase("Unrelated error mentioning invalid availability zone is not handled").
+			withInstanceType(zone2OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withResponseError("BadRequest", "InvalidAvailabilityZone").
+			expectAvailable(allDefaultTestOfferingInfo()...).
+			build(),
 		newTestCase("Response error is nil").
 			withEmptyInstanceType().
 			withZoneAndCapacity("", karpv1.CapacityTypeOnDemand).
@@ -371,7 +427,21 @@ func TestHandleResponseErrors(t *testing.T) {
 			)
 
 			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
-			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, tc.expectedSharedAcrossGroups, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
+}
+
+func TestHandleWrappedInvalidAvailabilityZone(t *testing.T) {
+	provider := newTestResponseErrorHandling()
+	err := provider.Handle(t.Context(), createDefaultTestSKU(), createCommonErrorInstanceType(zone2OnDemand, regionalOnDemand),
+		testZone2, karpv1.CapacityTypeSpot, "", fmt.Errorf("creating VM: %w", createResponseError("InvalidAvailabilityZone", "The requested zone is not supported.")))
+
+	assertHandledError(t, err, fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName), InvalidAvailabilityZoneReason)
+	assertOfferingsState(t, provider.UnavailableOfferings, "", true,
+		[]offeringToCheck{
+			defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+			defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+		},
+		[]offeringToCheck{defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand)})
 }

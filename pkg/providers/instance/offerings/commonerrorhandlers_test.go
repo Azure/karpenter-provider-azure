@@ -18,7 +18,9 @@ package offerings
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -26,6 +28,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/skewer"
 	. "github.com/onsi/gomega"
+	gocache "github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -51,6 +54,7 @@ const (
 	errMsgOverconstrainedAllocationFmt      = "unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)"
 	errMsgRegionalQuotaExceeded             = "regional on-demand vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests"
 	errMsgSKUNotAvailableForSubscriptionFmt = "VM size %s is not supported for this subscription in this location, for more details please visit: https://aka.ms/aks/vm-size-selector"
+	errMsgInvalidAvailabilityZoneFmt        = "availability zone %s is not supported for instance type %s (will try another available placement)"
 )
 
 var (
@@ -76,9 +80,9 @@ type offeringToCheck struct {
 	capacityType string
 }
 
-func createInstanceType(instanceName string, offerings ...offering) *cloudprovider.InstanceType {
+func createInstanceType(offerings ...offering) *cloudprovider.InstanceType {
 	it := &cloudprovider.InstanceType{
-		Name: instanceName,
+		Name: testInstanceName,
 		Requirements: scheduling.NewRequirements(
 			scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, "2"),
 		),
@@ -179,6 +183,46 @@ func createCommonErrorInstanceType(offerings ...offering) *cloudprovider.Instanc
 	}
 
 	return it
+}
+
+func TestHandleInvalidAvailabilityZoneError(t *testing.T) {
+	for _, groupID := range []string{"", testCapacityReservationGroupID} {
+		for _, zone := range []string{testZone2, zones.Regional, ""} {
+			t.Run("scope="+groupID+"/zone="+zone, func(t *testing.T) {
+				g := NewWithT(t)
+				singleInstanceCache := gocache.New(time.Hour, time.Hour)
+				unavailableOfferings := cache.NewUnavailableOfferingsWithCache(singleInstanceCache, gocache.New(time.Hour, time.Hour))
+				sku := createDefaultCommonErrorTestSKU()
+				err := handleInvalidAvailabilityZoneError(t.Context(), unavailableOfferings.ForCapacityReservationGroup(groupID),
+					sku, createCommonErrorInstanceType(zone2OnDemand, regionalOnDemand),
+					zone, karpv1.CapacityTypeOnDemand, "", "The zone is not supported for resource '/subscriptions/private-sub/resourceGroups/private-rg/virtualMachines/private-vm'.")
+
+				if zone == "" || zone == zones.Regional {
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(singleInstanceCache.ItemCount()).To(BeZero())
+					return
+				}
+				assertHandledError(t, err, fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, zone, testInstanceName), InvalidAvailabilityZoneReason)
+				g.Expect(err.Error()).ToNot(ContainSubstring("private"))
+				g.Expect(singleInstanceCache.ItemCount()).To(Equal(1))
+				otherSKU := createCommonErrorTestSKU("Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2")
+				largerSKU := createCommonErrorTestSKU("Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16")
+				for _, viewGroupID := range []string{"", testCapacityReservationGroupID, testCapacityReservationGroupID + "-other"} {
+					view := unavailableOfferings.ForCapacityReservationGroup(viewGroupID)
+					for _, capacityType := range []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot} {
+						g.Expect(view.IsUnavailable(sku, zone, capacityType)).To(BeTrue())
+						g.Expect(view.IsUnavailable(sku, testZone3, capacityType)).To(BeFalse())
+						g.Expect(view.IsUnavailable(sku, zones.Regional, capacityType)).To(BeFalse())
+						g.Expect(view.IsUnavailable(otherSKU, zone, capacityType)).To(BeFalse())
+						g.Expect(view.IsUnavailable(largerSKU, zone, capacityType)).To(BeFalse())
+					}
+				}
+				for _, item := range singleInstanceCache.Items() {
+					g.Expect(time.Until(time.Unix(0, item.Expiration))).To(BeNumerically("~", 4*time.Hour, time.Second))
+				}
+			})
+		}
+	}
 }
 
 func TestMarkOfferingsUnavailableForCapacityTypeAndPlacement(t *testing.T) {
