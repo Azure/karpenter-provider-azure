@@ -162,7 +162,8 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, err
 	}
 
-	// Note: This filters out any instance types which we're out of capacity for
+	// Filter static requirement and resource incompatibilities here. Offering availability is
+	// checked by the instance provider after it first gets a chance to reuse an existing resource.
 	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
@@ -266,6 +267,7 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 			c.handleInstancePromiseWaitError(ctx, instancePromise, nodeClaim, err)
 			return toCreateError(err, "creating standalone instance failed")
 		}
+		return nil
 	}
 	// For NodePool-managed nodeclaims, launch a single goroutine to poll the returned promise.
 	// Note that we could store the LRO details on the NodeClaim, but we don't bother today because Karpenter
@@ -501,15 +503,14 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	// AKS machine-based node
 	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
-		return c.aksMachineInstanceProvider.Delete(ctx, aksMachineName)
+		return c.aksMachineInstanceProvider.Delete(ctx, nodeClaim, aksMachineName)
 	}
 
-	// VM-based node
 	vmName, err := nodeclaimutils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		return fmt.Errorf("getting VM name, %w", err)
 	}
-	return c.vmInstanceProvider.Delete(ctx, vmName)
+	return c.vmInstanceProvider.Delete(ctx, nodeClaim, vmName)
 }
 
 // IsDrifted checks if the NodeClaim has drifted from our goal state.
@@ -665,6 +666,7 @@ func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePo
 	}
 	return nodeClass, nil
 }
+
 func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
 	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
@@ -679,10 +681,18 @@ func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *kar
 		}
 	}
 
+	// Filter instance type compatibility here, so we avoid considering instance types that
+	// cannot satisfy the node claim's requirements and resource requests.
+	// Note that offering availability is checked in pkg/providers/allocationstrategy/allocation_strategy.go
+	// NOT here. That is because availability can change moment to moment due to things like quota/capacity, but
+	// we need to still consider instance types in case of something like NodeClaim recreate (to make CloudProvider.Create idempotent)
+	// If we consider availability here, we may filter out the instance type that we actually previously created.
+	// Then a subsequent call to Create will not adopt the already-created instance because it was filtered out here due to max quota (for example),
+	// even though since we aren't actually creating a NEW VM, for the purposes of adopting an existing VM to a NodeClaim availability doesn't matter.
 	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 	return lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
 		return reqs.Compatible(i.Requirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil &&
-			len(i.Offerings.Compatible(reqs).Available()) > 0 &&
+			len(i.Offerings.Compatible(reqs)) > 0 &&
 			resources.Fits(nodeClaim.Spec.Resources.Requests, i.Allocatable())
 	}), nil
 
@@ -751,6 +761,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 	labels[v1beta1.AKSLabelScaleSetPriority] = instance.GetScaleSetPriorityLabelFromVM(vm)
 	labels[v1beta1.AKSLabelPriority] = instance.GetPriorityLabelFromVM(vm)
 	labels[v1beta1.LabelUltraSSD] = fmt.Sprint(instance.GetUltraSSDEnabled(vm))
+	annotations[v1beta1.AnnotationCapacityReservationGroupID] = instance.CapacityReservationGroupID(vm)
 
 	if tag, ok := vm.Tags[launchtemplate.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
@@ -827,9 +838,10 @@ func setAdditionalAnnotationsForNewNodeClaim(ctx context.Context, nodeClaim *kar
 		return fmt.Errorf("failed to calculate in place update hash, %w", err)
 	}
 	nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
-		v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
-		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
-		v1beta1.AnnotationInPlaceUpdateHash:       inPlaceUpdateHash,
+		v1beta1.AnnotationAKSNodeClassHash:           nodeClass.Hash(),
+		v1beta1.AnnotationAKSNodeClassHashVersion:    v1beta1.AKSNodeClassHashVersion,
+		v1beta1.AnnotationInPlaceUpdateHash:          inPlaceUpdateHash,
+		v1beta1.AnnotationCapacityReservationGroupID: nodeClass.GetCapacityReservationGroupID(),
 	})
 	return nil
 }
