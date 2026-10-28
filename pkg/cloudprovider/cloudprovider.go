@@ -184,6 +184,7 @@ func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1
 	if err != nil {
 		return nil, toCreateError(err, "creating instance failed")
 	}
+
 	if err := c.handleInstancePromise(ctx, vmPromise, nodeClaim); err != nil {
 		return nil, err
 	}
@@ -217,6 +218,7 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	if err != nil {
 		return nil, toCreateError(err, "creating AKS machine failed")
 	}
+
 	// Handle the promise
 	if err := c.handleInstancePromise(ctx, aksMachinePromise, nodeClaim); err != nil {
 		return nil, err
