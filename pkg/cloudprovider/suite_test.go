@@ -342,6 +342,11 @@ func runCapacityBufferTests(expectCreateCalls func(expectedCalls int)) {
 
 var _ = Describe("CloudProvider", func() {
 	Context("Repair", func() {
+		const (
+			legacyRepairMode      = true
+			budgetAwareRepairMode = false
+		)
+
 		It("should explicitly reject in-place reboot", func() {
 			err := (&CloudProvider{}).Reboot(ctx, nodeClaim, "operation-id")
 			Expect(corecloudprovider.IsNodeRebootNotImplementedError(err)).To(BeTrue())
@@ -349,9 +354,10 @@ var _ = Describe("CloudProvider", func() {
 
 		DescribeTable("should preserve repair tolerations and forceful drain bounds", func(conditionType v1.NodeConditionType, conditionStatus v1.ConditionStatus, toleration time.Duration) {
 			repairCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
-				FeatureGates: coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
+				FeatureGates:     coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
+				LegacyNodeRepair: lo.ToPtr(false),
 			}))
-			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil, LegacyRepairPolicies)
+			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil, legacyRepairMode)
 			Expect(legacyProvider.RepairPolicies()).To(HaveLen(4))
 			Expect(legacyProvider.RepairPolicies()).To(ContainElement(corecloudprovider.RepairPolicy{
 				ConditionType:      conditionType,
@@ -360,7 +366,7 @@ var _ = Describe("CloudProvider", func() {
 				Action:             corecloudprovider.ReplaceNode,
 			}))
 
-			provider := New(nil, nil, nil, nil, nil, nil, nil, BudgetAwareRepairPolicies)
+			provider := New(nil, nil, nil, nil, nil, nil, nil, budgetAwareRepairMode)
 			matcher, err := health.NewRepairPolicyMatcher(repairCtx, provider)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(matcher).ToNot(BeNil())
@@ -391,7 +397,7 @@ var _ = Describe("CloudProvider", func() {
 		)
 
 		It("should select the legacy policy set explicitly", func() {
-			provider := New(nil, nil, nil, nil, nil, nil, nil, LegacyRepairPolicies)
+			provider := New(nil, nil, nil, nil, nil, nil, nil, legacyRepairMode)
 			policies := provider.RepairPolicies()
 			Expect(policies).To(HaveLen(4))
 			for _, policy := range policies {
@@ -406,15 +412,15 @@ var _ = Describe("CloudProvider", func() {
 				FeatureGates:     coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
 				LegacyNodeRepair: lo.ToPtr(true),
 			}))
-			provider := New(nil, nil, nil, nil, nil, nil, nil, LegacyRepairPolicies)
+			provider := New(nil, nil, nil, nil, nil, nil, nil, legacyRepairMode)
 			matcher, err := health.NewRepairPolicyMatcher(repairCtx, provider)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(matcher).To(BeNil())
 		})
 
 		It("should keep returned repair policy profiles independent", func() {
-			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil, LegacyRepairPolicies)
-			provider := New(nil, nil, nil, nil, nil, nil, nil, BudgetAwareRepairPolicies)
+			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil, legacyRepairMode)
+			provider := New(nil, nil, nil, nil, nil, nil, nil, budgetAwareRepairMode)
 			legacyPolicies := legacyProvider.RepairPolicies()
 			policies := provider.RepairPolicies()
 			legacyPolicies[0].TolerationDuration = time.Hour
@@ -438,7 +444,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, LegacyRepairPolicies)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
@@ -585,7 +591,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, LegacyRepairPolicies)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))

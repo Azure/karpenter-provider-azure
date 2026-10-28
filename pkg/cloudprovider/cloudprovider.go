@@ -74,10 +74,6 @@ const (
 	InstanceTypeResolutionFailedReason = "InstanceTypeResolutionFailed"
 	CreateInstanceFailedReason         = "CreateInstanceFailed"
 	SpotConditionPreemptionScheduled   = "PreemptionScheduled"
-
-	// Named values for New's legacyRepairPolicies argument, not separate switches.
-	LegacyRepairPolicies      = true
-	BudgetAwareRepairPolicies = false
 )
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
