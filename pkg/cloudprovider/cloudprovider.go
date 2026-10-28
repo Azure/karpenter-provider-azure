@@ -87,6 +87,13 @@ type CloudProvider struct {
 	recorder                   events.Recorder
 	instanceTypeStore          *nodeoverlay.InstanceTypeStore
 	instancePromiseWg          sync.WaitGroup
+	legacyRepairPolicies       bool
+}
+
+type Option func(*CloudProvider)
+
+func WithLegacyRepairPolicies(enabled bool) Option {
+	return func(c *CloudProvider) { c.legacyRepairPolicies = enabled }
 }
 
 func New(
@@ -97,8 +104,9 @@ func New(
 	kubeClient client.Client,
 	imageProvider imagefamily.NodeImageProvider,
 	store *nodeoverlay.InstanceTypeStore,
+	opts ...Option,
 ) *CloudProvider {
-	return &CloudProvider{
+	provider := &CloudProvider{
 		instanceTypeProvider:       instanceTypeProvider,
 		vmInstanceProvider:         vmInstanceProvider,
 		aksMachineInstanceProvider: aksMachineInstanceProvider,
@@ -106,7 +114,12 @@ func New(
 		imageProvider:              imageProvider,
 		recorder:                   recorder,
 		instanceTypeStore:          store,
+		legacyRepairPolicies:       true,
 	}
+	for _, opt := range opts {
+		opt(provider)
+	}
+	return provider
 }
 
 // WaitForInstancePromises blocks until all in-flight async Create goroutines have completed.
@@ -562,6 +575,49 @@ func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
 }
 
 func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
+	if c.legacyRepairPolicies {
+		return legacyRepairPolicies()
+	}
+	return budgetAwareRepairPolicies()
+}
+
+func legacyRepairPolicies() []cloudprovider.RepairPolicy {
+	// Keep the pre-v1.15 policy profile independent of future recovery choices.
+	return []cloudprovider.RepairPolicy{
+		{
+			ConditionType:      corev1.NodeReady,
+			ConditionStatus:    corev1.ConditionFalse,
+			TolerationDuration: 10 * time.Minute,
+			Action:             cloudprovider.ReplaceNode,
+		},
+		{
+			ConditionType:      corev1.NodeReady,
+			ConditionStatus:    corev1.ConditionUnknown,
+			TolerationDuration: 10 * time.Minute,
+			Action:             cloudprovider.ReplaceNode,
+		},
+		{
+			ConditionType:      "kubernetes.azure.com/NodeHealthy",
+			ConditionStatus:    corev1.ConditionFalse,
+			TolerationDuration: 0,
+			Action:             cloudprovider.ReplaceNode,
+		},
+		{
+			ConditionType:      SpotConditionPreemptionScheduled,
+			ConditionStatus:    corev1.ConditionTrue,
+			TolerationDuration: 0,
+			Action:             cloudprovider.ReplaceNode,
+		},
+	}
+}
+
+func budgetAwareRepairPolicies() []cloudprovider.RepairPolicy {
+	// Start with legacy eligibility and forceful drains; policy changes remain opt-in future work.
+	// Possible per-reason extensions, only after validating Azure signals:
+	//   TerminationGracePeriod: lo.ToPtr(5 * time.Minute), // bounded drain for a responsive node
+	//   Priority:               50,                     // higher urgency, not a budget bypass
+	//   Action:                 cloudprovider.RebootNode, // requires supported Azure reboot operations
+	// Replace overlapping catch-all policies when splitting reasons: an eligible replacement wins over reboot.
 	return []cloudprovider.RepairPolicy{
 		// Supported Kubelet fields
 		{
@@ -591,8 +647,9 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 		// Fast-path repair for Azure Spot VMs that received a platform eviction signal.
 		// The condition is emitted by a node-level agent that polls the Instance Metadata
 		// Service for SpotRebalanceRecommendation / Preempt events. Spot eviction notice
-		// is ~30s, so toleration is 0 — we want to start the replacement immediately
+		// is ~30s, so toleration is 0 — we want repair to become eligible immediately
 		// rather than waiting for the NodeReady=Unknown 10-minute backstop.
+		// Budgets and replacement initialization can still delay termination.
 		{
 			ConditionType:          SpotConditionPreemptionScheduled,
 			ConditionStatus:        corev1.ConditionTrue,

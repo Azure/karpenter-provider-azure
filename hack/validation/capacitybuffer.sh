@@ -24,6 +24,7 @@ enabled_render="$tmp_dir/enabled.yaml"
 legacy_render="$tmp_dir/legacy.yaml"
 new_gates_render="$tmp_dir/new-gates.yaml"
 legacy_repair_render="$tmp_dir/legacy-repair.yaml"
+budget_aware_repair_render="$tmp_dir/budget-aware-repair.yaml"
 legacy_chart="$tmp_dir/karpenter"
 standalone_crd_render="$tmp_dir/standalone-crds.yaml"
 main_crd_render="$tmp_dir/main-crds.yaml"
@@ -80,6 +81,9 @@ run_helm "$new_gates_render" template karpenter charts/karpenter --namespace kar
 run_helm "$legacy_repair_render" template karpenter charts/karpenter --namespace karpenter \
     --set settings.featureGates.nodeRepair=true \
     --set settings.legacyNodeRepair=true
+run_helm "$budget_aware_repair_render" template karpenter charts/karpenter --namespace karpenter \
+    --set settings.featureGates.nodeRepair=true \
+    --set settings.legacyNodeRepair=false
 
 # Render both supported CRD delivery paths.
 run_helm "$standalone_crd_render" template karpenter-crd charts/karpenter-crd
@@ -112,10 +116,10 @@ feature_gates() {
     echo "expected the v1.15 feature gates to render when enabled"
     exit 1
 }
-for render in "$disabled_render" "$legacy_render" "$legacy_repair_render"; do
-    expected="false"
-    if [[ "$render" == "$legacy_repair_render" ]]; then
-        expected="true"
+for render in "$disabled_render" "$legacy_render" "$legacy_repair_render" "$budget_aware_repair_render"; do
+    expected="true"
+    if [[ "$render" == "$budget_aware_repair_render" ]]; then
+        expected="false"
     fi
     actual="$(yq eval-all 'select(.kind == "Deployment") | .spec.template.spec.containers[] | .env[] | select(.name == "LEGACY_NODE_REPAIR") | .value' "$render")"
     [[ "$actual" == "$expected" ]] || {

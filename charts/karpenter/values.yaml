@@ -205,9 +205,10 @@ settings:
   # -- When set, Karpenter ignores pods' Dynamic Resource Allocation requests during scheduling simulations.
   # DRA is not supported by the Azure provider, so this must remain enabled until support, RBAC, and validation are implemented.
   ignoreDRARequests: true
-  # -- Run the legacy forceful repair controller instead of budget-aware repair. Requires nodeRepair.
+  # -- Run the legacy forceful repair controller by default when nodeRepair is enabled.
+  # Set to false to opt into budget-aware repair.
   # The legacy controller does not support terminateFirstRepair or the karpenter.sh/do-not-repair annotation.
-  legacyNodeRepair: false
+  legacyNodeRepair: true
   # -- Disable cluster state metrics and events.
   disableClusterStateObservability: false
 
@@ -232,7 +233,8 @@ settings:
     # Setting this to true will enable spot replacement consolidation for both single and multi-node consolidation.
     spotToSpotConsolidation: false
     # -- nodeRepair is ALPHA and is disabled by default.
-    # Setting this to true enables replacement of unhealthy nodes subject to NodePool disruption budgets.
+    # Setting this to true enables replacement of unhealthy nodes.
+    # Set legacyNodeRepair=false to use NodePool disruption budgets.
     nodeRepair: false
     # -- nodeOverlay is ALPHA and is disabled by default.
     # Setting this will allow the use of node overlay to impact scheduling decisions.

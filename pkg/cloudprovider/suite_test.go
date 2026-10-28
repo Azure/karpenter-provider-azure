@@ -351,7 +351,17 @@ var _ = Describe("CloudProvider", func() {
 			repairCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
 				FeatureGates: coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
 			}))
-			matcher, err := health.NewRepairPolicyMatcher(repairCtx, &CloudProvider{})
+			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil)
+			Expect(legacyProvider.RepairPolicies()).To(HaveLen(4))
+			Expect(legacyProvider.RepairPolicies()).To(ContainElement(corecloudprovider.RepairPolicy{
+				ConditionType:      conditionType,
+				ConditionStatus:    conditionStatus,
+				TolerationDuration: toleration,
+				Action:             corecloudprovider.ReplaceNode,
+			}))
+
+			provider := New(nil, nil, nil, nil, nil, nil, nil, WithLegacyRepairPolicies(false))
+			matcher, err := health.NewRepairPolicyMatcher(repairCtx, provider)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(matcher).ToNot(BeNil())
 			now := fakeClock.Now()
@@ -379,6 +389,39 @@ var _ = Describe("CloudProvider", func() {
 			Entry("NodeHealthy=False", v1.NodeConditionType("kubernetes.azure.com/NodeHealthy"), v1.ConditionFalse, time.Duration(0)),
 			Entry("PreemptionScheduled=True", v1.NodeConditionType(SpotConditionPreemptionScheduled), v1.ConditionTrue, time.Duration(0)),
 		)
+
+		It("should select the legacy policy set explicitly", func() {
+			provider := New(nil, nil, nil, nil, nil, nil, nil, WithLegacyRepairPolicies(true))
+			policies := provider.RepairPolicies()
+			Expect(policies).To(HaveLen(4))
+			for _, policy := range policies {
+				Expect(policy.Action).To(Equal(corecloudprovider.ReplaceNode))
+				Expect(policy.ReasonRegex).To(BeEmpty())
+				Expect(policy.TerminationGracePeriod).To(BeNil())
+			}
+		})
+
+		It("should not construct the new matcher for legacy repair", func() {
+			repairCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
+				FeatureGates:     coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
+				LegacyNodeRepair: lo.ToPtr(true),
+			}))
+			provider := New(nil, nil, nil, nil, nil, nil, nil, WithLegacyRepairPolicies(true))
+			matcher, err := health.NewRepairPolicyMatcher(repairCtx, provider)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(matcher).To(BeNil())
+		})
+
+		It("should keep returned repair policy profiles independent", func() {
+			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil, WithLegacyRepairPolicies(true))
+			provider := New(nil, nil, nil, nil, nil, nil, nil, WithLegacyRepairPolicies(false))
+			legacyPolicies := legacyProvider.RepairPolicies()
+			policies := provider.RepairPolicies()
+			legacyPolicies[0].TolerationDuration = time.Hour
+			*policies[0].TerminationGracePeriod = time.Minute
+			Expect(legacyProvider.RepairPolicies()[0].TolerationDuration).To(Equal(10 * time.Minute))
+			Expect(provider.RepairPolicies()[0].TerminationGracePeriod).To(Equal(lo.ToPtr(time.Duration(0))))
+		})
 	})
 
 	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.

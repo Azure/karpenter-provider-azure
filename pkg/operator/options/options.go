@@ -38,7 +38,22 @@ import (
 )
 
 func init() {
+	for i, injectable := range coreoptions.Injectables {
+		if opts, ok := injectable.(*coreoptions.Options); ok {
+			coreoptions.Injectables[i] = &CoreOptions{Options: *opts}
+		}
+	}
 	coreoptions.Injectables = append(coreoptions.Injectables, &Options{})
+}
+
+// CoreOptions preserves Azure's legacy repair default while allowing explicit core flag overrides.
+type CoreOptions struct {
+	coreoptions.Options
+}
+
+func (o *CoreOptions) AddFlags(fs *coreoptions.FlagSet) {
+	o.Options.AddFlags(fs)
+	o.LegacyNodeRepair = env.WithDefaultBool("LEGACY_NODE_REPAIR", true)
 }
 
 type nodeIdentitiesValue []string
