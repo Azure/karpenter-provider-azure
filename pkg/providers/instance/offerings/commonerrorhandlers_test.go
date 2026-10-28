@@ -186,32 +186,38 @@ func createCommonErrorInstanceType(offerings ...offering) *cloudprovider.Instanc
 }
 
 func TestHandleInvalidAvailabilityZoneError(t *testing.T) {
-	for _, zone := range []string{testZone2, zones.Regional, ""} {
-		t.Run("zone="+zone, func(t *testing.T) {
-			g := NewWithT(t)
-			singleInstanceCache := gocache.New(time.Hour, time.Hour)
-			unavailableOfferings := cache.NewUnavailableOfferingsWithCache(singleInstanceCache, gocache.New(time.Hour, time.Hour))
-			err := handleInvalidAvailabilityZoneError(t.Context(), unavailableOfferings.ForCapacityReservationGroup(""),
-				createDefaultCommonErrorTestSKU(), createCommonErrorInstanceType(zone2OnDemand, regionalOnDemand),
-				zone, karpv1.CapacityTypeOnDemand, "InvalidAvailabilityZone", "original Azure response")
+	for name, handler := range map[string]errorHandle{
+		"Compute": handleInvalidAvailabilityZoneError,
+		"Machine": handleAKSMachineAvailabilityZoneNotSupportedError,
+	} {
+		for _, zone := range []string{testZone2, zones.Regional, ""} {
+			t.Run(name+"/zone="+zone, func(t *testing.T) {
+				g := NewWithT(t)
+				singleInstanceCache := gocache.New(time.Hour, time.Hour)
+				unavailableOfferings := cache.NewUnavailableOfferingsWithCache(singleInstanceCache, gocache.New(time.Hour, time.Hour))
+				sku := createDefaultCommonErrorTestSKU()
+				err := handler(t.Context(), unavailableOfferings.ForCapacityReservationGroup(""),
+					sku, createCommonErrorInstanceType(zone2OnDemand, regionalOnDemand),
+					zone, karpv1.CapacityTypeOnDemand, "", "original Azure response")
 
-			if zone == "" || zone == zones.Regional {
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(singleInstanceCache.ItemCount()).To(BeZero())
-				return
-			}
-			assertHandledError(t, err, fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, zone, testInstanceName), InvalidAvailabilityZoneReason)
-			g.Expect(singleInstanceCache.ItemCount()).To(Equal(1))
-			otherSKU := createCommonErrorTestSKU("Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2")
-			for _, capacityType := range []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot} {
-				g.Expect(unavailableOfferings.IsUnavailable(otherSKU, zone, capacityType)).To(BeTrue())
-				g.Expect(unavailableOfferings.IsUnavailable(otherSKU, testZone3, capacityType)).To(BeFalse())
-				g.Expect(unavailableOfferings.IsUnavailable(otherSKU, zones.Regional, capacityType)).To(BeFalse())
-			}
-			for _, item := range singleInstanceCache.Items() {
-				g.Expect(time.Until(time.Unix(0, item.Expiration))).To(BeNumerically("~", 23*time.Hour, time.Second))
-			}
-		})
+				if zone == "" || zone == zones.Regional {
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(singleInstanceCache.ItemCount()).To(BeZero())
+					return
+				}
+				assertHandledError(t, err, fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, zone, testInstanceName), InvalidAvailabilityZoneReason)
+				g.Expect(singleInstanceCache.ItemCount()).To(Equal(1))
+				g.Expect(unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+				g.Expect(unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)).To(Equal(name == "Machine"))
+				g.Expect(unavailableOfferings.IsUnavailable(sku, testZone3, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+				g.Expect(unavailableOfferings.IsUnavailable(sku, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+				otherSKU := createCommonErrorTestSKU("Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2")
+				g.Expect(unavailableOfferings.IsUnavailable(otherSKU, zone, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+				for _, item := range singleInstanceCache.Items() {
+					g.Expect(time.Until(time.Unix(0, item.Expiration))).To(BeNumerically("~", 4*time.Hour, time.Second))
+				}
+			})
+		}
 	}
 }
 
@@ -225,7 +231,7 @@ func TestHandleInvalidAvailabilityZoneErrorDiagnostics(t *testing.T) {
 			name: "numeric supported zones",
 			message: "The zone(s) '2' for resource '/subscriptions/private-sub/resourceGroups/private-rg/virtualMachines/private-vm' " +
 				"is not supported. The supported zones for location 'private-location' are '3, 1'",
-			details: "; supported Azure zones: 3, 1",
+			details: "; supported Azure zones for this SKU: 3, 1",
 		},
 		{
 			name:    "no supported zones",

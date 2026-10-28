@@ -546,27 +546,39 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(zone).To(Equal(fakeZone1))
 				ExpectUnavailable(testEnv, defaultTestSKU, fakeZone1, karpv1.CapacityTypeOnDemand)
-				ExpectUnavailable(testEnv, defaultTestSKU, fakeZone1, karpv1.CapacityTypeSpot)
+				Expect(testEnv.UnavailableOfferingsCache.IsUnavailable(defaultTestSKU, fakeZone1, karpv1.CapacityTypeSpot)).To(BeFalse())
 				Expect(testEnv.UnavailableOfferingsCache.IsUnavailable(defaultTestSKU, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeFalse())
 
 				otherSKU := fake.MakeSKU("Standard_D2_v5")
-				ExpectUnavailable(testEnv, otherSKU, fakeZone1, karpv1.CapacityTypeOnDemand)
-				ExpectUnavailable(testEnv, otherSKU, fakeZone1, karpv1.CapacityTypeSpot)
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{otherSKU.GetName()},
-				})
-				ExpectApplied(testCtx, env.Client, nodePool)
+				Expect(testEnv.UnavailableOfferingsCache.IsUnavailable(otherSKU, fakeZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
 				testEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 				ExpectProvisionedAndWaitForPromises(testCtx, env.Client, testCluster, testProvider, testProvisioner, testEnv, pod)
 				if !allowRegional {
 					ExpectNotScheduled(testCtx, env.Client, pod)
 					Expect(testEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
-					return
+				} else {
+					node := ExpectScheduled(testCtx, env.Client, pod)
+					Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(defaultTestSKU.GetName()))
+					Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(zones.Regional))
+					Expect(node.Labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeRegional))
 				}
-				node := ExpectScheduled(testCtx, env.Client, pod)
+
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{otherSKU.GetName()},
+					},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{fakeZone1},
+					},
+				)
+				ExpectApplied(testCtx, env.Client, nodePool)
+				otherPod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{
+					v1.LabelInstanceTypeStable: otherSKU.GetName(), v1.LabelTopologyZone: fakeZone1,
+				}})
+				ExpectProvisionedAndWaitForPromises(testCtx, env.Client, testCluster, testProvider, testProvisioner, testEnv, otherPod)
+				node := ExpectScheduled(testCtx, env.Client, otherPod)
 				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(otherSKU.GetName()))
-				Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(zones.Regional))
-				Expect(node.Labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeRegional))
+				Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(fakeZone1))
 			},
 				Entry("scriptless with regional fallback", false, true),
 				Entry("scriptless with a required zone", false, false),

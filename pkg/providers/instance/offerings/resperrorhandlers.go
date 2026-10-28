@@ -96,7 +96,7 @@ func (h *ResponseErrorHandler) extractErrorCodeAndMessage(err error) (string, st
 }
 
 // Handle scopes capacity failures to capacityReservationGroupID, or to unreserved capacity
-// when it is empty. Unsupported zones apply to every scope.
+// when it is empty.
 func (h *ResponseErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, capacityReservationGroupID string, responseError error) error {
 	for _, handler := range h.HandlerEntries {
 		if handler.match(responseError) {

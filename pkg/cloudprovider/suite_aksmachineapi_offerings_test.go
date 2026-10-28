@@ -58,7 +58,7 @@ import (
 )
 
 var _ = Describe("CloudProvider", func() {
-	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
+	Context("AKS Machine API offerings", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
@@ -138,23 +138,35 @@ var _ = Describe("CloudProvider", func() {
 					Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(defaultTestSKU, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeFalse())
 
 					otherSKU := fake.MakeSKU("Standard_D2_v5")
-					ExpectUnavailable(azureEnv, otherSKU, fakeZone1, karpv1.CapacityTypeOnDemand)
-					ExpectUnavailable(azureEnv, otherSKU, fakeZone1, karpv1.CapacityTypeSpot)
-					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-						Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{otherSKU.GetName()},
-					})
-					ExpectApplied(ctx, env.Client, nodePool)
+					Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(otherSKU, fakeZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
 					azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = nil
 					azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					if !allowRegional {
 						ExpectNotScheduled(ctx, env.Client, pod)
-						return
+					} else {
+						node := ExpectScheduled(ctx, env.Client, pod)
+						Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(defaultTestSKU.GetName()))
+						Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(zones.Regional))
+						Expect(node.Labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeRegional))
 					}
-					node := ExpectScheduled(ctx, env.Client, pod)
+
+					coretest.ReplaceRequirements(nodePool,
+						karpv1.NodeSelectorRequirementWithMinValues{
+							Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{otherSKU.GetName()},
+						},
+						karpv1.NodeSelectorRequirementWithMinValues{
+							Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{fakeZone1},
+						},
+					)
+					ExpectApplied(ctx, env.Client, nodePool)
+					otherPod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{
+						v1.LabelInstanceTypeStable: otherSKU.GetName(), v1.LabelTopologyZone: fakeZone1,
+					}})
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, otherPod)
+					node := ExpectScheduled(ctx, env.Client, otherPod)
 					Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(otherSKU.GetName()))
-					Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(zones.Regional))
-					Expect(node.Labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeRegional))
+					Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(fakeZone1))
 				},
 				Entry("Machine API with regional fallback", consts.ProvisionModeAKSMachineAPI, true),
 				Entry("Machine API with a required zone", consts.ProvisionModeAKSMachineAPI, false),

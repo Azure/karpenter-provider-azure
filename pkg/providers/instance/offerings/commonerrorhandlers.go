@@ -39,7 +39,7 @@ var (
 	OverconstrainedAllocationFailureReason      = "OverconstrainedAllocationFailure"
 	SKUNotAvailableReason                       = "SKUNotAvailable"
 	// InvalidAvailabilityZoneReason is the Compute error code and the normalized
-	// reporting reason for unsupported zones from both Compute and AKS Machines.
+	// reporting reason for rejected SKU-zone placements from Compute and AKS Machines.
 	InvalidAvailabilityZoneReason = "InvalidAvailabilityZone"
 
 	// LowQuotaTTL is the TTL for offerings that return a quota error but the quota limit is not 0.
@@ -66,9 +66,8 @@ var (
 	// AllocationFailureTTL is the TTL for offerings that returned an allocation failure from Azure. AllocationFailure usually means that there is a capacity
 	// crunch of some kind (for that zone, for that offering, etc). It's unlikely that the capacity crunch resolves itself in a very short amount of time, hence the longer TTL.
 	AllocationFailureTTL = 1 * time.Hour
-	// InvalidAvailabilityZoneTTL controls how often to retry a zone rejected by deployment APIs.
-	// Catalog/deployment disagreements are unlikely to resolve quickly.
-	InvalidAvailabilityZoneTTL = 23 * time.Hour
+	// InvalidAvailabilityZoneTTL controls how often to retry a rejected SKU-zone placement.
+	InvalidAvailabilityZoneTTL = 4 * time.Hour
 	// SKUNotAvailableSpotTTL can happen if the SKU isn't available at all, OR if it's out of capacity for Spot.
 	// In the first case we'd ideally set a longer TTL like we do for on-demand below, but in the other case it may resolve more quickly,
 	// so we set a 1h TTL.
@@ -247,25 +246,26 @@ var supportedAvailabilityZonesPattern = regexp.MustCompile(`The supported zones 
 func handleInvalidAvailabilityZoneError(
 	ctx context.Context,
 	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
-	_ *skewer.SKU,
+	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
-	_,
+	capacityType,
 	_,
 	errorMessage string,
 ) error {
-	// Compute InvalidAvailabilityZone and Machine API AvailabilityZoneNotSupported reject
-	// the zone itself. SKU-specific zone restrictions instead surface as SkuNotAvailable.
-	// Do not apply this interpretation to AKS cluster/agent-pool preflight errors.
 	if zone == "" || zone == zones.Regional {
 		return nil
 	}
-	unavailableOfferings.MarkZoneUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, zone, InvalidAvailabilityZoneTTL)
-	err := fmt.Errorf("availability zone %s is not supported for instance type %s (will try another available placement)", zone, instanceType.Name)
+	unavailableOfferings.MarkOfferingUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, sku, zone, capacityType, InvalidAvailabilityZoneTTL)
+	return invalidAvailabilityZoneError(instanceType.Name, zone, errorMessage)
+}
+
+func invalidAvailabilityZoneError(instanceType, zone, errorMessage string) error {
+	err := fmt.Errorf("availability zone %s is not supported for instance type %s (will try another available placement)", zone, instanceType)
 	// Azure messages can contain resource identifiers; retain only the numeric zone list.
 	if matches := supportedAvailabilityZonesPattern.FindStringSubmatch(errorMessage); len(matches) == 2 {
 		supportedZones := strings.FieldsFunc(matches[1], func(r rune) bool { return r == ',' || r == ' ' })
-		err = fmt.Errorf("%w; supported Azure zones: %s", err, strings.Join(supportedZones, ", "))
+		err = fmt.Errorf("%w; supported Azure zones for this SKU: %s", err, strings.Join(supportedZones, ", "))
 	}
 	return corecloudprovider.NewCreateError(err, InvalidAvailabilityZoneReason, err.Error())
 }

@@ -48,7 +48,7 @@ func NewErrorDetailHandler(unavailableOfferings *cache.UnavailableOfferings) *Er
 		HandlerEntries: []errorDetailHandlerEntry{
 			{
 				match: func(detail armcontainerservice.ErrorDetail) bool {
-					return detail.Code != nil && isAKSMachineUnsupportedAvailabilityZone(*detail.Code)
+					return detail.Code != nil && *detail.Code == InvalidAvailabilityZoneReason
 				},
 				handle: handleInvalidAvailabilityZoneError,
 			},
@@ -100,7 +100,7 @@ func (h *ErrorDetailHandler) extractErrorCodeAndMessage(errorDetail armcontainer
 }
 
 // Handle scopes capacity failures to capacityReservationGroupID, or to unreserved capacity
-// when it is empty. Unsupported zones apply to every scope.
+// when it is empty.
 func (h *ErrorDetailHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, capacityReservationGroupID string, errorDetail armcontainerservice.ErrorDetail) error {
 	for _, handler := range h.HandlerEntries {
 		if handler.match(errorDetail) {

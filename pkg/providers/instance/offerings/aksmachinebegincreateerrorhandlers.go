@@ -24,6 +24,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/skewer"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
@@ -74,9 +75,9 @@ func NewAKSMachineBeginCreateErrorHandler(unavailableOfferings *cache.Unavailabl
 		handlerEntries: []aksMachineBeginCreateErrorHandlerEntry{
 			{
 				match: func(he *HandlableError) bool {
-					return isAKSMachineUnsupportedAvailabilityZone(he.Code)
+					return he.Code == aksMachineAvailabilityZoneNotSupportedCode
 				},
-				handle: handleInvalidAvailabilityZoneError,
+				handle: handleAKSMachineAvailabilityZoneNotSupportedError,
 			},
 			{
 				match:  isSKUNotAvailableForSubscription,
@@ -91,7 +92,7 @@ func NewAKSMachineBeginCreateErrorHandler(unavailableOfferings *cache.Unavailabl
 }
 
 // Handle scopes capacity failures to capacityReservationGroupID, or to unreserved capacity
-// when it is empty. Unsupported zones apply to every scope.
+// when it is empty. Frontend SKU-zone restrictions apply to every scope.
 func (h *AKSMachineBeginCreateErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, capacityReservationGroupID string, he *HandlableError) error {
 	for _, handler := range h.handlerEntries {
 		if handler.match(he) {
@@ -123,9 +124,22 @@ func handleSKUNotAvailableForSubscriptionError(
 	return corecloudprovider.NewCreateError(err, SKUNotAvailableReason, err.Error())
 }
 
-// Match both the AKS-specific code and underlying Compute errors.
-func isAKSMachineUnsupportedAvailabilityZone(code string) bool {
-	return code == aksMachineAvailabilityZoneNotSupportedCode || code == InvalidAvailabilityZoneReason
+func handleAKSMachineAvailabilityZoneNotSupportedError(
+	ctx context.Context,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
+	_ *skewer.SKU,
+	instanceType *corecloudprovider.InstanceType,
+	zone,
+	_,
+	_,
+	errorMessage string,
+) error {
+	if zone == "" || zone == zones.Regional {
+		return nil
+	}
+	// Frontend zone membership is SKU-specific and independent of priority or reservations.
+	unavailableOfferings.MarkSKUZoneUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, instanceType.Name, zone, InvalidAvailabilityZoneTTL)
+	return invalidAvailabilityZoneError(instanceType.Name, zone, errorMessage)
 }
 
 // For "Virtual Machine size: '%s' is not supported for subscription %s in location '%[3]s'. %s. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location '%[3]s'."

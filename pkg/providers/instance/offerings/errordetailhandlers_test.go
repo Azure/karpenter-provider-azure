@@ -123,22 +123,17 @@ func newTestErrorDetailHandling() *ErrorDetailHandler {
 
 func setupErrorDetailTestCases() []errorDetailTestCase {
 	return []errorDetailTestCase{
-		newErrorDetailTestCase("AKS availability zone not supported").
+		newErrorDetailTestCase("Frontend code is not treated as an asynchronous Compute error").
 			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
 			withErrorDetail("AvailabilityZoneNotSupported", "The requested availability zone is not supported.").
-			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
-			expectReason(InvalidAvailabilityZoneReason).
-			expectUnavailable(
-				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
-				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
-				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
-			).
-			expectAvailable(
-				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
-				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
-			).
+			expectAvailable(allDefaultTestOfferingInfo()...).
+			build(),
+		newErrorDetailTestCase("Generic VM creation failure mentioning a zone error is not classified").
+			withInstanceType(zone2OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("FailedToCreateOrUpdateVirtualMachine", "InvalidAvailabilityZone: the requested zone is not supported.").
+			expectAvailable(allDefaultTestOfferingInfo()...).
 			build(),
 		newErrorDetailTestCase("Invalid availability zone for spot").
 			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
@@ -147,12 +142,12 @@ func setupErrorDetailTestCases() []errorDetailTestCase {
 			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
 			expectReason(InvalidAvailabilityZoneReason).
 			expectUnavailable(
-				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
-				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
 			).
 			expectAvailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
 				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
@@ -374,7 +369,18 @@ func TestHandleErrorDetails(t *testing.T) {
 			)
 
 			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
-			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, tc.expectedReason, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, false, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
+}
+
+func TestHandleErrorDetailWithoutCode(t *testing.T) {
+	provider := newTestErrorDetailHandling()
+	err := provider.Handle(t.Context(), createDefaultTestSKU(), createInstanceType(testInstanceName, zone2OnDemand),
+		testZone2, karpv1.CapacityTypeOnDemand, "", armcontainerservice.ErrorDetail{
+			Message: lo.ToPtr("The requested zone is not supported. The supported zones for location 'westus' are '3,1'"),
+		})
+
+	assertHandledError(t, err, nil, "")
+	assertOfferingsState(t, provider.UnavailableOfferings, "", false, nil, allDefaultTestOfferingInfo())
 }

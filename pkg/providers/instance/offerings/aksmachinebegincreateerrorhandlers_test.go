@@ -126,15 +126,15 @@ func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTest
 			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withHandlableError("AvailabilityZoneNotSupported", "The zone(s) '2' for resource 'dummy' is not supported. The supported zones for location 'westus' are '3,1'").
-			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt+"; supported Azure zones: 3, 1", testZone2, testInstanceName)).
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt+"; supported Azure zones for this SKU: 3, 1", testZone2, testInstanceName)).
 			expectReason(InvalidAvailabilityZoneReason).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
-				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
 			).
 			expectAvailable(
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
 			).
@@ -158,24 +158,11 @@ func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTest
 			withHandlableError("BadRequest", "AvailabilityZoneNotSupported").
 			expectAvailable(allDefaultTestOfferingInfo()...).
 			build(),
-		newAKSMachineBeginCreateErrorTestCase("Invalid availability zone for spot").
+		newAKSMachineBeginCreateErrorTestCase("Compute code is not treated as Machine frontend validation").
 			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
 			withHandlableError("InvalidAvailabilityZone", "The requested zone is not supported.").
-			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
-			expectReason(InvalidAvailabilityZoneReason).
-			expectUnavailable(
-				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
-				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
-				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
-			).
-			expectAvailable(
-				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
-				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
-				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
-				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeSpot),
-			).
+			expectAvailable(allDefaultTestOfferingInfo()...).
 			build(),
 		newAKSMachineBeginCreateErrorTestCase("VMSizeNotSupported").
 			withInstanceType(zone2OnDemand, zone3Spot, regionalOnDemand).
@@ -281,7 +268,7 @@ func TestHandleMachineAPISyncErrors(t *testing.T) {
 			)
 
 			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
-			assertOfferingsState(t, handler.unavailableOfferings, tc.capacityReservationGroupID, tc.expectedReason, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+			assertOfferingsState(t, handler.unavailableOfferings, tc.capacityReservationGroupID, tc.he.Code == aksMachineAvailabilityZoneNotSupportedCode, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
 }
