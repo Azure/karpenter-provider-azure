@@ -92,7 +92,12 @@ type capacityReservationPlacement struct {
 
 type instanceTypesSourceDataGeneration struct {
 	unavailableOfferings uint64
-	quota                uint64
+}
+
+type cachedInstanceTypes struct {
+	base        []*cloudprovider.InstanceType
+	quotaSeqNum uint64
+	quota       []*cloudprovider.InstanceType
 }
 
 type Provider interface {
@@ -191,30 +196,36 @@ func (p *DefaultProvider) List(
 	key := fmt.Sprintf("%016x", paramsHash)
 
 	p.muInstanceTypesCache.Lock()
-	defer p.muInstanceTypesCache.Unlock()
-
 	generation := p.currentInstanceTypesSourceDataGeneration()
 	if generation != p.instanceTypesCacheGeneration {
 		p.instanceTypesCache.Flush()
 		p.instanceTypesCacheGeneration = generation
 	}
+	var cached *cachedInstanceTypes
 	if item, ok := p.instanceTypesCache.Get(key); ok {
-		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
-		// so that modifications to the ordering of the data don't affect the original
-		types := item.([]*cloudprovider.InstanceType)
-		if len(types) > 0 {
-			return slices.Clone(types), nil
-		}
-
-		// Ensure we never return nil
-		return []*cloudprovider.InstanceType{}, nil
+		cached = item.(*cachedInstanceTypes)
+	} else {
+		cached = &cachedInstanceTypes{base: p.buildInstanceTypes(ctx, instanceTypeParams)}
+		p.instanceTypesCache.SetDefault(key, cached)
+	}
+	// If quota hasn't changed, return the cached data
+	quotaSeqNum := p.quotaProvider.SeqNum()
+	if cached.quota != nil && cached.quotaSeqNum == quotaSeqNum {
+		result := slices.Clone(cached.quota)
+		p.muInstanceTypesCache.Unlock()
+		return result, nil
 	}
 
-	result := p.buildInstanceTypes(ctx, instanceTypeParams)
+	// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
+	// so that modifications to the ordering of the data don't affect the original
+	result := slices.Clone(cached.base)
 
-	p.instanceTypesCache.SetDefault(key, result)
-	// Return a shallow copy, matching the cache-hit path, so a caller reordering its slice doesn't reorder the cached one.
-	return append([]*cloudprovider.InstanceType{}, result...), nil
+	// Add quota overlay before returning
+	result, quotaSeqNum = p.applyQuota(ctx, result, instanceTypeParams.CapacityReservationGroupID)
+	cached.quota = result
+	cached.quotaSeqNum = quotaSeqNum
+	p.muInstanceTypesCache.Unlock()
+	return slices.Clone(result), nil
 }
 
 // KubeReservedOverrides converts typed kube-reserved overrides to kubelet resource quantities.
@@ -273,7 +284,7 @@ func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instan
 		if capacityReserved {
 			instanceTypeZones = instanceTypeZones.Intersection(reservedZones[strings.ToLower(sku.GetName())])
 		}
-		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones, params.CapacityReservationGroupID), params, architecture)
+		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones, params.CapacityReservationGroupID), params, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
@@ -288,8 +299,46 @@ func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instan
 func (p *DefaultProvider) currentInstanceTypesSourceDataGeneration() instanceTypesSourceDataGeneration {
 	return instanceTypesSourceDataGeneration{
 		unavailableOfferings: p.unavailableOfferings.SeqNum(),
-		quota:                p.quotaProvider.SeqNum(),
 	}
+}
+
+// applyQuota applies current on-demand quota availability to an instance-type slice,
+// deep-copying only instance types whose offerings change.
+// This is not applied as part of the cached offerings because availability changes every time we create/delete a node which would result in a significant
+// amount of addition work to constant regenerate instance types.
+func (p *DefaultProvider) applyQuota(ctx context.Context, instanceTypes []*cloudprovider.InstanceType, capacityReservationGroupID string) ([]*cloudprovider.InstanceType, uint64) {
+	if capacityReservationGroupID != "" {
+		return instanceTypes, p.quotaProvider.SeqNum()
+	}
+	skus := make([]*skewer.SKU, 0, len(instanceTypes))
+	for _, instanceType := range instanceTypes {
+		if sku, ok := p.instanceTypesInfo[instanceType.Name]; ok {
+			skus = append(skus, sku)
+		}
+	}
+	hasQuotaMap, quotaSeqNum := p.quotaProvider.HasQuotaForSKUs(ctx, skus)
+	for i, instanceType := range instanceTypes {
+		available, ok := hasQuotaMap[instanceType.Name]
+		// If the SKU is not found in the quota map, assume it has quota.
+		// If the SKU is available, we don't need to do anything (available = <cached value> && true doesn't change anything)
+		if !ok || available {
+			continue
+		}
+		// We only mutate OnDemand offerings (when there is no quota available for them)
+		if !slices.ContainsFunc(instanceType.Offerings, func(offering *cloudprovider.Offering) bool {
+			return offering.Available && offering.CapacityType() == karpv1.CapacityTypeOnDemand
+		}) {
+			continue
+		}
+		copied := instanceType.DeepCopy()
+		for _, offering := range copied.Offerings {
+			if offering.CapacityType() == karpv1.CapacityTypeOnDemand {
+				offering.Available = false
+			}
+		}
+		instanceTypes[i] = copied
+	}
+	return instanceTypes, quotaSeqNum
 }
 
 func (p *DefaultProvider) LivenessProbe(req *http.Request) error {
@@ -390,7 +439,7 @@ func capacityReservationZones(params *instanceTypeParameters) map[string]sets.Se
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], capacityReservationGroupID string) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Set[string], capacityReservationGroupID string) cloudprovider.Offerings {
 	offerings := make([]*cloudprovider.Offering, 0, 2*len(offeringZones))
 
 	// Availability is tracked separately per group, so a shortage of unreserved capacity
@@ -414,12 +463,11 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 
 		// Determine allocatability from SKU capabilities.
 		// On-demand is always allocatable if the SKU passed UpdateInstanceTypes filters, we just need to check the
-		// unavailableOfferings cache and per-family quota.
+		// unavailableOfferings cache. Quota validation is not encoded in cached offerings and is instead applied after the fact.
 		// Reserved offerings skip the quota preflight: creating the reservation already spent
 		// the family quota, and Azure omits its own quota check for deployments up to the
 		// reserved quantity. Gating on remaining quota here would strand a paid-for reservation.
-		availableOnDemand := !unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand) &&
-			(capacityReserved || p.quotaProvider.HasQuotaFor(ctx, sku))
+		availableOnDemand := !unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)
 
 		// Ultra Disk cannot be attached to a VM that consumes a capacity reservation.
 		ultraSSD := ultraSSDOptions(sku, zone)

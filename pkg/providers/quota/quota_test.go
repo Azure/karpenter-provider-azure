@@ -17,8 +17,10 @@ limitations under the License.
 package quota_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -27,6 +29,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/clock"
+	clocktesting "k8s.io/utils/clock/testing"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 )
 
@@ -335,62 +342,6 @@ func Test_HasQuotaFor_IgnoresCategoryMappingInFailedProvisioningState(t *testing
 	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
 }
 
-func Test_SeqNum_IncrementsOnlyWhenDataChanges(t *testing.T) {
-	t.Parallel()
-	t.Run("usage changes", func(t *testing.T) {
-		t.Parallel()
-		ctx := TestContextWithLogger(t)
-		g := NewWithT(t)
-		usageAPI, _, quotaProvider := newTestProvider(t)
-
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(0)))
-
-		// First update with empty data → changes from initial state
-		lo.Must0(quotaProvider.Update(ctx))
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
-
-		// Second update with same empty data → no change, seqNum stays
-		lo.Must0(quotaProvider.Update(ctx))
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
-
-		// Third update with new data → changes, seqNum increments
-		usageAPI.Usages.Append(&armcompute.Usage{
-			Name:         &armcompute.UsageName{Value: lo.ToPtr("standardDSv3Family")},
-			CurrentValue: lo.ToPtr[int32](10),
-			Limit:        lo.ToPtr[int64](100),
-		})
-		lo.Must0(quotaProvider.Update(ctx))
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
-
-		// Fourth update with same data → no change, seqNum stays
-		lo.Must0(quotaProvider.Update(ctx))
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
-	})
-
-	t.Run("mapping changes", func(t *testing.T) {
-		t.Parallel()
-		ctx := TestContextWithLogger(t)
-		g := NewWithT(t)
-		sku := fake.MakeSKU("Standard_D4s_v3")
-		usageAPI, quotaCategoryVMFamilyMappingAPI, quotaProvider := newTestProvider(t)
-
-		usageAPI.Usages.Append(
-			newUsage(sku.GetFamilyName(), 0),
-			newUsage(quota.GeneralPurposeCategory, 0),
-		)
-		quotaCategoryVMFamilyMappingAPI.VMFamilies.Append(newVMFamily(sku.GetFamilyName()))
-		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
-
-		quotaCategoryVMFamilyMappingAPI.VMFamilies.Reset()
-		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
-
-		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
-		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
-	})
-}
-
 func Test_Reset_InvalidatesQuotaDataAndSubsequentRecovery(t *testing.T) {
 	t.Parallel()
 	ctx := TestContextWithLogger(t)
@@ -403,25 +354,238 @@ func Test_Reset_InvalidatesQuotaDataAndSubsequentRecovery(t *testing.T) {
 		Limit:        lo.ToPtr[int64](100),
 	})
 	lo.Must0(quotaProvider.Update(ctx))
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
 
 	quotaProvider.Reset()
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
 	found, _ := quotaProvider.GetUsage("standardDSv3Family")
 	g.Expect(found).To(BeFalse())
 
 	quotaProvider.Reset()
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
-
 	lo.Must0(quotaProvider.Update(ctx))
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(3)))
+	found, _ = quotaProvider.GetUsage("standardDSv3Family")
+	g.Expect(found).To(BeTrue())
+}
+
+func Test_SeqNumTracksEffectiveQuotaChanges(t *testing.T) {
+	t.Parallel()
+	ctx := TestContextWithLogger(t)
+	g := NewWithT(t)
+	usageAPI, _, quotaProvider := newTestProvider(t)
+	sku := fake.MakeSKU("Standard_D4s_v3")
+	familyName := sku.GetFamilyName()
+	vCPUs := lo.Must(sku.VCPU())
+	nodeClaim := testNodeClaim("seqnum")
+
+	initialSeqNum := quotaProvider.SeqNum()
+	usageAPI.Usages.Append(newUsage(familyName, 96))
+	g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+	g.Expect(quotaProvider.SeqNum()).To(BeNumerically(">", initialSeqNum))
+
+	updateSeqNum := quotaProvider.SeqNum()
+	g.Expect(quotaProvider.RecordCreate(quotaProvider.SnapshotGeneration(), nodeClaim, familyName, vCPUs)).To(BeTrue())
+	g.Expect(quotaProvider.SeqNum()).To(BeNumerically(">", updateSeqNum))
+
+	createSeqNum := quotaProvider.SeqNum()
+	g.Expect(quotaProvider.RecordCreate(quotaProvider.SnapshotGeneration(), nodeClaim, familyName, vCPUs)).To(BeFalse())
+	g.Expect(quotaProvider.SeqNum()).To(Equal(createSeqNum))
+
+	g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
+	g.Expect(quotaProvider.SeqNum()).To(BeNumerically(">", createSeqNum))
+
+	deleteSeqNum := quotaProvider.SeqNum()
+	g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeFalse())
+	g.Expect(quotaProvider.SeqNum()).To(Equal(deleteSeqNum))
+
+	quotaProvider.Reset()
+	g.Expect(quotaProvider.SeqNum()).To(BeNumerically(">", deleteSeqNum))
+}
+
+func Test_LocalAdjustments(t *testing.T) {
+	t.Parallel()
+	sku := fake.MakeSKU("Standard_D4s_v3")
+	familyName := sku.GetFamilyName()
+	vCPUs := lo.Must(sku.VCPU())
+
+	t.Run("ignores adjustments before the first snapshot", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		_, _, quotaProvider := newTestProvider(t)
+
+		g.Expect(quotaProvider.RecordCreate(0, testNodeClaim("create"), familyName, vCPUs)).To(BeFalse())
+		g.Expect(quotaProvider.RecordDelete(testNodeClaim("delete"), familyName, vCPUs)).To(BeFalse())
+	})
+
+	t.Run("counts an accepted create only once", func(t *testing.T) {
+		t.Parallel()
+		ctx := TestContextWithLogger(t)
+		g := NewWithT(t)
+		usageAPI, _, quotaProvider := newTestProvider(t)
+		usageAPI.Usages.Append(newUsage(familyName, 96))
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		generation := quotaProvider.SnapshotGeneration()
+		nodeClaim := testNodeClaim("create")
+		createSKU := fake.MakeSKU("Standard_D2s_v3")
+		createVCPUs := lo.Must(createSKU.VCPU())
+		g.Expect(createSKU.GetFamilyName()).To(Equal(familyName))
+
+		g.Expect(quotaProvider.RecordCreate(generation, nodeClaim, familyName, createVCPUs)).To(BeTrue())
+		g.Expect(quotaProvider.RecordCreate(generation, nodeClaim, familyName, createVCPUs)).To(BeFalse())
+		g.Expect(quotaProvider.HasQuotaFor(ctx, createSKU)).To(BeTrue(), "one debit should leave an exact fit for another 2-vCPU VM")
+		g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse(), "the accepted create should consume 2 vCPUs")
+	})
+
+	t.Run("delete cancels create", func(t *testing.T) {
+		t.Parallel()
+		ctx := TestContextWithLogger(t)
+		g := NewWithT(t)
+		usageAPI, _, quotaProvider := newTestProvider(t)
+		usageAPI.Usages.Append(newUsage(familyName, 96))
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		nodeClaim := testNodeClaim("create-delete")
+
+		g.Expect(quotaProvider.RecordCreate(quotaProvider.SnapshotGeneration(), nodeClaim, familyName, vCPUs)).To(BeTrue())
+		g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
+		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeFalse())
+		g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+	})
+
+	t.Run("refresh clears adjustments and ignores stale create generations", func(t *testing.T) {
+		t.Parallel()
+		ctx := TestContextWithLogger(t)
+		g := NewWithT(t)
+		usageAPI, _, quotaProvider := newTestProvider(t)
+		usageAPI.Usages.Append(newUsage(familyName, 96))
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		generation := quotaProvider.SnapshotGeneration()
+
+		g.Expect(quotaProvider.RecordCreate(generation, testNodeClaim("current-create"), familyName, vCPUs)).To(BeTrue())
+		g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+		g.Expect(quotaProvider.RecordCreate(generation, testNodeClaim("stale-create"), familyName, vCPUs)).To(BeFalse())
+		g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue(), "the stale create must not be counted")
+		g.Expect(quotaProvider.RecordCreate(quotaProvider.SnapshotGeneration(), testNodeClaim("next-create"), familyName, vCPUs)).To(BeTrue())
+		g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse(), "the current-generation create must be counted exactly once")
+	})
+}
+
+func Test_DeleteTombstonesDeduplicateAcrossRefreshes(t *testing.T) {
+	t.Parallel()
+	sku := fake.MakeSKU("Standard_D4s_v3")
+	familyName := sku.GetFamilyName()
+	vCPUs := lo.Must(sku.VCPU())
+
+	t.Run("deduplicates repeated deletes", func(t *testing.T) {
+		t.Parallel()
+		ctx := TestContextWithLogger(t)
+		g := NewWithT(t)
+		fakeClock := clocktesting.NewFakeClock(time.Now())
+		usageAPI, _, quotaProvider := newTestProviderWithClock(t, fakeClock)
+		usageAPI.Usages.Append(newUsage(familyName, 100))
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		nodeClaim := testNodeClaim("delete")
+
+		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
+		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeFalse())
+		g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+	})
+
+	t.Run("retains tombstones across refreshes", func(t *testing.T) {
+		t.Parallel()
+		ctx := TestContextWithLogger(t)
+		g := NewWithT(t)
+		fakeClock := clocktesting.NewFakeClock(time.Now())
+		usageAPI, _, quotaProvider := newTestProviderWithClock(t, fakeClock)
+		usageAPI.Usages.Append(newUsage(familyName, 100))
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		nodeClaim := testNodeClaim("delete")
+
+		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeFalse())
+	})
+
+	t.Run("reset clears tombstones", func(t *testing.T) {
+		t.Parallel()
+		ctx := TestContextWithLogger(t)
+		g := NewWithT(t)
+		fakeClock := clocktesting.NewFakeClock(time.Now())
+		usageAPI, _, quotaProvider := newTestProviderWithClock(t, fakeClock)
+		usageAPI.Usages.Append(newUsage(familyName, 100))
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		nodeClaim := testNodeClaim("delete")
+
+		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
+		quotaProvider.Reset()
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
+	})
+
+	t.Run("expired tombstone does not duplicate an active delete adjustment", func(t *testing.T) {
+		t.Parallel()
+		ctx := TestContextWithLogger(t)
+		g := NewWithT(t)
+		fakeClock := clocktesting.NewFakeClock(time.Now())
+		usageAPI, _, quotaProvider := newTestProviderWithClock(t, fakeClock)
+		usageAPI.Usages.Append(newUsage(familyName, 100))
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		nodeClaim := testNodeClaim("delete")
+
+		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
+		fakeClock.Step(quota.DeleteTombstoneTTL + time.Second)
+		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeFalse())
+		g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+	})
+
+	t.Run("expired tombstone is treated as new after refresh clears the adjustment", func(t *testing.T) {
+		t.Parallel()
+		ctx := TestContextWithLogger(t)
+		g := NewWithT(t)
+		fakeClock := clocktesting.NewFakeClock(time.Now())
+		usageAPI, _, quotaProvider := newTestProviderWithClock(t, fakeClock)
+		usageAPI.Usages.Append(newUsage(familyName, 100))
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		nodeClaim := testNodeClaim("delete")
+
+		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		fakeClock.Step(quota.DeleteTombstoneTTL + time.Second)
+		g.Expect(quotaProvider.RecordDelete(nodeClaim, familyName, vCPUs)).To(BeTrue())
+	})
+}
+
+func Test_UpdateTimeoutFailsOpen(t *testing.T) {
+	t.Parallel()
+	ctx := TestContextWithLogger(t)
+	g := NewWithT(t)
+	usageAPI, _, quotaProvider := newTestProvider(t)
+	sku := fake.MakeSKU("Standard_D4s_v3")
+	familyName := sku.GetFamilyName()
+
+	usageAPI.Usages.Append(newUsage(familyName, 100))
+	g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+
+	usageAPI.Error = context.DeadlineExceeded
+	g.Expect(quotaProvider.Update(ctx)).To(MatchError(context.DeadlineExceeded))
+	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
 }
 
 func newTestProvider(t *testing.T) (*fake.UsageAPI, *fake.QuotaCategoryVMFamilyMappingAPI, *quota.DefaultProvider) {
 	t.Helper()
+	return newTestProviderWithClock(t, clock.RealClock{})
+}
+
+func newTestProviderWithClock(t *testing.T, clk clock.PassiveClock) (*fake.UsageAPI, *fake.QuotaCategoryVMFamilyMappingAPI, *quota.DefaultProvider) {
+	t.Helper()
 	usageAPI := &fake.UsageAPI{}
 	quotaCategoryVMFamilyMappingAPI := &fake.QuotaCategoryVMFamilyMappingAPI{}
-	return usageAPI, quotaCategoryVMFamilyMappingAPI, quota.NewProvider(usageAPI, quotaCategoryVMFamilyMappingAPI, fake.Region)
+	return usageAPI, quotaCategoryVMFamilyMappingAPI, quota.NewProvider(usageAPI, quotaCategoryVMFamilyMappingAPI, fake.Region, clk)
+}
+
+func testNodeClaim(name string) *karpv1.NodeClaim {
+	return &karpv1.NodeClaim{ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(name + "-uid")}}
 }
 
 func newUsage(name string, current int32) *armcompute.Usage {

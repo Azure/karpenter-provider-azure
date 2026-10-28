@@ -43,6 +43,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	machineUtils "github.com/Azure/karpenter-provider-azure/pkg/utils/machine"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
@@ -58,7 +59,7 @@ import (
 // More discussion: https://github.com/Azure/karpenter-provider-azure/pull/1197#discussion_r2482957255
 type AKSMachinePromise struct {
 	waitFunc    func() error
-	providerRef AKSMachineProvider
+	providerRef *DefaultAKSMachineProvider
 
 	AKSMachineTemplate *armcontainerservice.Machine
 	AKSMachineName     string
@@ -70,10 +71,15 @@ type AKSMachinePromise struct {
 	AKSMachineNodeImageVersion string
 	VMResourceID               string
 	CreationTimestamp          time.Time
+	// CreateIssued is false when an existing AKS Machine was reused.
+	CreateIssued bool
+
+	nodeClaim     *karpv1.NodeClaim
+	quotaMetadata quotaMetadata
 }
 
 func NewAKSMachinePromise(
-	providerRef AKSMachineProvider,
+	providerRef *DefaultAKSMachineProvider,
 	aksMachineTemplate *armcontainerservice.Machine,
 	waitFunc func() error,
 	aksMachineName string,
@@ -84,6 +90,7 @@ func NewAKSMachinePromise(
 	aksMachineNodeImageVersion string,
 	vmResourceID string,
 	creationTimestamp time.Time,
+	createIssued bool,
 ) *AKSMachinePromise {
 	return &AKSMachinePromise{
 		providerRef:                providerRef,
@@ -97,11 +104,16 @@ func NewAKSMachinePromise(
 		AKSMachineNodeImageVersion: aksMachineNodeImageVersion,
 		VMResourceID:               vmResourceID,
 		CreationTimestamp:          creationTimestamp,
+		CreateIssued:               createIssued,
 	}
 }
 
 func (p *AKSMachinePromise) Cleanup(ctx context.Context) error {
-	return p.providerRef.Delete(ctx, p.AKSMachineName)
+	gone, err := p.providerRef.deleteImpl(ctx, p.AKSMachineName)
+	if gone {
+		p.providerRef.quotaLifecycle.recordDelete(p.nodeClaim, p.quotaMetadata)
+	}
+	return err
 }
 
 func (p *AKSMachinePromise) Wait() error {
@@ -146,7 +158,7 @@ type AKSMachineProvider interface {
 	// List lists all AKS machine instances in the cluster.
 	List(ctx context.Context, opts ...Option) ([]*armcontainerservice.Machine, error)
 	// Delete deletes the AKS machine instance with the specified name. Return NodeClaimNotFoundError if not found.
-	Delete(ctx context.Context, aksMachineName string) error
+	Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim, aksMachineName string) error
 	// GetMachinesPoolLocation returns the location of the AKS machines pool. The only reason this need to be exported is because armcontainerservice.Machine does not have the location field.
 	GetMachinesPoolLocation() string
 }
@@ -170,6 +182,7 @@ type DefaultAKSMachineProvider struct {
 	deletingMachines           sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu         sync.RWMutex
 	machineCache               *machinecache.MachineCache
+	quotaLifecycle             *quotaLifecycle
 }
 
 func NewAKSMachineProvider(
@@ -185,6 +198,7 @@ func NewAKSMachineProvider(
 	aksMachinesPoolLocation string,
 	batchCreationEnabled bool,
 	machineCache *machinecache.MachineCache,
+	quotaProvider quota.Provider,
 ) *DefaultAKSMachineProvider {
 	provider := &DefaultAKSMachineProvider{
 		azClient:                   azClient,
@@ -201,6 +215,7 @@ func NewAKSMachineProvider(
 		beginCreateErrorHandling:   offerings.NewAKSMachineBeginCreateErrorHandler(offeringsCache),
 		deletingMachines:           sets.New[string](),
 		machineCache:               machineCache,
+		quotaLifecycle:             newQuotaLifecycle(quotaProvider, instanceTypeProvider),
 	}
 
 	return provider
@@ -216,6 +231,7 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*AKSMachinePromise, error) {
+	quotaGeneration := p.quotaLifecycle.snapshotGeneration()
 	isWindows := v1beta1.IsWindowsImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))
 	var aksMachineName string
 	var err error
@@ -238,6 +254,16 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 			// We don't return the cleanup error here, as we want to return the original error from beginCreateMachine
 		}
 		return nil, err
+	}
+	aksMachinePromise.nodeClaim = nodeClaim
+	if aksMachinePromise.CreateIssued {
+		aksMachinePromise.quotaMetadata = p.quotaLifecycle.metadata(
+			ctx,
+			aksMachinePromise.InstanceType.Name,
+			aksMachinePromise.CapacityType,
+			nodeClass.GetCapacityReservationGroupID() != "",
+		)
+		p.quotaLifecycle.recordCreate(quotaGeneration, nodeClaim, aksMachinePromise.quotaMetadata)
 	}
 
 	log.FromContext(ctx).Info("launched new AKS machine instance",
@@ -340,9 +366,17 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context, opts ...Option) ([
 	return aksMachines, nil
 }
 
-func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName string) error {
+func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim, aksMachineName string) error {
+	gone, err := p.deleteImpl(ctx, aksMachineName)
+	if gone {
+		p.quotaLifecycle.recordDeleteFromNodeClaim(ctx, nodeClaim)
+	}
+	return err
+}
+
+func (p *DefaultAKSMachineProvider) deleteImpl(ctx context.Context, aksMachineName string) (bool, error) {
 	if !shouldAKSMachinesBeVisible(ctx) {
-		return corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("existing AKS machines management is disabled, and provision mode is not AKS machine"))
+		return true, corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("existing AKS machines management is disabled, and provision mode is not AKS machine"))
 	}
 
 	// If there's already an in-flight delete for this machine, return immediately.
@@ -350,7 +384,7 @@ func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName s
 	deleting := p.deletingMachines.Has(aksMachineName)
 	p.deletingMachinesMu.RUnlock()
 	if deleting {
-		return nil
+		return false, nil
 	}
 
 	// Note that 'Get' also satisfies cloudprovider.Delete contract expectation (from v1.3.0)
@@ -361,20 +395,20 @@ func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName s
 	// Since get quota is generally higher, we prefer to check w/ get rather than issue 2 deletes.
 	aksMachine, err := p.Get(ctx, aksMachineName)
 	if err != nil {
-		return err
+		return corecloudprovider.IsNodeClaimNotFoundError(err), err
 	}
 	if isAKSMachineDeleting(aksMachine) {
-		return nil
+		return false, nil
 	}
 
 	err = p.deleteMachine(ctx, aksMachineName)
 	if err != nil {
 		if machineUtils.IsAKSMachineOrMachinesPoolNotFound(err) {
-			return corecloudprovider.NewNodeClaimNotFoundError(err)
+			return true, corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 func (p *DefaultAKSMachineProvider) GetMachinesPoolLocation() string {
@@ -550,6 +584,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 		lo.FromPtr(gotAKSMachine.Properties.NodeImageVersion),
 		lo.FromPtr(gotAKSMachine.Properties.ResourceID),
 		lo.FromPtr(gotAKSMachine.Properties.Status.CreationTimestamp),
+		true,
 	), nil
 }
 
@@ -620,6 +655,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 		lo.FromPtr(gotAKSMachine.Properties.NodeImageVersion),
 		lo.FromPtr(gotAKSMachine.Properties.ResourceID),
 		lo.FromPtr(gotAKSMachine.Properties.Status.CreationTimestamp),
+		true,
 	), nil
 }
 
@@ -726,6 +762,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		existingAKSMachineNodeImageVersion,
 		existingAKSMachineVMResourceID,
 		existingAKSMachineCreationTimestamp,
+		false,
 	), nil
 }
 

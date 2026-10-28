@@ -180,6 +180,25 @@ func runSharedAKSMachineAPITests() {
 		})
 
 		It("should handle AKS machine create failures - unrecognized error during async/LRO", func() {
+			sku := fake.MakeSKU("Standard_D2_v3")
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+				CurrentValue: lo.ToPtr[int32](98),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			coretest.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{sku.GetName()},
+				},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      karpv1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{karpv1.CapacityTypeOnDemand},
+				},
+			)
 			// Set up error to occur during LRO polling (async failure)
 			azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorAny()
 
@@ -193,6 +212,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Verify the cleanup was attempted
 			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
 
 			// Clear the error for cleanup
 			azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = nil
@@ -201,6 +221,7 @@ func runSharedAKSMachineAPITests() {
 			pod2 := coretest.UnschedulablePod()
 			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod2)
 			ExpectScheduled(ctx, env.Client, pod2)
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
 		})
 
 		It("should handle AKS machine get failures - unrecognized error", func() {
@@ -701,6 +722,119 @@ var _ = Describe("CloudProvider", func() {
 			cluster.Reset()
 			azureEnv.Reset(ctx)
 			azureEnvNonZonal.Reset(ctx)
+		})
+
+		It("should track quota across accepted AKS Machine create and delete", func() {
+			sku := fake.MakeSKU("Standard_D2_v3")
+			vCPUs := lo.Must(sku.VCPU())
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+				CurrentValue: lo.ToPtr(int32(100 - vCPUs)),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{sku.GetName()},
+				},
+				{
+					Key:      karpv1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{karpv1.CapacityTypeOnDemand},
+				},
+			}
+			ExpectApplied(ctx, env.Client, nodeClaim)
+			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+
+			created, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+
+			retried, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(retried.Status.ProviderID).To(Equal(created.Status.ProviderID))
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+
+			nodeClaim.Status = created.Status
+			nodeClaim.Labels = created.Labels
+			nodeClaim.Annotations = created.Annotations
+			// The completed delete releases quota immediately.
+			err = cloudProvider.Delete(ctx, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+
+			// A subsequent NotFound remains idempotent.
+			err = cloudProvider.Delete(ctx, nodeClaim)
+			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+		})
+
+		It("should not adjust family quota for Spot AKS Machine create or delete", func() {
+			spotSKU := fake.MakeSKU("Standard_D2s_v3")
+			largerSKU := fake.MakeSKU("Standard_D4s_v3")
+			Expect(largerSKU.GetFamilyName()).To(Equal(spotSKU.GetFamilyName()))
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(spotSKU.GetFamilyName())},
+				CurrentValue: lo.ToPtr[int32](98),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{spotSKU.GetName()}},
+				{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot}},
+			}
+			ExpectApplied(ctx, env.Client, nodeClaim)
+			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+
+			created, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeSpot))
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, spotSKU)).To(BeTrue(), "Spot create must not consume family quota")
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, largerSKU)).To(BeFalse())
+
+			// Clear any create adjustment before verifying delete independently.
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			nodeClaim.Status = created.Status
+			nodeClaim.Labels = created.Labels
+			nodeClaim.Annotations = created.Annotations
+			Expect(cloudProvider.Delete(ctx, nodeClaim)).To(Succeed())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, largerSKU)).To(BeFalse(), "Spot delete must not release family quota")
+		})
+
+		It("should release quota after failed standalone AKS Machine creation cleanup", func() {
+			sku := fake.MakeSKU("Standard_D2_v3")
+			vCPUs := lo.Must(sku.VCPU())
+			// Leave quota for exactly one machine so a leaked create debit blocks the retry.
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+				CurrentValue: lo.ToPtr(int32(100 - vCPUs)),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			delete(nodeClaim.Labels, karpv1.NodePoolLabelKey)
+			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}},
+				{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+			}
+			ExpectApplied(ctx, env.Client, nodeClaim)
+			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+			// Fail after Azure accepts the create so promise cleanup must cancel the debit.
+			azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorAny()
+
+			created, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(created).To(BeNil())
+			// Successful cleanup must make the single-machine quota immediately available again.
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+
+			azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = nil
+			created, err = cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created).ToNot(BeNil())
+			// The accepted retry consumes the quota again.
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
 		})
 
 		// Run shared AKS Machine API tests
