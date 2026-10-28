@@ -124,9 +124,9 @@ func TestAzure(t *testing.T) {
 	azureEnvBootstrap = test.NewEnvironment(ctxBootstrap, env)
 
 	fakeClock = &clock.FakeClock{}
-	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, azureEnv.QuotaProvider)
-	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore, azureEnvNonZonal.QuotaProvider)
-	cloudProviderBootstrap = cloudprovider.New(azureEnvBootstrap.InstanceTypesProvider, azureEnvBootstrap.VMInstanceProvider, azureEnvBootstrap.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvBootstrap.ImageProvider, azureEnv.InstanceTypeStore, azureEnvBootstrap.QuotaProvider)
+	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
+	cloudProviderBootstrap = cloudprovider.New(azureEnvBootstrap.InstanceTypesProvider, azureEnvBootstrap.VMInstanceProvider, azureEnvBootstrap.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvBootstrap.ImageProvider, azureEnv.InstanceTypeStore)
 
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)

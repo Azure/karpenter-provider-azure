@@ -59,7 +59,6 @@ func main() {
 		op.GetClient(),
 		op.ImageProvider,
 		op.InstanceTypeStore,
-		op.QuotaProvider,
 	)
 
 	lo.Must0(op.AddHealthzCheck("cloud-provider", aksCloudProvider.LivenessProbe))

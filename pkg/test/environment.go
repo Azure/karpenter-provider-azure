@@ -280,6 +280,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.ProvisionMode,
 		testOptions.DiskEncryptionSetID,
 		azureEnv,
+		quotaProvider,
 	)
 
 	if testOptions.IsAKSMachineAPIMode() && testOptions.AKSMachinesPoolName != "" {
@@ -320,6 +321,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		region,
 		batchCreationEnabled,
 		aksMachineCache,
+		quotaProvider,
 	)
 
 	store := nodeoverlay.NewInstanceTypeStore()
