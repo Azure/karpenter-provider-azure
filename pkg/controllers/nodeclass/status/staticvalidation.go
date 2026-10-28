@@ -18,6 +18,7 @@ package status
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -38,6 +39,9 @@ const (
 	FIPSRequired                      = "FIPSRequired"
 	IncompatibleProvisionMode         = "IncompatibleProvisionMode"
 	SIGRequiredForAzureContainerLinux = "SIGRequiredForAzureContainerLinux"
+	// ImageFamilyKubernetesVersionIncompatible identifies a pinned Ubuntu family
+	// outside its supported Kubernetes version range.
+	ImageFamilyKubernetesVersionIncompatible = "ImageFamilyKubernetesVersionIncompatible"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -126,6 +130,7 @@ func (r *StaticValidationReconciler) Reconcile(ctx context.Context, nodeClass *v
 		r.validateManagedGPUProvisionMode,
 		r.validateNodePublicIPProvisionMode,
 		r.validateKataImageFamily,
+		r.validateImageFamilyCompatibility,
 		r.validateDiskEncryptionSetRBAC,
 	}
 
@@ -251,6 +256,19 @@ func (r *StaticValidationReconciler) validateKataImageFamily(_ context.Context, 
 				fmt.Sprintf("workloadRuntime KataVmIsolation requires Azure Linux 3 and Kubernetes 1.32 or newer; Kubernetes version %s resolves imageFamily AzureLinux to Azure Linux 2", kubernetesVersion),
 			), nil
 		}
+	}
+	return pass(), nil
+}
+
+func (r *StaticValidationReconciler) validateImageFamilyCompatibility(_ context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
+	if err := imagefamily.ValidateImageFamilyCompatibility(nodeClass); err != nil {
+		var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
+		if errors.As(err, &incompatibleErr) {
+			// Spec changes and Kubernetes version reconciliation drive reevaluation;
+			// polling cannot resolve this static incompatibility.
+			return fail(ImageFamilyKubernetesVersionIncompatible, err.Error()), nil
+		}
+		return validationResult{}, fmt.Errorf("validating image family compatibility: %w", err)
 	}
 	return pass(), nil
 }

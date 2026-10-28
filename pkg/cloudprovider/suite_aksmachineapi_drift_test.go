@@ -284,6 +284,26 @@ var _ = Describe("CloudProvider", func() {
 				})
 			})
 
+			Context("Validation Succeeded", func() {
+				It("should succeed with no drift when ValidationSucceeded is false for image family incompatibility", func() {
+					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+					nodeClass.StatusConditions().SetFalse(
+						v1beta1.ConditionTypeValidationSucceeded,
+						status.ImageFamilyKubernetesVersionIncompatible,
+						`requested image family Ubuntu2404 is not supported with discovered Kubernetes version "1.31"; supported range is >= 1.32.0`,
+					)
+					ExpectApplied(ctx, env.Client, nodeClass)
+
+					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+					Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsFalse()).To(BeTrue())
+					Expect(nodeClass.StatusConditions().Root().IsFalse()).To(BeTrue())
+
+					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(Equal(NoDrift))
+				})
+			})
+
 			Context("Static fields - Node Public IP", func() {
 				// stampNodeClassHash records the current NodeClass hash on both objects, as if the
 				// NodeClaim had been launched from the current NodeClass.

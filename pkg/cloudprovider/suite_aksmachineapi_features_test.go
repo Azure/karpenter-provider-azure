@@ -27,6 +27,7 @@ import (
 	nodev1 "k8s.io/api/node/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -230,6 +231,17 @@ var _ = Describe("CloudProvider", func() {
 
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+					validation := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+					selectedVersion := version.MustParse(lo.Must(nodeClass.GetKubernetesVersion()))
+					unsupported := imageFamily == v1beta1.Ubuntu2204ImageFamily && selectedVersion.AtLeast(version.MustParse("1.37.0")) ||
+						imageFamily == v1beta1.Ubuntu2404ImageFamily && selectedVersion.LessThan(version.MustParse("1.32.0"))
+					if unsupported {
+						Expect(validation.IsFalse()).To(BeTrue())
+						Expect(validation.Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
+						return
+					}
+					Expect(validation.IsTrue()).To(BeTrue())
 					pod := coretest.UnschedulablePod(coretest.PodOptions{})
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
@@ -247,6 +259,9 @@ var _ = Describe("CloudProvider", func() {
 				Entry("Gen2, Gen1 instance type with AKSUbuntu image family", "Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition),
 				Entry("Gen1 instance type with AKSUbuntu image family", "Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition),
 				Entry("ARM instance type with AKSUbuntu image family", "Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition),
+				Entry("Gen2 instance type with Ubuntu2404 image family", "Standard_D2_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ImageDefinition),
+				Entry("Gen1 instance type with Ubuntu2404 image family", "Standard_D2_v3", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen1ImageDefinition),
+				Entry("ARM instance type with Ubuntu2404 image family", "Standard_D16plds_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ArmImageDefinition),
 			)
 
 			It("should select the right Shared Image Gallery NodeImageVersion for a given instance type, Gen2 instance type with AzureLinux image family", func() {
@@ -913,8 +928,6 @@ var _ = Describe("CloudProvider", func() {
 					},
 					EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 				}
-				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-
 				// Override context to use a BYO VNet instead of managed VNet
 				// This allows testing custom subnet configuration (managed VNet doesn't allow custom subnets)
 				byoClusterSubnetID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"
@@ -978,7 +991,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.EvictionMaxPodGracePeriodInSeconds).To(Equal(int32(120)))
 
 				// Verify image family configuration
-				Expect(string(*aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(v1beta1.Ubuntu2204ImageFamily))
+				Expect(string(*aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(lo.FromPtr(nodeClass.Spec.ImageFamily)))
 
 				// Verify subnet configuration (AKS machine should use the specified custom subnet)
 				Expect(aksMachine.Properties.Network).ToNot(BeNil())
@@ -1498,6 +1511,13 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		Context("Create - LocalDNS", func() {
+			BeforeEach(func() {
+				// Switch LocalDNS tests to use the Azure Linux image family
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+			})
+
 			It("should set LocalDNSProfile with mode Required", func() {
 				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 					Mode:             v1beta1.LocalDNSModeRequired,
