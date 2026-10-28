@@ -87,6 +87,7 @@ type CloudProvider struct {
 	recorder                   events.Recorder
 	instanceTypeStore          *nodeoverlay.InstanceTypeStore
 	instancePromiseWg          sync.WaitGroup
+	legacyRepairPolicies       bool
 }
 
 func New(
@@ -97,6 +98,7 @@ func New(
 	kubeClient client.Client,
 	imageProvider imagefamily.NodeImageProvider,
 	store *nodeoverlay.InstanceTypeStore,
+	legacyRepairPolicies bool,
 ) *CloudProvider {
 	return &CloudProvider{
 		instanceTypeProvider:       instanceTypeProvider,
@@ -106,6 +108,7 @@ func New(
 		imageProvider:              imageProvider,
 		recorder:                   recorder,
 		instanceTypeStore:          store,
+		legacyRepairPolicies:       legacyRepairPolicies,
 	}
 }
 
@@ -553,38 +556,97 @@ func (c *CloudProvider) Name() string {
 	return "azure"
 }
 
+func (c *CloudProvider) Reboot(context.Context, *karpv1.NodeClaim, string) error {
+	return cloudprovider.NewNodeRebootNotImplementedError()
+}
+
 func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
 	return []status.Object{&v1beta1.AKSNodeClass{}}
 }
 
-// TODO: review repair policies
 func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
+	if c.legacyRepairPolicies {
+		return legacyRepairPolicies()
+	}
+	return budgetAwareRepairPolicies()
+}
+
+func legacyRepairPolicies() []cloudprovider.RepairPolicy {
+	// Keep the pre-v1.15 policy profile independent of future recovery choices.
 	return []cloudprovider.RepairPolicy{
-		// Supported Kubelet fields
 		{
 			ConditionType:      corev1.NodeReady,
 			ConditionStatus:    corev1.ConditionFalse,
 			TolerationDuration: 10 * time.Minute,
+			Action:             cloudprovider.ReplaceNode,
 		},
 		{
 			ConditionType:      corev1.NodeReady,
 			ConditionStatus:    corev1.ConditionUnknown,
 			TolerationDuration: 10 * time.Minute,
+			Action:             cloudprovider.ReplaceNode,
 		},
 		{
 			ConditionType:      "kubernetes.azure.com/NodeHealthy",
 			ConditionStatus:    corev1.ConditionFalse,
 			TolerationDuration: 0,
+			Action:             cloudprovider.ReplaceNode,
 		},
-		// Fast-path repair for Azure Spot VMs that received a platform eviction signal.
-		// The condition is emitted by a node-level agent that polls the Instance Metadata
-		// Service for SpotRebalanceRecommendation / Preempt events. Spot eviction notice
-		// is ~30s, so toleration is 0 — we want to start the replacement immediately
-		// rather than waiting for the NodeReady=Unknown 10-minute backstop.
 		{
 			ConditionType:      SpotConditionPreemptionScheduled,
 			ConditionStatus:    corev1.ConditionTrue,
 			TolerationDuration: 0,
+			Action:             cloudprovider.ReplaceNode,
+		},
+	}
+}
+
+func budgetAwareRepairPolicies() []cloudprovider.RepairPolicy {
+	// Start with legacy eligibility and forceful drains; policy changes remain opt-in future work.
+	// Possible per-reason extensions, only after validating Azure signals:
+	//   TerminationGracePeriod: lo.ToPtr(5 * time.Minute), // bounded drain for a responsive node
+	//   Priority:               50,                     // higher urgency, not a budget bypass
+	//   Action:                 cloudprovider.RebootNode, // requires supported Azure reboot operations
+	// Replace overlapping catch-all policies when splitting reasons: an eligible replacement wins over reboot.
+	return []cloudprovider.RepairPolicy{
+		// Supported Kubelet fields
+		{
+			// The sole default fallback; the other conditions match every reason explicitly.
+			ConditionType:          corev1.NodeReady,
+			ConditionStatus:        corev1.ConditionFalse,
+			TolerationDuration:     10 * time.Minute,
+			TerminationGracePeriod: lo.ToPtr(time.Duration(0)),
+			Action:                 cloudprovider.ReplaceNode,
+		},
+		{
+			ConditionType:          corev1.NodeReady,
+			ConditionStatus:        corev1.ConditionUnknown,
+			ReasonRegex:            ".*",
+			TolerationDuration:     10 * time.Minute,
+			TerminationGracePeriod: lo.ToPtr(time.Duration(0)),
+			Action:                 cloudprovider.ReplaceNode,
+		},
+		{
+			ConditionType:          "kubernetes.azure.com/NodeHealthy",
+			ConditionStatus:        corev1.ConditionFalse,
+			ReasonRegex:            ".*",
+			TolerationDuration:     0,
+			TerminationGracePeriod: lo.ToPtr(time.Duration(0)),
+			Action:                 cloudprovider.ReplaceNode,
+		},
+		// Fast-path repair for Azure Spot VMs that received a platform eviction signal.
+		// The condition is emitted by a node-level agent that polls the Instance Metadata
+		// Service for SpotRebalanceRecommendation / Preempt events. Spot eviction notice
+		// is ~30s, so toleration is 0 — we want repair to become eligible immediately
+		// rather than waiting for the NodeReady=Unknown 10-minute backstop.
+		// Budgets and replacement initialization can still delay termination.
+		{
+			ConditionType:          SpotConditionPreemptionScheduled,
+			ConditionStatus:        corev1.ConditionTrue,
+			ReasonRegex:            ".*",
+			TolerationDuration:     0,
+			TerminationGracePeriod: lo.ToPtr(time.Duration(0)),
+			Action:                 cloudprovider.ReplaceNode,
 		},
 	}
 }

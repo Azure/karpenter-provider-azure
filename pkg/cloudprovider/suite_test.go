@@ -39,6 +39,7 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/capacitybuffer"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
+	"sigs.k8s.io/karpenter/pkg/controllers/node/health"
 	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
@@ -340,6 +341,95 @@ func runCapacityBufferTests(expectCreateCalls func(expectedCalls int)) {
 }
 
 var _ = Describe("CloudProvider", func() {
+	Context("Repair", func() {
+		const (
+			legacyRepairMode      = true
+			budgetAwareRepairMode = false
+		)
+
+		It("should explicitly reject in-place reboot", func() {
+			err := (&CloudProvider{}).Reboot(ctx, nodeClaim, "operation-id")
+			Expect(corecloudprovider.IsNodeRebootNotImplementedError(err)).To(BeTrue())
+		})
+
+		DescribeTable("should preserve repair tolerations and forceful drain bounds", func(conditionType v1.NodeConditionType, conditionStatus v1.ConditionStatus, toleration time.Duration) {
+			repairCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
+				FeatureGates:     coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
+				LegacyNodeRepair: lo.ToPtr(false),
+			}))
+			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil, legacyRepairMode)
+			Expect(legacyProvider.RepairPolicies()).To(HaveLen(4))
+			Expect(legacyProvider.RepairPolicies()).To(ContainElement(corecloudprovider.RepairPolicy{
+				ConditionType:      conditionType,
+				ConditionStatus:    conditionStatus,
+				TolerationDuration: toleration,
+				Action:             corecloudprovider.ReplaceNode,
+			}))
+
+			provider := New(nil, nil, nil, nil, nil, nil, nil, budgetAwareRepairMode)
+			matcher, err := health.NewRepairPolicyMatcher(repairCtx, provider)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(matcher).ToNot(BeNil())
+			now := fakeClock.Now()
+			node := coretest.Node()
+			node.CreationTimestamp = metav1.NewTime(now.Add(-time.Hour))
+			node.Status.Conditions = []v1.NodeCondition{{
+				Type:               conditionType,
+				Status:             conditionStatus,
+				Reason:             "UnrecognizedReason",
+				LastTransitionTime: metav1.NewTime(now),
+			}}
+			matches := matcher.Match(node)
+			Expect(matches).To(HaveLen(1))
+			Expect(health.Resolve(matches, now.Add(toleration-time.Nanosecond), time.Time{}).Action).To(BeEmpty())
+			result := health.Resolve(matches, now.Add(toleration), time.Time{})
+			Expect(result.Action).To(Equal(corecloudprovider.ReplaceNode))
+			Expect(result.Condition).To(Equal(conditionType))
+			Expect(result.TerminationGracePeriod).To(Equal(lo.ToPtr(time.Duration(0))))
+
+			node.Status.Conditions[0].Status = lo.Ternary(conditionStatus == v1.ConditionTrue, v1.ConditionFalse, v1.ConditionTrue)
+			Expect(matcher.Match(node)).To(BeEmpty())
+		},
+			Entry("NodeReady=False", v1.NodeReady, v1.ConditionFalse, 10*time.Minute),
+			Entry("NodeReady=Unknown", v1.NodeReady, v1.ConditionUnknown, 10*time.Minute),
+			Entry("NodeHealthy=False", v1.NodeConditionType("kubernetes.azure.com/NodeHealthy"), v1.ConditionFalse, time.Duration(0)),
+			Entry("PreemptionScheduled=True", v1.NodeConditionType(SpotConditionPreemptionScheduled), v1.ConditionTrue, time.Duration(0)),
+		)
+
+		It("should select the legacy policy set explicitly", func() {
+			provider := New(nil, nil, nil, nil, nil, nil, nil, legacyRepairMode)
+			policies := provider.RepairPolicies()
+			Expect(policies).To(HaveLen(4))
+			for _, policy := range policies {
+				Expect(policy.Action).To(Equal(corecloudprovider.ReplaceNode))
+				Expect(policy.ReasonRegex).To(BeEmpty())
+				Expect(policy.TerminationGracePeriod).To(BeNil())
+			}
+		})
+
+		It("should not construct the new matcher for legacy repair", func() {
+			repairCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
+				FeatureGates:     coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
+				LegacyNodeRepair: lo.ToPtr(true),
+			}))
+			provider := New(nil, nil, nil, nil, nil, nil, nil, legacyRepairMode)
+			matcher, err := health.NewRepairPolicyMatcher(repairCtx, provider)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(matcher).To(BeNil())
+		})
+
+		It("should keep returned repair policy profiles independent", func() {
+			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil, legacyRepairMode)
+			provider := New(nil, nil, nil, nil, nil, nil, nil, budgetAwareRepairMode)
+			legacyPolicies := legacyProvider.RepairPolicies()
+			policies := provider.RepairPolicies()
+			legacyPolicies[0].TolerationDuration = time.Hour
+			*policies[0].TerminationGracePeriod = time.Minute
+			Expect(legacyProvider.RepairPolicies()[0].TolerationDuration).To(Equal(10 * time.Minute))
+			Expect(provider.RepairPolicies()[0].TerminationGracePeriod).To(Equal(lo.ToPtr(time.Duration(0))))
+		})
+	})
+
 	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
 	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.
 	// If ProvisionMode = AKSScriptless is no longer supported, their code/tests will be replaced with ProvisionMode = AKSMachineAPI.
@@ -354,7 +444,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
@@ -501,7 +591,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
