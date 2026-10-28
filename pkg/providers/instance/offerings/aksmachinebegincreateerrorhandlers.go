@@ -28,6 +28,9 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
+// AKS Machines uses a different code from Compute for unsupported availability zones.
+var aksMachineAvailabilityZoneNotSupportedCode = "AvailabilityZoneNotSupported"
+
 // HandlableError is a code + message pair extracted from an API error response.
 // It is intentionally minimal and API-agnostic. This module decides how to interpret it.
 type HandlableError struct {
@@ -70,6 +73,12 @@ func NewAKSMachineBeginCreateErrorHandler(unavailableOfferings *cache.Unavailabl
 		unavailableOfferings: unavailableOfferings,
 		handlerEntries: []aksMachineBeginCreateErrorHandlerEntry{
 			{
+				match: func(he *HandlableError) bool {
+					return he.Code == aksMachineAvailabilityZoneNotSupportedCode
+				},
+				handle: handleInvalidAvailabilityZoneError,
+			},
+			{
 				match:  isSKUNotAvailableForSubscription,
 				handle: handleSKUNotAvailableForSubscriptionError,
 			},
@@ -81,8 +90,8 @@ func NewAKSMachineBeginCreateErrorHandler(unavailableOfferings *cache.Unavailabl
 	}
 }
 
-// Handle records the failure against capacityReservationGroupID, or against unreserved
-// capacity when it is empty, so the two never mask each other.
+// Handle scopes capacity failures to capacityReservationGroupID, or to unreserved capacity
+// when it is empty. Frontend SKU-zone restrictions apply to every scope.
 func (h *AKSMachineBeginCreateErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, capacityReservationGroupID string, he *HandlableError) error {
 	for _, handler := range h.handlerEntries {
 		if handler.match(he) {

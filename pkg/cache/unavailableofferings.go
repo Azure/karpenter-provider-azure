@@ -46,18 +46,22 @@ var (
 	spotKey = singleInstanceKey(unreservedScope, "", "", karpv1.CapacityTypeSpot)
 )
 
-// UnavailableOfferings stores any offerings that return ICE (insufficient capacity errors) when
-// attempting to launch the capacity. These offerings are ignored as long as they are in the cache on
-// GetInstanceTypes responses
-// Information available from skewer.SKU is used to determine details about the VM SKU for which we encountered allocation errors.
+// UnavailableOfferings stores offerings rejected during launch due to capacity shortages or
+// unsupported availability zones. These offerings are ignored in GetInstanceTypes responses
+// until their cache entries expire.
 type UnavailableOfferings struct {
 	mu sync.Mutex
-	// TODO: I think this singleOfferingCache could basically be removed in favor of the family cache at this point, as we are now marking family unavailable at CPU count for all error cases.
-	// I didn't do that purely because of the defensive fallback we have in markFamilyUnavailableAtCPUCountImpl, but in practice I am not sure if we'll ever have a nil family (I don't
-	// see any evidence it can happen in logs)
-	// key: <capacityType>:<instanceType>:<zone>, value: struct{}{}
+	// Key formats (all values are struct{}{}):
+	//   <capacityType>:<instanceType>:<zone> - unreserved offering
+	//   crg:<groupID>:<capacityType>:<instanceType>:<zone> - CRG-scoped offering
+	//   spot:: - all Spot offerings
+	//   skuZone:<instanceType>:<zone> - one SKU and zone, all capacities and CRGs
 	singleOfferingCache *cache.Cache
-	// key: <skuFamilyName>:<zone>:<capacityType> (lowercase), value: int64 (CPU count at or above which we block, or wholeVMFamilyBlockedSentinel if entire family is blocked)
+	// Key formats (entire key lowercase):
+	//   skufamily:<skuFamilyName>:<zone>:<capacityType> - unreserved family
+	//   crg:<groupID>:skufamily:<skuFamilyName>:<zone>:<capacityType> - CRG-scoped family
+	// Values are int64 CPU counts at or above which offerings are blocked, or
+	// wholeVMFamilyBlockedSentinel when the entire family is blocked.
 	vmFamilyCache *cache.Cache
 	// seqNum is updated on any material changes to unavailable offerings cache (not updated on TTL only changes)
 	seqNum atomic.Uint64
@@ -99,7 +103,8 @@ func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType
 // The read side is the most important: a general capacity shortage must not suppress a
 // reserved offering, because reserved capacity is what the user bought in order to survive
 // exactly that. IsUnavailable for a CRG-scoped on-demand offering only returns true if
-// that failure was recorded for the same CRG.
+// that failure was recorded for the same CRG. SKU-zone validity restrictions
+// are an exception: reservations cannot change the SKU's supported zones.
 //
 // The write side is deliberately conservative. Capacity errors from a CRG-targeted launch
 // do not say whether Azure was consuming reserved headroom or attempting overallocation.
@@ -123,9 +128,9 @@ func (u *UnavailableOfferings) ForCapacityReservationGroup(id string) *CapacityR
 
 // CapacityReservationGroupUnavailableOfferings marks and queries unavailable offerings either
 // for one capacity reservation group or outside any group. A group view also applies
-// CRG-specific propagation rules: Spot remains global, and a failure does not widen to other VM
-// sizes or member placements. It shares the underlying caches and sequence number with the
-// UnavailableOfferings it came from.
+// CRG-specific propagation rules: Spot remains global, and a capacity failure does not widen to
+// other VM sizes or member placements. SKU-zone validity restrictions apply to every view.
+// It shares the underlying caches and sequence number with the UnavailableOfferings it came from.
 type CapacityReservationGroupUnavailableOfferings struct {
 	offerings *UnavailableOfferings
 	scope     unavailableOfferingsScope
@@ -144,6 +149,10 @@ func (v *CapacityReservationGroupUnavailableOfferings) IsUnavailable(sku *skewer
 }
 
 func (u *UnavailableOfferings) isUnavailable(scope unavailableOfferingsScope, sku *skewer.SKU, zone, capacityType string) bool {
+	if _, found := u.singleOfferingCache.Get(skuZoneKey(sku.GetName(), zone)); found {
+		return true
+	}
+
 	// Spot is never reserved, so its unavailability is recorded and read unscoped.
 	if capacityType == karpv1.CapacityTypeSpot {
 		if _, found := u.singleOfferingCache.Get(spotKey); found {
@@ -284,6 +293,25 @@ func (v *CapacityReservationGroupUnavailableOfferings) MarkUnavailableWithTTL(ct
 	v.offerings.markUnavailableWithTTL(ctx, v.scope, unavailableReason, sku, zone, capacityType, ttl)
 }
 
+// MarkSKUZoneUnavailableWithTTL excludes one SKU and zone across capacity types and
+// reservation groups. The cache belongs to one provider's subscription, region and mode.
+func (v *CapacityReservationGroupUnavailableOfferings) MarkSKUZoneUnavailableWithTTL(ctx context.Context, unavailableReason, instanceType, zone string, ttl time.Duration) {
+	u := v.offerings
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	key := skuZoneKey(instanceType, zone)
+	_, wasUnavailable := u.singleOfferingCache.Get(key)
+	u.singleOfferingCache.Set(key, struct{}{}, ttl)
+	if !wasUnavailable {
+		log.FromContext(ctx).Info("marking SKU and availability zone unavailable",
+			"unavailable", unavailableReason,
+			"instance-type", instanceType,
+			"zone", zone,
+			"ttl", ttl)
+		u.seqNum.Add(1)
+	}
+}
+
 func (u *UnavailableOfferings) markUnavailableWithTTL(ctx context.Context, scope unavailableOfferingsScope, unavailableReason string, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -359,6 +387,10 @@ func (u *UnavailableOfferings) InvalidateCapacityReservationGroup(id string) {
 
 func capacityReservationGroupScope(id string) unavailableOfferingsScope {
 	return unavailableOfferingsScope(strings.ToLower(id))
+}
+
+func skuZoneKey(instanceType, zone string) string {
+	return fmt.Sprintf("skuZone:%s:%s", instanceType, zone)
 }
 
 // singleInstanceKey returns an offering cache key, namespaced by capacity reservation group

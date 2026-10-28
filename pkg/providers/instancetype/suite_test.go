@@ -508,6 +508,84 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
 			})
 
+			DescribeTable("should handle InvalidAvailabilityZone without bypassing placement requirements", func(bootstrap, allowRegional bool) {
+				testCtx, testEnv := ctx, azureEnv
+				testCluster, testProvider, testProvisioner := cluster, cloudProvider, coreProvisioner
+				if bootstrap {
+					testCtx, testEnv = ctxBootstrap, azureEnvBootstrap
+					testCluster, testProvider, testProvisioner = clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap
+				}
+				allowedZones := []string{fakeZone1}
+				if allowRegional {
+					allowedZones = append(allowedZones, zones.Regional)
+				}
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{defaultTestSKU.GetName()},
+					},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand},
+					},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: allowedZones,
+					},
+				)
+				ExpectApplied(testCtx, env.Client, nodePool, nodeClass)
+				testEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(&azcore.ResponseError{
+					ErrorCode: "InvalidAvailabilityZone",
+					RawResponse: &http.Response{
+						Body: createSDKErrorBody("InvalidAvailabilityZone", "The requested availability zone is not supported."),
+					},
+				})
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(testCtx, env.Client, testCluster, testProvider, testProvisioner, testEnv, pod)
+				ExpectNotScheduled(testCtx, env.Client, pod)
+				vm := testEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(zone).To(Equal(fakeZone1))
+				ExpectUnavailable(testEnv, defaultTestSKU, fakeZone1, karpv1.CapacityTypeOnDemand)
+				ExpectUnavailable(testEnv, defaultTestSKU, fakeZone1, karpv1.CapacityTypeSpot)
+				Expect(testEnv.UnavailableOfferingsCache.IsUnavailable(defaultTestSKU, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+
+				otherSKU := fake.MakeSKU("Standard_D2_v5")
+				Expect(testEnv.UnavailableOfferingsCache.IsUnavailable(otherSKU, fakeZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+				testEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+				ExpectProvisionedAndWaitForPromises(testCtx, env.Client, testCluster, testProvider, testProvisioner, testEnv, pod)
+				if !allowRegional {
+					ExpectNotScheduled(testCtx, env.Client, pod)
+					Expect(testEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+				} else {
+					node := ExpectScheduled(testCtx, env.Client, pod)
+					Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(defaultTestSKU.GetName()))
+					Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(zones.Regional))
+					Expect(node.Labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeRegional))
+				}
+
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{otherSKU.GetName()},
+					},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{fakeZone1},
+					},
+				)
+				ExpectApplied(testCtx, env.Client, nodePool)
+				otherPod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{
+					v1.LabelInstanceTypeStable: otherSKU.GetName(), v1.LabelTopologyZone: fakeZone1,
+				}})
+				ExpectProvisionedAndWaitForPromises(testCtx, env.Client, testCluster, testProvider, testProvisioner, testEnv, otherPod)
+				node := ExpectScheduled(testCtx, env.Client, otherPod)
+				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(otherSKU.GetName()))
+				Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(fakeZone1))
+			},
+				Entry("scriptless with regional fallback", false, true),
+				Entry("scriptless with a required zone", false, false),
+				Entry("bootstrapping client with regional fallback", true, true),
+				Entry("bootstrapping client with a required zone", true, false),
+			)
+
 			It("should fail to provision when AllocationFailure errors are hit, then switch placement and succeed", func() {
 				// Create nodepool that has both ondemand and spot capacity types enabled
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{

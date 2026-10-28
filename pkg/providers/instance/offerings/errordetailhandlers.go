@@ -47,6 +47,12 @@ func NewErrorDetailHandler(unavailableOfferings *cache.UnavailableOfferings) *Er
 		UnavailableOfferings: unavailableOfferings,
 		HandlerEntries: []errorDetailHandlerEntry{
 			{
+				match: func(detail armcontainerservice.ErrorDetail) bool {
+					return detail.Code != nil && *detail.Code == InvalidAvailabilityZoneReason
+				},
+				handle: handleInvalidAvailabilityZoneError,
+			},
+			{
 				match:  sdkerrors.LowPriorityQuotaHasBeenReachedInErrorDetail,
 				handle: handleLowPriorityQuotaError,
 			},
@@ -93,8 +99,8 @@ func (h *ErrorDetailHandler) extractErrorCodeAndMessage(errorDetail armcontainer
 	return code, message
 }
 
-// Handle records the failure against capacityReservationGroupID, or against unreserved
-// capacity when it is empty, so the two never mask each other.
+// Handle scopes capacity failures to capacityReservationGroupID, or to unreserved capacity
+// when it is empty.
 func (h *ErrorDetailHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, capacityReservationGroupID string, errorDetail armcontainerservice.ErrorDetail) error {
 	for _, handler := range h.HandlerEntries {
 		if handler.match(errorDetail) {
