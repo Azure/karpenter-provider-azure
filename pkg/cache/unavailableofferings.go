@@ -57,7 +57,11 @@ type UnavailableOfferings struct {
 	//   spot:: - all Spot offerings
 	//   skuZone:<instanceType>:<zone> - one SKU and zone, all capacities and CRGs
 	singleOfferingCache *cache.Cache
-	// key: <skuFamilyName>:<zone>:<capacityType> (lowercase), value: int64 (CPU count at or above which we block, or wholeVMFamilyBlockedSentinel if entire family is blocked)
+	// Key formats (entire key lowercase):
+	//   skufamily:<skuFamilyName>:<zone>:<capacityType> - unreserved family
+	//   crg:<groupID>:skufamily:<skuFamilyName>:<zone>:<capacityType> - CRG-scoped family
+	// Values are int64 CPU counts at or above which offerings are blocked, or
+	// wholeVMFamilyBlockedSentinel when the entire family is blocked.
 	vmFamilyCache *cache.Cache
 	// seqNum is updated on any material changes to unavailable offerings cache (not updated on TTL only changes)
 	seqNum atomic.Uint64
@@ -99,7 +103,7 @@ func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType
 // The read side is the most important: a general capacity shortage must not suppress a
 // reserved offering, because reserved capacity is what the user bought in order to survive
 // exactly that. IsUnavailable for a CRG-scoped on-demand offering only returns true if
-// that failure was recorded for the same CRG. Machine frontend SKU-zone restrictions
+// that failure was recorded for the same CRG. SKU-zone validity restrictions
 // are an exception: reservations cannot change the SKU's supported zones.
 //
 // The write side is deliberately conservative. Capacity errors from a CRG-targeted launch
@@ -125,8 +129,8 @@ func (u *UnavailableOfferings) ForCapacityReservationGroup(id string) *CapacityR
 // CapacityReservationGroupUnavailableOfferings marks and queries unavailable offerings either
 // for one capacity reservation group or outside any group. A group view also applies
 // CRG-specific propagation rules: Spot remains global, and a capacity failure does not widen to
-// other VM sizes or member placements. Machine frontend SKU-zone restrictions apply to every view. It shares
-// the underlying caches and sequence number with the UnavailableOfferings it came from.
+// other VM sizes or member placements. SKU-zone validity restrictions apply to every view.
+// It shares the underlying caches and sequence number with the UnavailableOfferings it came from.
 type CapacityReservationGroupUnavailableOfferings struct {
 	offerings *UnavailableOfferings
 	scope     unavailableOfferingsScope
