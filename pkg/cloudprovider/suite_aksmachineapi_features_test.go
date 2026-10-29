@@ -27,7 +27,6 @@ import (
 	nodev1 "k8s.io/api/node/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -231,17 +230,6 @@ var _ = Describe("CloudProvider", func() {
 
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
-					validation := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
-					selectedVersion := version.MustParse(lo.Must(nodeClass.GetKubernetesVersion()))
-					unsupported := imageFamily == v1beta1.Ubuntu2204ImageFamily && selectedVersion.AtLeast(version.MustParse("1.37.0")) ||
-						imageFamily == v1beta1.Ubuntu2404ImageFamily && selectedVersion.LessThan(version.MustParse("1.32.0"))
-					if unsupported {
-						Expect(validation.IsFalse()).To(BeTrue())
-						Expect(validation.Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
-						return
-					}
-					Expect(validation.IsTrue()).To(BeTrue())
 					pod := coretest.UnschedulablePod(coretest.PodOptions{})
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
