@@ -26,10 +26,10 @@ runs:
           ~/go/bin
         # Include runner.environment in key because ~/go/bin expands differently on github-hosted vs self-hosted runners
         key: ${{ runner.os }}-${{ runner.environment }}-${{ inputs.k8sVersion }}-go-${{ steps.setup-go.outputs.go-version }}-microsoft-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
-    - if: ${{ steps.cache-toolchain.outputs.cache-hit != 'true' }}
-      shell: bash
+    - shell: bash
       env:
         K8S_VERSION: ${{ inputs.k8sVersion }}
+        SKIP_INSTALLED: ${{ steps.cache-toolchain.outputs.cache-hit == 'true' }}
       run: make toolchain
     # Install trivy v0.74.0 with SHA256 verification (pinned binary, no apt repo trust)
     - shell: bash
