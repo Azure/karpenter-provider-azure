@@ -37,8 +37,8 @@ import (
 
 const (
 	ImageExpirationInterval       = time.Hour * 24 * 3
-	LatestImageExpirationInterval = 15 * time.Minute
 	ImageCacheCleaningInterval    = time.Hour * 1
+	LatestImageExpirationInterval = 15 * time.Minute
 
 	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
 	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
@@ -83,6 +83,7 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 }
 
 // GetLatestVersion returns the latest image version available for the NodeClass.
+// It returns an error if no node images are available.
 // All node images in a region share the same version, so the first image is representative.
 func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (string, error) {
 	nodeImages, err := p.listWithCache(ctx, nodeClass, latestImagesCacheKeyPrefix, LatestImageExpirationInterval)
@@ -90,7 +91,7 @@ func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSN
 		return "", err
 	}
 	if len(nodeImages) == 0 {
-		return "", nil
+		return "", fmt.Errorf("no node images available to resolve the latest image version")
 	}
 
 	imageIDParts := strings.Split(nodeImages[0].ID, "/")
