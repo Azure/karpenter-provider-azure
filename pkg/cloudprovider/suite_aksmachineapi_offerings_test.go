@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
@@ -69,15 +70,16 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
+			statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
+				azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
-			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client))
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
+			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -481,7 +483,8 @@ var _ = Describe("CloudProvider", func() {
 			// Ported from VM test: "should return error when instance type resolution fails"
 			It("should return error when instance type resolution fails", func() {
 				// Create and set up the status controller
-				localStatusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
+				localStatusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
+					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
 
 				// Set NodeClass to Ready
 				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
@@ -587,6 +590,65 @@ var _ = Describe("CloudProvider", func() {
 				Expect(errors.As(err, &createErr)).To(BeTrue())
 				Expect(createErr.ConditionReason).To(Equal(offerings.ZonalAllocationFailureReason))
 			})
+
+			Context("node public IP errors", func() {
+				const prefixID = "/subscriptions/subscriptionID/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/node-prefix"
+				var testNodeClaim *karpv1.NodeClaim
+				var seqNum uint64
+
+				BeforeEach(func() {
+					nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}}
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+					testNodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{
+								karpv1.NodePoolLabelKey: nodePool.Name,
+							},
+						},
+						Spec: karpv1.NodeClaimSpec{
+							NodeClassRef: &karpv1.NodeClassReference{
+								Name:  nodeClass.Name,
+								Group: object.GVK(nodeClass).Group,
+								Kind:  object.GVK(nodeClass).Kind,
+							},
+						},
+					})
+					seqNum = azureEnv.UnavailableOfferingsCache.SeqNum()
+				})
+
+				// Public IP failures come from the NodeClass, not the offering, so they must go
+				// through the unhandled path: AKS's code and message reach the Launched condition,
+				// and no offering is marked unavailable.
+				expectUnhandledNodePublicIPError := func(err error, code, message string) {
+					GinkgoHelper()
+					Expect(err).To(HaveOccurred())
+					Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeFalse())
+					var createErr *corecloudprovider.CreateError
+					Expect(errors.As(err, &createErr)).To(BeTrue())
+					Expect(createErr.ConditionReason).To(Equal(CreateInstanceFailedReason))
+					Expect(createErr.ConditionMessage).To(ContainSubstring(code))
+					Expect(createErr.ConditionMessage).To(ContainSubstring(message))
+					Expect(azureEnv.UnavailableOfferingsCache.SeqNum()).To(Equal(seqNum))
+				}
+
+				It("should leave a synchronous public IP error unhandled", func() {
+					azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(fake.AKSMachineAPIErrorLinkedAuthorizationFailed(prefixID))
+
+					claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim)
+					Expect(claim).To(BeNil())
+					expectUnhandledNodePublicIPError(err, "LinkedAuthorizationFailed", "does not have permission to perform action(s) 'Microsoft.Network/publicIPPrefixes/join/action'")
+				})
+
+				It("should leave a public IP failure during provisioning unhandled", func() {
+					azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorLinkedAuthorizationFailed(prefixID)
+
+					claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim)
+					Expect(claim).To(BeNil())
+					expectUnhandledNodePublicIPError(err, "LinkedAuthorizationFailed", "does not have permission to perform action(s) 'Microsoft.Network/publicIPPrefixes/join/action'")
+				})
+			})
 		})
 
 		// Mostly ported from VM test: "Provider list"
@@ -609,7 +671,7 @@ var _ = Describe("CloudProvider", func() {
 			// 		v1beta1.LabelSKUName:                      "Standard_NC24ads_A100_v4",
 			// 		v1beta1.LabelSKUFamily:                    "N",
 			// 		v1beta1.LabelSKUVersion:                   "4",
-			// 		v1beta1.LabelSKUStorageEphemeralOSMaxSize: "429",
+			// 		v1beta1.LabelSKUStorageEphemeralOSMaxSize: "274",
 			// 		v1beta1.LabelSKUAcceleratedNetworking:     "true",
 			// 		v1beta1.LabelSKUStoragePremiumCapable:     "true",
 			// 		v1beta1.LabelSKUGPUName:                   "A100",

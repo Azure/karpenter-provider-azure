@@ -46,7 +46,7 @@ func ResponseError(value string) Value {
 
 // Helper function to convert a slice of Values to their key-value pairs
 func ValuesToKeyValuePairs(values ...Value) []any {
-	var pairs []any
+	pairs := make([]any, 0, len(values)*2)
 	for _, v := range values {
 		pairs = append(pairs, v.Key(), v.Value())
 	}

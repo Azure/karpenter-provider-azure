@@ -22,7 +22,29 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
-// RegisterCSIZoneNormalization wires the Azure Disk CSI zone label + value
+const (
+	// LabelAzureDiskCSIZone is the topology key the Azure Disk CSI driver
+	// (disk.csi.azure.com) reports in NodeGetInfo and that csi-provisioner
+	// stamps onto every dynamically provisioned PV as required nodeAffinity.
+	LabelAzureDiskCSIZone = "topology.disk.csi.azure.com/zone"
+	// LabelAzureElasticSANCSIZone is the equivalent key reported by the Azure
+	// Elastic SAN CSI driver (san.csi.azure.com), installed by Azure Container
+	// Storage.
+	LabelAzureElasticSANCSIZone = "topology.san.csi.azure.com/zone"
+)
+
+// CSIZoneLabels are the driver-specific zone topology keys that carry the same
+// values as topology.kubernetes.io/zone (e.g. "eastus-1", or "" for non-zonal)
+// and are aliased onto it by RegisterCSIZoneNormalization. Without the alias,
+// karpenter cannot enumerate the label's values and rejects any pod whose PV is
+// constrained on it with `label "..." does not have known values`, so no node
+// is ever provisioned for it.
+var CSIZoneLabels = []string{
+	LabelAzureDiskCSIZone,
+	LabelAzureElasticSANCSIZone,
+}
+
+// RegisterCSIZoneNormalization wires the Azure CSI drivers' zone label + value
 // normalization into karpenter's global normalization maps.
 //
 // It is safe to call from multiple init() functions (production operator,
@@ -32,15 +54,17 @@ import (
 // NormalizedLabelValues is initialized to a non-nil map upstream, but we
 // defensively guard against a future change or an out-of-order init.
 //
-// Value normalization: the Azure Disk CSI driver emits "" for non-zonal
+// Value normalization: the Azure CSI drivers emit "" for non-zonal
 // topology while cloud-provider-azure uses "0" (fault domain) for regional
 // VMs, so we translate "" -> zones.Regional on the normalized zone label.
 func RegisterCSIZoneNormalization() {
-	// Label-key normalization: alias the CSI zone label onto the well-known
+	// Label-key normalization: alias each CSI zone label onto the well-known
 	// topology zone label. lo.Assign returns a new map with a nil-safe merge.
 	karpv1.NormalizedLabels = lo.Assign(
 		karpv1.NormalizedLabels,
-		map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone},
+		lo.SliceToMap(CSIZoneLabels, func(label string) (string, string) {
+			return label, corev1.LabelTopologyZone
+		}),
 	)
 
 	// Value normalization: merge into any existing per-label map instead of

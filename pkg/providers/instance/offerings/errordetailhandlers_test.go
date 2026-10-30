@@ -60,6 +60,11 @@ func (b *errorDetailTestCaseBuilder) withZoneAndCapacity(zone, capacityType stri
 	return b
 }
 
+func (b *errorDetailTestCaseBuilder) withCapacityReservationGroup(id string) *errorDetailTestCaseBuilder {
+	b.tc.capacityReservationGroupID = id
+	return b
+}
+
 func (b *errorDetailTestCaseBuilder) withErrorDetail(errorCode, errorMessage string) *errorDetailTestCaseBuilder {
 	b.tc.cloudErr = createErrorDetail(errorCode, errorMessage)
 	return b
@@ -95,6 +100,7 @@ type errorDetailTestCase struct {
 	originalRequestSKU                      *skewer.SKU
 	zone                                    string
 	capacityType                            string
+	capacityReservationGroupID              string
 	cloudErr                                armcontainerservice.ErrorDetail
 	expectedErr                             error
 	expectedReason                          string
@@ -142,6 +148,20 @@ func setupErrorDetailTestCases() []errorDetailTestCase {
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 			).
+			build(),
+
+		newErrorDetailTestCase("SKU family quota for a capacity reservation group").
+			withInstanceType(zone2OnDemand, zone3OnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withCapacityReservationGroup(testCapacityReservationGroupID).
+			withErrorDetail("OperationNotAllowed", fmt.Sprintf(
+				"Operation could not be completed as it results in exceeding approved %s Family Cores quota. Current Limit: 24",
+				testInstanceName,
+			)).
+			expectError(fmt.Errorf(errMsgSKUFamilyQuotaFmt, karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectReason(SubscriptionQuotaReachedReason).
+			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand)).
 			build(),
 
 		newErrorDetailTestCase("SKU family quota 0 CPUs").
@@ -260,7 +280,30 @@ func setupErrorDetailTestCases() []errorDetailTestCase {
 			withErrorDetail("NetworkError", "Network connection timeout").
 			expectError(nil).
 			build(),
+
+		// The handler receives the first entry of the Machine's provisioning error details, or the
+		// provisioning error itself when there are none. A failed node public IP is a configuration
+		// error, not a capacity error, whichever Azure Network error AKS wraps.
+		nodePublicIPErrorDetailTestCase("public IP prefix out of addresses, without a code",
+			"", "No more IPs available in IpPrefix prefixID."),
+		nodePublicIPErrorDetailTestCase("LinkedAuthorizationFailed in details",
+			"LinkedAuthorizationFailed", "The client 'clientID' with object id 'objectID' has permission to perform action 'Microsoft.Compute/virtualMachines/write' on scope 'vmID'; however, it does not have permission to perform action(s) 'Microsoft.Network/publicIPPrefixes/join/action' on the linked scope(s) 'prefixID' (respectively) or the linked scope(s) are invalid."),
+		nodePublicIPErrorDetailTestCase("zonal public IP with routing preference, without a code",
+			"", "A zonal PublicIPAddress publicIPAddressID cannot support for routing preference feature"),
 	}
+}
+
+// nodePublicIPErrorDetailTestCase builds a case for a Machine provisioning failure caused by the
+// node public IP. It must stay unhandled, so AKS's code and message reach the NodeClaim, and must not
+// mark any offering unavailable.
+func nodePublicIPErrorDetailTestCase(name, code, message string) errorDetailTestCase {
+	return newErrorDetailTestCase(name+" - node public IP - not handled").
+		withInstanceType(zone1OnDemand, zone2Spot, zone3OnDemand, regionalSpot).
+		withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+		withErrorDetail(code, message).
+		expectError(nil).
+		expectAvailable(allDefaultTestOfferingInfo()...).
+		build()
 }
 
 func TestHandleErrorDetails(t *testing.T) {
@@ -276,11 +319,12 @@ func TestHandleErrorDetails(t *testing.T) {
 				tc.instanceType,
 				tc.zone,
 				tc.capacityType,
+				tc.capacityReservationGroupID,
 				tc.cloudErr,
 			)
 
 			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
-			assertOfferingsState(t, provider.UnavailableOfferings, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
 }

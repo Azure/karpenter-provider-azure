@@ -48,6 +48,7 @@ type OptionsFields struct {
 	AdditionalTags                 map[string]string
 	EnableAzureSDKLogging          *bool
 	DiskEncryptionSetID            *string
+	EnableFIPS                     *bool
 	ClusterDNSServiceIP            *string
 	ManageExistingAKSMachines      *bool
 	AKSMachinesPoolName            *string
@@ -94,12 +95,13 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		SIGAccessTokenServerURL:        lo.FromPtrOr(options.SIGAccessTokenServerURL, "https://test-sig-access-token-server.com"),
 		AdditionalTags:                 options.AdditionalTags,
 		DiskEncryptionSetID:            lo.FromPtrOr(options.DiskEncryptionSetID, ""),
+		EnableFIPS:                     lo.FromPtrOr(options.EnableFIPS, false),
 		DNSServiceIP:                   lo.FromPtrOr(options.ClusterDNSServiceIP, ""),
 		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, false),
 		AKSMachinesPoolName:            lo.FromPtrOr(options.AKSMachinesPoolName, "aksmanagedap"),
 		ProviderBatchIdleDuration:      lo.FromPtrOr(options.ProviderBatchIdleDuration, time.Second),
 		ProviderBatchMaxDuration:       lo.FromPtrOr(options.ProviderBatchMaxDuration, 5*time.Second),
 		ProviderBatchMaxSize:           lo.FromPtrOr(options.ProviderBatchMaxSize, 50),
-		ComputeRecommendationMode:      lo.FromPtrOr(options.ComputeRecommendationMode, "disabled"),
+		ComputeRecommendationMode:      lo.FromPtrOr(options.ComputeRecommendationMode, "log-only"),
 	}
 }

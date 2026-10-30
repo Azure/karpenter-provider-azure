@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
@@ -49,6 +50,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computefleet/armcomputefleet/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -57,11 +59,14 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/fleet"
 	instancemetrics "github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	"github.com/Azure/skewer"
 )
 
 var ctx context.Context
@@ -93,7 +98,7 @@ func TestAzure(t *testing.T) {
 	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnv.InstanceTypeStore)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
+	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
 	RunSpecs(t, "Provider/Azure")
 }
 
@@ -449,6 +454,30 @@ var _ = Describe("VMInstanceProvider", func() {
 
 	Context("AzureCNI V1", func() {
 		var originalOptions *options.Options
+		expectFleetIPConfigurationsToMatch := func(nic armnetwork.Interface) {
+			opts := options.FromContext(ctx)
+			vmConfigs := nic.Properties.IPConfigurations
+			poolIDs := lo.Map(vmConfigs[0].Properties.LoadBalancerBackendAddressPools, func(pool *armnetwork.BackendAddressPool, _ int) string {
+				return lo.FromPtr(pool.ID)
+			})
+			profile := fleet.BuildFleetNetworkProfile(
+				lo.FromPtr(vmConfigs[0].Properties.Subnet.ID), "", poolIDs, false,
+				opts.NetworkPlugin, opts.NetworkPluginMode, utils.GetMaxPods(nodeClass, opts.NetworkPlugin, opts.NetworkPluginMode),
+			)
+			fleetConfigs := profile.NetworkInterfaceConfigurations[0].Properties.IPConfigurations
+			Expect(fleetConfigs).To(HaveLen(len(vmConfigs)))
+			for i, config := range fleetConfigs {
+				Expect(config.Properties.Primary).To(Equal(vmConfigs[i].Properties.Primary))
+				Expect(config.Properties.Subnet.ID).To(Equal(vmConfigs[i].Properties.Subnet.ID))
+				fleetPools := lo.Map(config.Properties.LoadBalancerBackendAddressPools, func(pool *armcomputefleet.SubResource, _ int) string {
+					return lo.FromPtr(pool.ID)
+				})
+				vmPools := lo.Map(vmConfigs[i].Properties.LoadBalancerBackendAddressPools, func(pool *armnetwork.BackendAddressPool, _ int) string {
+					return lo.FromPtr(pool.ID)
+				})
+				Expect(fleetPools).To(ConsistOf(vmPools))
+			}
+		}
 
 		BeforeEach(func() {
 			originalOptions = options.FromContext(ctx)
@@ -476,6 +505,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			Expect(len(nic.Properties.IPConfigurations)).To(Equal(30))
+			expectFleetIPConfigurationsToMatch(nic)
 			customData := ExpectDecodedCustomData(azureEnv)
 			expectedFlags := map[string]string{
 				"max-pods": "30",
@@ -504,6 +534,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			// Overlay doesn't rely on secondary ips and instead allocates from a
 			// virtual address space.
 			Expect(len(nic.Properties.IPConfigurations)).To(Equal(1))
+			expectFleetIPConfigurationsToMatch(nic)
 			customData := ExpectDecodedCustomData(azureEnv)
 			expectedFlags := map[string]string{
 				"max-pods": "250",
@@ -524,6 +555,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			Expect(len(nic.Properties.IPConfigurations)).To(Equal(11))
+			expectFleetIPConfigurationsToMatch(nic)
 		})
 	})
 
@@ -676,6 +708,52 @@ var _ = Describe("VMInstanceProvider", func() {
 		Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(expectedNSGID))
 	})
 
+	Context("OSDiskType", func() {
+		// Standard_D64s_v3 has 1600GB of CacheDisk space, plenty for the default 128GB OS disk
+		const ephemeralCapableVMSize = "Standard_D64s_v3"
+		// Standard_D2s_v3 has 53GB of CacheDisk space and a 16GB temp disk, too small for the default 128GB OS disk
+		const ephemeralTooSmallVMSize = "Standard_D2s_v3"
+
+		expectVMForVMSize := func(vmSize string) *armcompute.VirtualMachine {
+			GinkgoHelper()
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      v1.LabelInstanceTypeStable,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{vmSize},
+			})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			return &createInput.VM
+		}
+
+		It("should use an ephemeral disk when unspecified and the instance type has enough space", func() {
+			vm := expectVMForVMSize(ephemeralCapableVMSize)
+
+			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
+		})
+
+		It("should fall back to a managed disk when unspecified and the instance type doesn't have enough ephemeral space", func() {
+			vm := expectVMForVMSize(ephemeralTooSmallVMSize)
+
+			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+		})
+
+		It("should use a managed disk when Managed, even if the instance type has enough ephemeral space", func() {
+			nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+
+			vm := expectVMForVMSize(ephemeralCapableVMSize)
+
+			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+		})
+	})
+
 	Context("Update", func() {
 		It("should update only VM when no tags are included", func() {
 			// Ensure that the VM already exists in the fake environment
@@ -817,6 +895,96 @@ var _ = Describe("VMInstanceProvider", func() {
 			})
 		})
 	})
+
+	DescribeTable("should build Fleet profiles from provider-generated launch templates",
+		func(security *v1beta1.Security) {
+			nodeClass.Spec.Security = security
+			nodeClass.Spec.Tags = map[string]string{"test-tag": "test-value"}
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(instanceTypes).NotTo(BeEmpty())
+			instanceType, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool {
+				return it.Name == "Standard_D2s_v3"
+			})
+			Expect(found).To(BeTrue())
+			supportedSKU, err := azureEnv.InstanceTypesProvider.Get(ctx, instanceType.Name)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(supportedSKU.IsAcceleratedNetworkingSupported()).To(BeTrue())
+			Expect(supportedSKU.IsEncryptionAtHostSupported()).To(BeTrue())
+			unsupportedSKU, err := azureEnv.InstanceTypesProvider.Get(ctx, "Standard_D2_v2")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(unsupportedSKU.IsAcceleratedNetworkingSupported()).To(BeTrue())
+			Expect(unsupportedSKU.IsEncryptionAtHostSupported()).To(BeFalse())
+			if nodeClass.GetEncryptionAtHost() {
+				Expect(instanceTypes).NotTo(ContainElement(HaveField("Name", unsupportedSKU.GetName())))
+			} else {
+				Expect(instanceTypes).To(ContainElement(HaveField("Name", unsupportedSKU.GetName())))
+			}
+
+			fleetOptions := *options.FromContext(ctx)
+			fleetOptions.UseSIG = false
+			fleetCtx := options.ToContext(ctx, &fleetOptions)
+			test.ApplyDefaultStatus(nodeClass, env, false)
+
+			for _, mixedCapabilities := range []bool{false, true} {
+				By(fmt.Sprintf("using mixed SKU capabilities=%t", mixedCapabilities))
+				candidates := []string{instanceType.Name}
+				resolvedSKUs := map[string]*skewer.SKU{instanceType.Name: supportedSKU}
+				if mixedCapabilities {
+					candidates = append(candidates, unsupportedSKU.GetName())
+					resolvedSKUs[unsupportedSKU.GetName()] = unsupportedSKU
+				}
+				template, err := azureEnv.LaunchTemplateProvider.GetTemplate(
+					fleetCtx, nodeClass, nodeClaim, instanceType, nil,
+				)
+				Expect(err).NotTo(HaveOccurred())
+				body, err := fleet.BuildFleetBody(&fleet.FleetVMProvisionRequest{
+					NetworkPlugin:     fleetOptions.NetworkPlugin,
+					NetworkPluginMode: fleetOptions.NetworkPluginMode,
+					MaxPods:           utils.GetMaxPods(nodeClass, fleetOptions.NetworkPlugin, fleetOptions.NetworkPluginMode),
+					LaunchTemplate:    template,
+					AcceptableSKUs:    candidates,
+					ResolvedSKUs:      resolvedSKUs,
+					CapacityType:      karpv1.CapacityTypeOnDemand,
+					AdminUsername:     "azureuser",
+				}, 1, template.Tags)
+				Expect(err).NotTo(HaveOccurred())
+
+				profile := body.Properties.ComputeProfile.BaseVirtualMachineProfile
+				if security == nil || security.EncryptionAtHost == nil {
+					Expect(template.EncryptionAtHost).To(BeNil())
+					Expect(profile.SecurityProfile).To(BeNil())
+				} else {
+					Expect(template.EncryptionAtHost).To(Equal(security.EncryptionAtHost))
+					Expect(profile.SecurityProfile).NotTo(BeNil())
+					Expect(profile.SecurityProfile.EncryptionAtHost).To(Equal(security.EncryptionAtHost))
+				}
+				expectedSKUs := []string{instanceType.Name}
+				if mixedCapabilities && !nodeClass.GetEncryptionAtHost() {
+					expectedSKUs = append(expectedSKUs, unsupportedSKU.GetName())
+				}
+				actualSKUs := lo.Map(body.Properties.VMSizesProfile, func(sku *armcomputefleet.VMSizeProfile, _ int) string {
+					return lo.FromPtr(sku.Name)
+				})
+				Expect(actualSKUs).To(ConsistOf(expectedSKUs))
+				image := profile.StorageProfile.ImageReference
+				Expect(template.ImageID).To(HavePrefix("/CommunityGalleries/"))
+				Expect(image.CommunityGalleryImageID).To(Equal(lo.ToPtr(template.ImageID)))
+				Expect(image.ID).To(BeNil())
+				nic := profile.NetworkProfile.NetworkInterfaceConfigurations[0]
+				Expect(nic.Properties.EnableAcceleratedNetworking).To(Equal(lo.ToPtr(true)))
+				Expect(body.Tags).To(HaveKeyWithValue("test-tag", lo.ToPtr("test-value")))
+				Expect(body.Tags).To(HaveKeyWithValue(launchtemplate.NodePoolTagKey, lo.ToPtr(nodePool.Name)))
+				Expect(body.Tags).To(HaveKeyWithValue(launchtemplate.KarpenterManagedTagKey, lo.ToPtr(fleetOptions.ClusterName)))
+				Expect(body.Tags).To(HaveKeyWithValue(launchtemplate.BillingTagKey, lo.ToPtr(launchtemplate.BillingTagValueLinux)))
+			}
+		},
+		Entry("without security", (*v1beta1.Security)(nil)),
+		Entry("without encryption at host", &v1beta1.Security{}),
+		Entry("with encryption at host enabled", &v1beta1.Security{EncryptionAtHost: lo.ToPtr(true)}),
+		Entry("with encryption at host disabled", &v1beta1.Security{EncryptionAtHost: lo.ToPtr(false)}),
+	)
 
 	Context("EncryptionAtHost", func() {
 		It("should create VM with EncryptionAtHost enabled when specified in AKSNodeClass", func() {

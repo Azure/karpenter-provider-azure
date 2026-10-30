@@ -18,6 +18,7 @@ package v1alpha2
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
@@ -32,6 +33,20 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
+type OSDiskType string
+
+var (
+	OSDiskTypeManaged = OSDiskType("Managed")
+)
+
+// +kubebuilder:validation:Enum:={OCIContainer,KataVmIsolation}
+type WorkloadRuntime string
+
+const (
+	WorkloadRuntimeOCIContainer    WorkloadRuntime = "OCIContainer"
+	WorkloadRuntimeKataVMIsolation WorkloadRuntime = "KataVmIsolation"
+)
+
 // ArtifactStreaming configures artifact streaming for provisioned nodes.
 // Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 type ArtifactStreaming struct {
@@ -41,20 +56,112 @@ type ArtifactStreaming struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+// CapacityReservationConfiguration configures the Capacity Reservation Group
+// that instances provisioned by this NodeClass target.
+type CapacityReservationConfiguration struct {
+	// groupID is the ARM resource ID of the Capacity Reservation Group.
+	// The group must be in the same subscription and region as the cluster, and
+	// must be of the Targeted reservation type. When set, every instance from
+	// this NodeClass targets the reservation group. Azure may allocate instances beyond the
+	// reserved quantity, in which case the excess is ordinary On-Demand capacity
+	// that is not covered by the capacity reservation SLA.
+	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$`
+	// +required
+	GroupID *string `json:"groupID,omitempty"`
+}
+
+// NodePublicIP configures an instance-level public IP address for each node
+// provisioned by this NodeClass.
+// +kubebuilder:validation:XValidation:message="nodePublicIP.prefixIDs requires nodePublicIP.enabled to be true",rule="!has(self.prefixIDs) || (has(self.enabled) && self.enabled)"
+// +kubebuilder:validation:XValidation:message="nodePublicIP.ipTags requires nodePublicIP.enabled to be true",rule="!has(self.ipTags) || (has(self.enabled) && self.enabled)"
+// +kubebuilder:validation:XValidation:message="nodePublicIP.ipTags can't be combined with nodePublicIP.prefixIDs",rule="!has(self.ipTags) || !has(self.prefixIDs)"
+type NodePublicIP struct {
+	// enabled requests a dedicated public IP address for each node.
+	// If omitted or false, nodes don't get a public IP address.
+	// Node public IP is supported only in the AKS Machine API provision modes
+	// (aksmachineapi and aksmachineapiheaderbatch). In other provision modes, setting
+	// enabled to true makes the NodeClass not ready, with the ValidationSucceeded
+	// condition reporting the reason.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+	// prefixIDs are the ARM resource IDs of the public IP prefixes that node public IP
+	// addresses are allocated from. If omitted, each node gets a public IP address that
+	// isn't from a prefix. At most one prefix is supported, and it must be an IPv4 prefix
+	// in the cluster's subscription. Requires enabled to be true.
+	// A zonal prefix allocates addresses only for nodes in its zone; a zone-redundant
+	// prefix works for any node. Karpenter doesn't check this, so every NodePool using
+	// a zonal prefix must restrict topology.kubernetes.io/zone to the prefix's zone.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=1
+	// +kubebuilder:validation:items:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/publicIPPrefixes\/[^\/]+$`
+	// +listType=atomic
+	// +optional
+	PrefixIDs []string `json:"prefixIDs,omitempty"`
+	// ipTags are the IP tags set on each node's public IP address, for example
+	// {ipTagType: RoutingPreference, tag: Internet}. They aren't Azure resource tags, and they
+	// can't be changed on an existing address. Requires enabled to be true, and can't be
+	// combined with prefixIDs.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=4
+	// +kubebuilder:validation:XValidation:message="nodePublicIP.ipTags entries must be unique",rule="self.all(t, self.exists_one(u, u.ipTagType == t.ipTagType && u.tag == t.tag))"
+	// +listType=atomic
+	// +optional
+	IPTags []IPTag `json:"ipTags,omitempty"`
+}
+
+// IPTag is an IP tag on a public IP address.
+type IPTag struct {
+	// ipTagType is the type of the IP tag, for example RoutingPreference.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +required
+	IPTagType string `json:"ipTagType,omitempty"`
+	// tag is the value of the IP tag, for example Internet.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +required
+	Tag string `json:"tag,omitempty"`
+}
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2404') : true"
-// +kubebuilder:validation:XValidation:message="TrustedLaunch is required for FIPS support with Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && (self.imageFamily != 'Ubuntu2204' || (has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))))) : true"
-// +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu and Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204') : true"
+// +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu, Ubuntu2204, Windows2025, and AzureContainerLinux",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204' || self.imageFamily == 'Windows2025' || self.imageFamily == 'AzureContainerLinux') : true"
+// +kubebuilder:validation:XValidation:message="FIPS is not supported for Windows2022",rule="!has(self.fipsMode) || self.fipsMode != 'FIPS' || !has(self.imageFamily) || self.imageFamily != 'Windows2022'"
+// +kubebuilder:validation:XValidation:message="fipsMode must be FIPS or omitted for Windows2025",rule="!has(self.imageFamily) || self.imageFamily != 'Windows2025' || !has(self.fipsMode) || self.fipsMode == 'FIPS'"
+// +kubebuilder:validation:XValidation:message="TrustedLaunch is not supported for Windows2022",rule="!has(self.imageFamily) || self.imageFamily != 'Windows2022' || !has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))"
+// +kubebuilder:validation:XValidation:message="linuxOSConfig is not supported for Windows image families",rule="!has(self.linuxOSConfig) || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
+// +kubebuilder:validation:XValidation:message="artifactStreaming is not supported for Windows image families",rule="!has(self.artifactStreaming) || !has(self.artifactStreaming.enabled) || self.artifactStreaming.enabled == false || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
+// +kubebuilder:validation:XValidation:message="localDNS is not supported for Windows image families",rule="!has(self.localDNS) || self.localDNS.mode == 'Disabled' || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
+// +kubebuilder:validation:XValidation:message="AzureContainerLinux requires security.trustedLaunch.vtpm and security.trustedLaunch.secureBoot to be explicitly set to true",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || (has(self.security) && has(self.security.trustedLaunch) && has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm && has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)"
+// +kubebuilder:validation:XValidation:message="AzureContainerLinux requires an OS disk of at least 60 GB",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
+// +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation requires imageFamily AzureLinux",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (has(self.imageFamily) && self.imageFamily == 'AzureLinux') : true"
+// +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with fipsMode FIPS",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.fipsMode) || self.fipsMode != 'FIPS') : true"
+// +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with TrustedLaunch",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))) : true"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
+	// capacityReservation configures the Capacity Reservation Group that instances
+	// provisioned by this NodeClass target.
+	// +optional
+	CapacityReservation *CapacityReservationConfiguration `json:"capacityReservation,omitempty"`
+	// nodePublicIP configures an instance-level public IP address for each node
+	// provisioned by this NodeClass.
+	// +optional
+	NodePublicIP *NodePublicIP `json:"nodePublicIP,omitempty"`
+	// osDiskType is the type of disk to use for the OS.
+	// If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
+	// of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
+	// +kubebuilder:validation:Enum:={Managed}
+	// +optional
+	OSDiskType *OSDiskType `json:"osDiskType,omitempty"`
 	// osDiskSizeGB is the size of the OS disk in GB.
-	// +default=128
+	// If not specified, it is auto-sized per instance type: an ephemeral OS disk at the largest
+	// SKU-supported size (max 2040 GB) when possible, otherwise a managed OS disk sized by vCPU count.
 	// +kubebuilder:validation:Minimum=30
 	// +kubebuilder:validation:Maximum=2048
 	// +optional
@@ -63,14 +170,34 @@ type AKSNodeClassSpec struct {
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
 	// imageFamily is the image family that instances use.
+	// AzureContainerLinux requires an AKS Machine API provision mode with shared image gallery (SIG) access.
+	// Windows node support for the Windows2022 and Windows2025 image families is in preview and
+	// isn't meant for production. Support is best effort, and changes to APIs or behavior may result
+	// in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
 	// +default="Ubuntu"
-	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
+	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux,Windows2022,Windows2025,AzureContainerLinux}
 	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
+	// versions controls the Kubernetes and node image versions for the NodeClass.
+	// If omitted, both versions follow their automatic defaults.
+	// +optional
+	Versions *Versions `json:"versions,omitempty" hash:"ignore"` // Version changes are handled through resolved status and intentionally excluded from the NodeClass hash.
 	// fipsMode controls FIPS compliance for the provisioned nodes
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional
 	FIPSMode *FIPSMode `json:"fipsMode,omitempty"`
+	// workloadRuntime determines the additional workload runtime a node can run.
+	// OCIContainer (the default) runs standard OCI containers only.
+	// KataVmIsolation enables AKS Pod Sandboxing alongside standard containers,
+	// so pods with runtimeClassName: kata-vm-isolation
+	// run in lightweight VMs while other pods on the same node keep running as normal containers.
+	// Pod Sandboxing requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS and Trusted Launch, and
+	// requires a nested-virtualization-capable VM size.
+	// See https://learn.microsoft.com/azure/aks/use-pod-sandboxing for more details.
+	// +default="OCIContainer"
+	// +optional
+	WorkloadRuntime *WorkloadRuntime `json:"workloadRuntime,omitempty"`
 	// tags to be applied on Azure resources like instances.
 	// +kubebuilder:validation:XValidation:message="tags keys must be less than 512 characters",rule="self.all(k, size(k) <= 512)"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '<', '>', '%', '&', or '?'",rule="self.all(k, !k.matches('[<>%&?]'))"
@@ -120,12 +247,33 @@ type AKSNodeClassSpec struct {
 	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
 }
 
+// Versions controls the Kubernetes and node image versions used by the NodeClass.
+// If omitted, nodes follow the observed control plane version and automatic latest node image selection.
+// +kubebuilder:validation:XValidation:message="kubernetesVersion must be set when nodeImageVersion is set",rule="!has(self.nodeImageVersion) || has(self.kubernetesVersion)"
+type Versions struct {
+	// kubernetesVersion is the Kubernetes version to use for nodes provisioned for the NodeClass.
+	// If omitted, the observed control plane version is used.
+	// +kubebuilder:validation:Pattern=`^[0-9]+\.[0-9]+\.[0-9]+$`
+	// +optional
+	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
+	// nodeImageVersion is the node image ID suffix to use for the NodeClass.
+	// It must match the suffix of a currently resolved image in status.images,
+	// status.observedVersions.latestImageVersion, or a nodeImageVersion in status.observedVersions.recentlyUsedVersions.
+	// When set, kubernetesVersion must also be set. A recently used image version must be paired
+	// with its recorded Kubernetes version.
+	// If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
+	// +optional
+	NodeImageVersion *string `json:"nodeImageVersion,omitempty"`
+}
+
 // TrustedLaunch configures Trusted Launch security features for provisioned nodes.
 type TrustedLaunch struct {
 	// vtpm specifies whether virtual TPM should be enabled for provisioned nodes.
+	// AzureContainerLinux requires this field to be explicitly set to true.
 	// +optional
 	VTPM *bool `json:"vtpm,omitempty"`
 	// secureBoot specifies whether Secure Boot should be enabled for provisioned nodes.
+	// AzureContainerLinux requires this field to be explicitly set to true.
 	// +optional
 	SecureBoot *bool `json:"secureBoot,omitempty"`
 }
@@ -351,6 +499,9 @@ type GPU struct {
 //
 // AKS CustomKubeletConfig w/o CPUReserved,MemoryReserved,SeccompDefault
 // https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration?tabs=linux-node-pools
+// +kubebuilder:validation:XValidation:rule="has(self.evictionSoft) && has(self.evictionSoft.memoryAvailable) ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.memoryAvailable) : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.memoryAvailable)",message="evictionSoft.memoryAvailable and evictionSoftGracePeriod.memoryAvailable must be configured together"
+// +kubebuilder:validation:XValidation:rule="has(self.evictionSoft) && has(self.evictionSoft.nodeFsAvailable) ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.nodeFsAvailable) : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.nodeFsAvailable)",message="evictionSoft.nodeFsAvailable and evictionSoftGracePeriod.nodeFsAvailable must be configured together"
+// +kubebuilder:validation:XValidation:rule="has(self.evictionSoft) && has(self.evictionSoft.nodeFsInodesFree) ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.nodeFsInodesFree) : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.nodeFsInodesFree)",message="evictionSoft.nodeFsInodesFree and evictionSoftGracePeriod.nodeFsInodesFree must be configured together"
 type KubeletConfiguration struct {
 	// cpuManagerPolicy is the name of the policy to use.
 	// +kubebuilder:validation:Enum:={none,static}
@@ -429,6 +580,94 @@ type KubeletConfiguration struct {
 	// Must be set to false to allow linuxOSConfig.swapFileSize to take effect.
 	// +optional
 	FailSwapOn *bool `json:"failSwapOn,omitempty"`
+	// kubeReserved configures resources reserved for Kubernetes system daemons and overrides Karpenter's computed defaults per field.
+	// Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+	// and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+	// +optional
+	KubeReserved *KubeReserved `json:"kubeReserved,omitempty"`
+	// evictionHard configures hard eviction thresholds and overrides Karpenter's computed defaults per field.
+	// Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+	// and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+	// +optional
+	EvictionHard *EvictionThreshold `json:"evictionHard,omitempty"`
+	// evictionSoft configures soft eviction thresholds and overrides Karpenter's computed defaults per field.
+	// Each configured threshold must have a matching field in evictionSoftGracePeriod.
+	// Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+	// and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+	// +optional
+	EvictionSoft *EvictionThreshold `json:"evictionSoft,omitempty"`
+	// evictionSoftGracePeriod configures grace periods for soft eviction signals.
+	// Each configured grace period must have a matching field in evictionSoft.
+	// Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+	// and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+	// +optional
+	EvictionSoftGracePeriod *EvictionSoftGracePeriod `json:"evictionSoftGracePeriod,omitempty"`
+	// evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
+	// Kubelet configuration overrides are in preview and aren't meant for production. Support is best effort,
+	// and changes to APIs or behavior may result in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	EvictionMaxPodGracePeriod *int32 `json:"evictionMaxPodGracePeriod,omitempty"`
+}
+
+// KubeReserved defines resources reserved for Kubernetes system daemons.
+type KubeReserved struct {
+	// cpuMillicores is the CPU reservation in millicores.
+	// +kubebuilder:validation:Minimum=140
+	// +kubebuilder:validation:Maximum=2147483647
+	// +optional
+	CPUMillicores *int32 `json:"cpuMillicores,omitempty"`
+	// memoryMB is the memory reservation in MiB.
+	// +kubebuilder:validation:Minimum=750
+	// +kubebuilder:validation:Maximum=2147483647
+	// +optional
+	MemoryMB *int32 `json:"memoryMB,omitempty"`
+}
+
+// EvictionThreshold defines thresholds for supported kubelet eviction signals.
+type EvictionThreshold struct {
+	// memoryAvailable is the available-memory threshold as an integer Ki, Mi, or Gi quantity or percentage of total node memory capacity.
+	// +kubebuilder:validation:MaxLength=20
+	// +kubebuilder:validation:Pattern=`^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$`
+	// +optional
+	MemoryAvailable *string `json:"memoryAvailable,omitempty"`
+	// nodeFsAvailable is the available-node-filesystem threshold as an integer Ki, Mi, or Gi quantity or percentage of total node filesystem capacity.
+	// +kubebuilder:validation:MaxLength=20
+	// +kubebuilder:validation:Pattern=`^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$`
+	// +optional
+	NodeFsAvailable *string `json:"nodeFsAvailable,omitempty"`
+	// nodeFsInodesFree is the free-inodes threshold as an integer count or percentage of total node filesystem inodes.
+	// +kubebuilder:validation:MaxLength=20
+	// +kubebuilder:validation:Pattern=`^([0-9]+|([0-9]|[1-9][0-9]|100)%)$`
+	// +optional
+	NodeFsInodesFree *string `json:"nodeFsInodesFree,omitempty"`
+}
+
+// EvictionSoftGracePeriod defines grace periods for supported soft eviction signals.
+type EvictionSoftGracePeriod struct {
+	// memoryAvailable is the grace period for the memoryAvailable signal.
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('30s')",message="memoryAvailable must be a valid duration of at least 30s"
+	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:validation:Schemaless
+	// +optional
+	MemoryAvailable *karpv1.NillableDuration `json:"memoryAvailable,omitempty"`
+	// nodeFsAvailable is the grace period for the nodeFsAvailable signal.
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('30s')",message="nodeFsAvailable must be a valid duration of at least 30s"
+	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:validation:Schemaless
+	// +optional
+	NodeFsAvailable *karpv1.NillableDuration `json:"nodeFsAvailable,omitempty"`
+	// nodeFsInodesFree is the grace period for the nodeFsInodesFree signal.
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('30s')",message="nodeFsInodesFree must be a valid duration of at least 30s"
+	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:validation:Schemaless
+	// +optional
+	NodeFsInodesFree *karpv1.NillableDuration `json:"nodeFsInodesFree,omitempty"`
 }
 
 // +kubebuilder:validation:Enum:={always,defer,"defer+madvise",madvise,never}
@@ -694,7 +933,30 @@ type AKSNodeClass struct {
 const AKSNodeClassHashVersion = "v3"
 
 func (in *AKSNodeClass) Hash() string {
-	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{
+	spec := in.Spec
+	// See the v1beta1 Hash: OCIContainer must hash identically to the field being absent, so the
+	// server-side default cannot change the hash of an existing AKSNodeClass.
+	if lo.FromPtr(spec.WorkloadRuntime) == WorkloadRuntimeOCIContainer {
+		spec.WorkloadRuntime = nil
+	}
+	// A disabled node public IP block requests nothing, so omitted, {}, and {enabled: false} must
+	// hash the same. ARM resource IDs are case-insensitive, so prefix ID casing must not drift nodes.
+	// IP tag values keep their casing; CEL keeps entries unique, so none cancel out as a set.
+	if spec.NodePublicIP == nil || !lo.FromPtr(spec.NodePublicIP.Enabled) {
+		spec.NodePublicIP = nil
+	} else {
+		// spec is a shallow copy, so copy the block before normalizing it.
+		spec.NodePublicIP = spec.NodePublicIP.DeepCopy()
+		if len(spec.NodePublicIP.PrefixIDs) == 0 {
+			spec.NodePublicIP.PrefixIDs = nil
+		} else {
+			spec.NodePublicIP.PrefixIDs = lo.Map(spec.NodePublicIP.PrefixIDs, func(id string, _ int) string { return strings.ToLower(id) })
+		}
+		if len(spec.NodePublicIP.IPTags) == 0 {
+			spec.NodePublicIP.IPTags = nil
+		}
+	}
+	return fmt.Sprint(lo.Must(hashstructure.Hash(spec, hashstructure.FormatV2, &hashstructure.HashOptions{
 		SlicesAsSets:    true,
 		IgnoreZeroValue: true,
 		ZeroNil:         true,
@@ -716,6 +978,39 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 		return *in.Spec.Security.EncryptionAtHost
 	}
 	return false
+}
+
+// GetCapacityReservationGroupID returns the configured Capacity Reservation
+// Group ARM resource ID, or an empty string when none is configured.
+func (in *AKSNodeClass) GetCapacityReservationGroupID() string {
+	if in.Spec.CapacityReservation == nil {
+		return ""
+	}
+	return lo.FromPtr(in.Spec.CapacityReservation.GroupID)
+}
+
+// IsNodePublicIPEnabled returns whether nodes from this NodeClass request a public IP address.
+// Returns false when nodePublicIP or nodePublicIP.enabled is nil.
+func (in *AKSNodeClass) IsNodePublicIPEnabled() bool {
+	return in.Spec.NodePublicIP != nil && lo.FromPtr(in.Spec.NodePublicIP.Enabled)
+}
+
+// GetNodePublicIPPrefixIDs returns the public IP prefix IDs that node public IP addresses are
+// allocated from. Returns nil when node public IP is disabled or no prefix is configured.
+func (in *AKSNodeClass) GetNodePublicIPPrefixIDs() []string {
+	if !in.IsNodePublicIPEnabled() || len(in.Spec.NodePublicIP.PrefixIDs) == 0 {
+		return nil
+	}
+	return in.Spec.NodePublicIP.PrefixIDs
+}
+
+// GetNodePublicIPTags returns the IP tags for node public IP addresses.
+// Returns nil when node public IP is disabled or no IP tags are configured.
+func (in *AKSNodeClass) GetNodePublicIPTags() []IPTag {
+	if !in.IsNodePublicIPEnabled() || len(in.Spec.NodePublicIP.IPTags) == 0 {
+		return nil
+	}
+	return in.Spec.NodePublicIP.IPTags
 }
 
 func (in *AKSNodeClass) IsVTPMEnabled() bool {

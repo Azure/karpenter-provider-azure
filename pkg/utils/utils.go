@@ -210,7 +210,8 @@ func HasChanged(existing, new any, options *hashstructure.HashOptions) bool {
 // Be mindful of collision risks with short lengths. Also note that length > 13 provides no additional
 // collision resistance because the underlying hashstructure library returns a 64-bit hash, which only
 // fills ~13 base36 characters; extra characters are just leading zeros.
-// At the time of writing, this is being used in AKS machine instance provider/GetAKSMachineNameFromNodeClaimName(). See that for context.
+// At the time of writing, this is used by the AKS machine instance provider's GetLinuxAKSMachineName /
+// GetWindowsAKSMachineName (see pkg/providers/instance/aksmachineinstanceutils.go) for context.
 func GetAlphanumericHash(input string, length int) (string, error) {
 	if length <= 0 {
 		return "", fmt.Errorf("length must be positive, got %d", length)

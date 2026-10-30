@@ -48,7 +48,14 @@ func (u AzureLinux) Name() string {
 	return "AzureLinux2"
 }
 
-func (u AzureLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) []types.DefaultImageOutput {
+func (u AzureLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
+	// AKS does not publish a Kata (Pod Sandboxing) image for AzureLinux 2, only for AzureLinux 3.
+	// Return no images rather than resolving a distro that was never published: the request surfaces
+	// as ImagesNotFound instead of failing later at launch. Clusters on Kubernetes 1.32 and above
+	// resolve the AzureLinux image family to AzureLinux3, which does have a Kata variant.
+	if kataEnabled {
+		return []types.DefaultImageOutput{}
+	}
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		// image provider will select these images in order, first match wins
@@ -183,6 +190,7 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(
 	storageProfile string,
 	nodeBootstrappingClient types.NodeBootstrappingAPI,
 	fipsMode *v1beta1.FIPSMode,
+	workloadRuntime *v1beta1.WorkloadRuntime,
 	localDNS *v1beta1.LocalDNS,
 	artifactStreaming *v1beta1.ArtifactStreaming,
 	linuxOSConfig *v1beta1.LinuxOSConfiguration,
@@ -209,6 +217,7 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
 		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
 		FIPSMode:                       fipsMode,
+		WorkloadRuntime:                workloadRuntime,
 		LocalDNSProfile:                localDNS,
 		ArtifactStreaming:              artifactStreaming,
 		LinuxOSConfig:                  linuxOSConfig,

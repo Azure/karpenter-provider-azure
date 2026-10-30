@@ -90,7 +90,7 @@ Do not run `go generate` directly and do not hand-edit generated output. `make v
 code generation, copies upstream and provider CRDs into `pkg/apis/crds` and
 `charts/karpenter-crd/templates`, and fails if the working tree is dirty afterwards.
 
-CI runs `make ci-non-test` and `make ci-test` across Kubernetes versions 1.30 through 1.36. E2E
+CI runs `make ci-non-test` and `make ci-test` across Kubernetes versions 1.31 through 1.37. E2E
 suites run through [`.github/workflows/e2e-matrix.yaml`](./.github/workflows/e2e-matrix.yaml); a new
 suite directory under `test/suites/` must also be added to that matrix, as described in
 [.github/workflows/README.md](./.github/workflows/README.md).

@@ -22,7 +22,9 @@ const (
 
 	AKSUbuntuResourceGroup     = "AKS-Ubuntu"
 	AKSAzureLinuxResourceGroup = "AKS-AzureLinux"
+	AKSWindowsResourceGroup    = "AKS-Windows"
 
 	AKSUbuntuGalleryName     = "AKSUbuntu"
 	AKSAzureLinuxGalleryName = "AKSAzureLinux"
+	AKSWindowsGalleryName    = "AKSWindows"
 )

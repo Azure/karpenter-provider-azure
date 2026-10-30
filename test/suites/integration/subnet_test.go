@@ -17,7 +17,6 @@ limitations under the License.
 package integration_test
 
 import (
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
@@ -80,16 +79,8 @@ var _ = Describe("Subnets", func() {
 		nodes := env.EventuallyExpectCreatedNodeCount("==", 1)
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 
-		vm := env.GetVM(nodes[0].Name)
-		Expect(vm.Properties).ToNot(BeNil())
-		Expect(vm.Properties.NetworkProfile).ToNot(BeNil())
-		Expect(vm.Properties.NetworkProfile.NetworkInterfaces).To(HaveLen(1))
-		Expect(vm.Properties.NetworkProfile.NetworkInterfaces[0].ID).ToNot(BeNil())
-		nicID, err := arm.ParseResourceID(*vm.Properties.NetworkProfile.NetworkInterfaces[0].ID)
-		Expect(err).ToNot(HaveOccurred())
-
 		// The NIC should have the right subnet
-		nic := env.GetNetworkInterface(nicID.Name)
+		nic := env.GetNodeNetworkInterface(nodes[0].Name)
 		Expect(nic.Properties).ToNot(BeNil())
 		Expect(nic.Properties.IPConfigurations).To(HaveLen(1))
 		Expect(nic.Properties.IPConfigurations[0].Properties).ToNot(BeNil())

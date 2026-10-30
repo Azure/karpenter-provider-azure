@@ -78,6 +78,7 @@ type AKSMachinesBehavior struct {
 	AKSMachineCreateOrUpdateBehavior   MockedLRO[AKSMachineCreateOrUpdateInput, armcontainerservice.MachinesClientCreateOrUpdateResponse]
 	AKSMachineGetBehavior              MockedFunction[AKSMachineGetInput, armcontainerservice.MachinesClientGetResponse]
 	AKSMachineNewListPagerBehavior     MockedFunction[AKSMachineListInput, *runtime.Pager[armcontainerservice.MachinesClientListResponse]]
+	AKSMachineListPageErrorOverride    error
 	AfterPollProvisioningErrorOverride *armcontainerservice.ErrorDetail
 
 	// BatchMachineErrorFunc, if set, is called during batch creation to determine per-machine
@@ -114,7 +115,13 @@ func AKSMachineAPIErrorVMSizeNotSupportedBadRequest(vmSize, subscription, locati
 	return newResponseError("BadRequest", http.StatusBadRequest, message)
 }
 
-// statusCode is always BadRequest today but kept as a parameter for generality
+// AKSMachineAPIErrorLinkedAuthorizationFailed is ARM's synchronous rejection of a Machine PUT when
+// Karpenter's identity can't join the public IP prefix, or the prefix doesn't exist (as seen in E2E).
+func AKSMachineAPIErrorLinkedAuthorizationFailed(prefixID string) *azcore.ResponseError {
+	message := fmt.Sprintf("The client '00000000-0000-0000-0000-000000000000' with object id '00000000-0000-0000-0000-000000000000' has permission to perform action 'Microsoft.ContainerService/managedClusters/agentPools/machines/write' on scope '/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.ContainerService/managedClusters/test-cluster/agentPools/aksmanagedap/machines/machine'; however, it does not have permission to perform action(s) 'Microsoft.Network/publicIPPrefixes/join/action' on the linked scope(s) '%s' (respectively) or the linked scope(s) are invalid.", prefixID)
+	return newResponseError("LinkedAuthorizationFailed", http.StatusForbidden, message)
+}
+
 func newResponseError(errorCode string, statusCode int, message string) *azcore.ResponseError {
 	errorBody := fmt.Sprintf(`{"code": "%s", "message": "%s"}`, errorCode, message)
 	return &azcore.ResponseError{
@@ -235,6 +242,22 @@ func AKSMachineAPIProvisioningErrorZoneAllocationFailed(sku string, zone string)
 	}
 }
 
+// AKSMachineAPIProvisioningErrorLinkedAuthorizationFailed is the Machine provisioning failure when the
+// cluster identity can't join the public IP prefix to the VM (code and message as seen in E2E).
+func AKSMachineAPIProvisioningErrorLinkedAuthorizationFailed(prefixID string) *armcontainerservice.ErrorDetail {
+	message := fmt.Sprintf("The client '00000000-0000-0000-0000-000000000000' with object id '00000000-0000-0000-0000-000000000000' has permission to perform action 'Microsoft.Compute/virtualMachines/write' on scope '/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Compute/virtualMachines/vm'; however, it does not have permission to perform action(s) 'Microsoft.Network/publicIPPrefixes/join/action' on the linked scope(s) '%s' (respectively) or the linked scope(s) are invalid.", prefixID)
+	return &armcontainerservice.ErrorDetail{
+		Code:    lo.ToPtr("LinkedAuthorizationFailed"),
+		Message: lo.ToPtr(fmt.Sprintf("Code=\"LinkedAuthorizationFailed\" Message=\"%s\"", message)),
+		Details: []*armcontainerservice.ErrorDetail{
+			{
+				Code:    lo.ToPtr("LinkedAuthorizationFailed"),
+				Message: lo.ToPtr(message),
+			},
+		},
+	}
+}
+
 func AKSMachineAPIProvisioningErrorAny() *armcontainerservice.ErrorDetail {
 	return &armcontainerservice.ErrorDetail{
 		Code:    lo.ToPtr("SomeRandomError"),
@@ -268,6 +291,7 @@ func (c *AKSMachinesAPI) Reset() {
 	c.AKSMachineCreateOrUpdateBehavior.Reset()
 	c.AKSMachineGetBehavior.Reset()
 	c.AKSMachineNewListPagerBehavior.Reset()
+	c.AKSMachineListPageErrorOverride = nil
 	c.aksDataStorage.AKSMachines.Clear()
 	c.AfterPollProvisioningErrorOverride = nil
 	c.BatchMachineErrorFunc = nil
@@ -621,6 +645,9 @@ func (c *AKSMachinesAPI) NewListPager(
 				return false // Single page for fake implementation
 			},
 			Fetcher: func(ctx context.Context, page *armcontainerservice.MachinesClientListResponse) (armcontainerservice.MachinesClientListResponse, error) {
+				if c.AKSMachineListPageErrorOverride != nil {
+					return armcontainerservice.MachinesClientListResponse{}, c.AKSMachineListPageErrorOverride
+				}
 				// Check if the agent pool exists when fetching the page
 				if !c.doesAgentPoolExists(input.ResourceGroupName, input.ResourceName, input.AgentPoolName) {
 					// AKS machines pool not found. Return ARM not found error to match real API behavior.
@@ -632,6 +659,13 @@ func (c *AKSMachinesAPI) NewListPager(
 					input.ResourceGroupName, input.ResourceName, input.AgentPoolName)
 				c.aksDataStorage.AKSMachines.Range(func(machineID string, aksMachine armcontainerservice.Machine) bool {
 					if strings.HasPrefix(machineID, expectedIDPrefix) {
+						if !azapi.IsAKSMachineVMStateExpansionEnabled(ctx) && aksMachine.Properties != nil && aksMachine.Properties.Status != nil {
+							properties := *aksMachine.Properties
+							status := *properties.Status
+							status.VMState = nil
+							properties.Status = &status
+							aksMachine.Properties = &properties
+						}
 						aksMachines = append(aksMachines, &aksMachine)
 					}
 					return true
@@ -735,14 +769,25 @@ func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Ma
 	// NodeImageVersion is now set directly on the machine template by the caller.
 	// Only apply default if not provided.
 	if machine.Properties.NodeImageVersion == nil {
-		// Default node image version if none provided
-		machine.Properties.NodeImageVersion = lo.ToPtr("AKSUbuntu-2204gen2containerd-2023.11.15")
+		machine.Properties.NodeImageVersion = lo.ToPtr(defaultAKSMachineNodeImageVersion(machine.Properties))
 	}
 
 	// Set ETag for optimistic concurrency control
 	if machine.Properties.ETag == nil {
 		machine.Properties.ETag = lo.ToPtr(fmt.Sprintf(`"etag-%d"`, time.Now().UnixNano()))
 	}
+}
+
+func defaultAKSMachineNodeImageVersion(properties *armcontainerservice.MachineProperties) string {
+	if properties != nil && properties.OperatingSystem != nil {
+		switch lo.FromPtr(properties.OperatingSystem.OSSKU) {
+		case armcontainerservice.OSSKUWindows2022:
+			return "AKSWindows-2022-containerd-20348.5499.260812"
+		case armcontainerservice.OSSKUWindows2025:
+			return "AKSWindows-2025-26100.33296.260812"
+		}
+	}
+	return "AKSUbuntu-2204gen2containerd-2023.11.15"
 }
 
 // deepCopyMachine returns a fully independent copy of an AKS Machine via JSON

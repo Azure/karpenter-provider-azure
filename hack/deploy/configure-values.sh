@@ -16,7 +16,7 @@ KARPENTER_SERVICE_ACCOUNT_NAME=$3
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME=$4
 ENABLE_AZURE_SDK_LOGGING=$5
 PROVISION_MODE=${6:-}
-AKS_MACHINES_POOL_NAME=${7:-testmpool}
+AKS_MACHINES_POOL_NAME=${7:-mpool}
 
 # Validate PROVISION_MODE
 if [[ -n "$PROVISION_MODE" && "$PROVISION_MODE" != "aksmachineapi" && "$PROVISION_MODE" != "aksmachineapiheaderbatch" && "$PROVISION_MODE" != "bootstrappingclient" && "$PROVISION_MODE" != "aksscriptless" ]]; then

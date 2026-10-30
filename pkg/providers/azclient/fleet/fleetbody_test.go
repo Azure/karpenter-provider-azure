@@ -18,343 +18,743 @@ package fleet
 
 import (
 	"encoding/json"
+	"fmt"
+	"maps"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computefleet/armcomputefleet/v2"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute" //nolint:staticcheck
+	"github.com/Azure/skewer"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
 
-const (
-	testSSHPublicKey  = "ssh-rsa AAAA..."
-	testAdminUsername = "azureuser"
-	testNSGID         = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg"
-	testLocation      = "eastus"
-)
+func spotRequest() *FleetVMProvisionRequest {
+	req := baseRequest()
+	req.CapacityType = "spot"
+	return req
+}
 
-func defaultLaunchTemplate() *launchtemplate.Template {
-	return &launchtemplate.Template{
-		ScriptlessCustomData: "Y3VzdG9tZGF0YQ==",
-		ImageID:              "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/galleries/g/images/i/versions/v",
-		SubnetID:             "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/sn",
-		StorageProfileSizeGB: 128,
+func TestBuildFleetBody_SpotProfile(t *testing.T) {
+	g := NewWithT(t)
+	req := spotRequest()
+	fleet, err := BuildFleetBody(req, 5, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(fleet.Properties.SpotPriorityProfile).ToNot(BeNil())
+	g.Expect(fleet.Properties.RegularPriorityProfile).To(BeNil())
+
+	spot := fleet.Properties.SpotPriorityProfile
+	g.Expect(*spot.Capacity).To(Equal(int32(5)))
+	g.Expect(*spot.AllocationStrategy).To(Equal(armcomputefleet.SpotAllocationStrategyPriceCapacityOptimized))
+	g.Expect(*spot.EvictionPolicy).To(Equal(armcomputefleet.EvictionPolicyDelete))
+	g.Expect(*spot.Maintain).To(BeFalse())
+	g.Expect(*spot.MaxPricePerVM).To(Equal(float32(-1)))
+}
+
+func TestBuildFleetBody_RegularProfile(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	fleet, err := BuildFleetBody(req, 3, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(fleet.Properties.RegularPriorityProfile).ToNot(BeNil())
+	g.Expect(fleet.Properties.SpotPriorityProfile).To(BeNil())
+
+	reg := fleet.Properties.RegularPriorityProfile
+	g.Expect(*reg.Capacity).To(Equal(int32(3)))
+	g.Expect(*reg.AllocationStrategy).To(Equal(armcomputefleet.RegularPriorityAllocationStrategyLowestPrice))
+	g.Expect(*reg.MinCapacity).To(Equal(int32(0)))
+}
+
+func TestBuildFleetBody_VMSizesProfileSorted(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.AcceptableSKUs = []string{"Standard_D8s_v3", "Standard_D2s_v3", "Standard_D4s_v3"}
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	names := make([]string, len(fleet.Properties.VMSizesProfile))
+	for i, p := range fleet.Properties.VMSizesProfile {
+		names[i] = *p.Name
 	}
+	g.Expect(names).To(Equal([]string{"Standard_D2s_v3", "Standard_D4s_v3", "Standard_D8s_v3"}))
 }
 
-func defaultTags() map[string]*string {
-	return map[string]*string{
-		"karpenter.azure.com_managed-by":     lo.ToPtr("karpenter"),
-		"karpenter.azure.com_batch-key-hash": lo.ToPtr("abcdef0123456789"),
-	}
+func TestBuildFleetBody_Tags(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.Tags[launchtemplate.NodePoolTagKey] = lo.ToPtr(req.NodePoolName)
+	req.Tags[launchtemplate.KarpenterManagedTagKey] = lo.ToPtr("test-cluster")
+	req.Tags[launchtemplate.BillingTagKey] = lo.ToPtr(launchtemplate.BillingTagValueLinux)
+	req.LaunchTemplate.Tags = maps.Clone(req.Tags)
+	originalTags := maps.Clone(req.Tags)
+
+	tags := maps.Clone(req.Tags)
+	tags["karpenter.azure.com_fleet-name"] = lo.ToPtr("fleet-123")
+	tags["karpenter.azure.com_managed-by"] = lo.ToPtr("aks")
+	fleet, err := BuildFleetBody(req, 1, tags)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(fleet.Tags).To(Equal(tags))
+	g.Expect(fleet.Tags).To(HaveKeyWithValue(launchtemplate.NodePoolTagKey, lo.ToPtr(req.NodePoolName)))
+	g.Expect(fleet.Tags).To(HaveKeyWithValue("karpenter.azure.com_fleet-name", lo.ToPtr("fleet-123")))
+	g.Expect(fleet.Tags).To(HaveKeyWithValue("karpenter.azure.com_managed-by", lo.ToPtr("aks")))
+	g.Expect(req.Tags).To(Equal(originalTags))
+	g.Expect(req.LaunchTemplate.Tags).To(Equal(originalTags))
 }
 
-func defaultFleetBody(targetCapacity int32, tags map[string]*string) *armcomputefleet.Fleet {
-	return BuildFleetBody(FleetBodyOptions{
-		CapacityType:    karpv1.CapacityTypeOnDemand,
-		AcceptableSKUs:  []string{"Standard_D4s_v3", "Standard_D8s_v3"},
-		AcceptableZones: []string{"1", "2", "3"},
-		LaunchTemplate:  defaultLaunchTemplate(),
-		SSHPublicKey:    testSSHPublicKey,
-		AdminUsername:   testAdminUsername,
-		NSGID:           testNSGID,
-		Location:        testLocation,
-		TargetCapacity:  targetCapacity,
-		Tags:            tags,
-	})
+func TestBuildFleetBody_NilTags(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	fleet, err := BuildFleetBody(req, 1, nil)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(fleet.Tags).To(BeNil())
+	g.Expect(req.Tags).NotTo(BeEmpty())
+	g.Expect(req.LaunchTemplate.Tags).NotTo(BeEmpty())
 }
 
-func TestBuildFleetProperties_SpotCapacityType(t *testing.T) {
-	properties := buildFleetProperties(karpv1.CapacityTypeSpot, nil, nil, 5)
+func TestBuildFleetBody_EncryptionAtHostNil(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.LaunchTemplate.EncryptionAtHost = nil
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
 
-	require.NotNil(t, properties.SpotPriorityProfile)
-	assert.Nil(t, properties.RegularPriorityProfile)
-	assert.Equal(t, lo.ToPtr(armcomputefleet.SpotAllocationStrategyPriceCapacityOptimized), properties.SpotPriorityProfile.AllocationStrategy)
-	assert.Equal(t, lo.ToPtr(false), properties.SpotPriorityProfile.Maintain)
-	assert.Equal(t, lo.ToPtr(armcomputefleet.EvictionPolicyDelete), properties.SpotPriorityProfile.EvictionPolicy)
-	assert.Equal(t, lo.ToPtr(float32(-1)), properties.SpotPriorityProfile.MaxPricePerVM)
+	bp := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile
+	g.Expect(bp.SecurityProfile).To(BeNil())
+	g.Expect(req.LaunchTemplate.EncryptionAtHost).To(BeNil())
 }
 
-func TestBuildFleetProperties_OnDemandCapacityType(t *testing.T) {
-	properties := buildFleetProperties(karpv1.CapacityTypeOnDemand, nil, nil, 3)
+func TestBuildFleetBody_EncryptionAtHostTrue(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.LaunchTemplate.EncryptionAtHost = lo.ToPtr(true)
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
 
-	require.NotNil(t, properties.RegularPriorityProfile)
-	assert.Nil(t, properties.SpotPriorityProfile)
-	assert.Equal(t, lo.ToPtr(armcomputefleet.RegularPriorityAllocationStrategyLowestPrice), properties.RegularPriorityProfile.AllocationStrategy)
+	bp := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile
+	g.Expect(bp.SecurityProfile).ToNot(BeNil())
+	g.Expect(*bp.SecurityProfile.EncryptionAtHost).To(BeTrue())
 }
 
-func TestBuildFleetProperties_UnknownCapacityTypeDefaultsToRegular(t *testing.T) {
-	properties := buildFleetProperties("garbage-type", nil, nil, 2)
+func TestBuildFleetBody_EncryptionAtHostFalse(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.LaunchTemplate.EncryptionAtHost = lo.ToPtr(false)
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
 
-	require.NotNil(t, properties.RegularPriorityProfile)
-	assert.Nil(t, properties.SpotPriorityProfile)
-	assert.Equal(t, int32(2), *properties.RegularPriorityProfile.Capacity)
+	bp := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile
+	g.Expect(bp.SecurityProfile).ToNot(BeNil())
+	g.Expect(bp.SecurityProfile.EncryptionAtHost).ToNot(BeNil())
+	g.Expect(*bp.SecurityProfile.EncryptionAtHost).To(BeFalse())
+	g.Expect(req.LaunchTemplate.EncryptionAtHost).To(Equal(lo.ToPtr(false)))
 }
 
-func TestBuildFleetProperties_Capacity(t *testing.T) {
-	properties := buildFleetProperties(karpv1.CapacityTypeOnDemand, nil, nil, 7)
+func TestBuildFleetBody_DiskEncryptionSetID(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.DiskEncryptionSetID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/diskEncryptionSets/des1"
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
 
-	require.NotNil(t, properties.RegularPriorityProfile.Capacity)
-	assert.Equal(t, int32(7), *properties.RegularPriorityProfile.Capacity)
+	osDisk := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.StorageProfile.OSDisk
+	g.Expect(osDisk.ManagedDisk).ToNot(BeNil())
+	g.Expect(osDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil())
+	g.Expect(*osDisk.ManagedDisk.DiskEncryptionSet.ID).To(Equal(req.DiskEncryptionSetID))
+	g.Expect(osDisk.ManagedDisk.StorageAccountType).To(BeNil())
 }
 
-func TestBuildVMSizesProfile(t *testing.T) {
-	profiles := buildVMSizesProfile([]string{"Standard_D8s_v3", "Standard_D2s_v3", "Standard_D4s_v3"})
+func TestBuildFleetBody_NoDiskEncryptionSetID(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.DiskEncryptionSetID = ""
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
 
-	require.Len(t, profiles, 3)
-	expected := []string{"Standard_D2s_v3", "Standard_D4s_v3", "Standard_D8s_v3"}
-	for i, sku := range expected {
-		assert.Equal(t, sku, *profiles[i].Name)
-		assert.Nil(t, profiles[i].Rank)
-	}
+	osDisk := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.StorageProfile.OSDisk
+	g.Expect(osDisk.ManagedDisk).To(BeNil())
 }
 
-func TestBuildFleetBody_TagsCarryThrough(t *testing.T) {
-	tags := map[string]*string{
-		"karpenter.azure.com_managed-by":     lo.ToPtr("karpenter"),
-		"karpenter.azure.com_batch-key-hash": lo.ToPtr("deadbeef12345678"),
-		"env":                                lo.ToPtr("test"),
-	}
+func TestBuildFleetBody_NodeIdentities(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.NodeIdentities = []string{"/id/b", "/id/a"}
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
 
-	fleetBody := defaultFleetBody(1, tags)
-
-	assert.Equal(t, tags, fleetBody.Tags)
+	g.Expect(fleet.Identity).ToNot(BeNil())
+	g.Expect(*fleet.Identity.Type).To(Equal(armcomputefleet.ManagedServiceIdentityTypeUserAssigned))
+	g.Expect(fleet.Identity.UserAssignedIdentities).To(HaveKey("/id/a"))
+	g.Expect(fleet.Identity.UserAssignedIdentities).To(HaveKey("/id/b"))
 }
 
-func TestBuildFleetBody_LocationAndZones(t *testing.T) {
-	fleetBody := BuildFleetBody(FleetBodyOptions{
-		CapacityType:    karpv1.CapacityTypeOnDemand,
-		AcceptableSKUs:  []string{"Standard_D4s_v3"},
-		AcceptableZones: []string{"3", "1", "2"},
-		LaunchTemplate:  defaultLaunchTemplate(),
-		SSHPublicKey:    testSSHPublicKey,
-		AdminUsername:   testAdminUsername,
-		NSGID:           testNSGID,
-		Location:        "westus2",
-		TargetCapacity:  1,
-		Tags:            defaultTags(),
-	})
+func TestBuildFleetBody_NetworkProfile(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.LBBackendPools = []string{"/pool/b", "/pool/a"}
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
 
-	assert.Equal(t, lo.ToPtr("westus2"), fleetBody.Location)
-	require.Len(t, fleetBody.Zones, 3)
-	assert.Equal(t, "1", *fleetBody.Zones[0])
-	assert.Equal(t, "2", *fleetBody.Zones[1])
-	assert.Equal(t, "3", *fleetBody.Zones[2])
-}
+	np := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.NetworkProfile
+	g.Expect(np).ToNot(BeNil())
+	g.Expect(np.NetworkInterfaceConfigurations).To(HaveLen(1))
 
-func TestBuildComputeProfile_EncryptionAtHost(t *testing.T) {
-	launchTemplate := defaultLaunchTemplate()
-	launchTemplate.EncryptionAtHost = lo.ToPtr(true)
+	nic := np.NetworkInterfaceConfigurations[0]
+	g.Expect(*nic.Properties.Primary).To(BeTrue())
+	g.Expect(*nic.Properties.EnableAcceleratedNetworking).To(BeTrue())
+	g.Expect(nic.Properties.IPConfigurations).To(HaveLen(1))
 
-	profile := buildComputeProfile(FleetBodyOptions{
-		LaunchTemplate: launchTemplate,
-		SSHPublicKey:   testSSHPublicKey,
-		AdminUsername:  testAdminUsername,
-		NSGID:          testNSGID,
-	})
-
-	require.NotNil(t, profile.BaseVirtualMachineProfile.SecurityProfile)
-	assert.Equal(t, lo.ToPtr(true), profile.BaseVirtualMachineProfile.SecurityProfile.EncryptionAtHost)
-}
-
-func TestBuildComputeProfile_EncryptionAtHostDisabled(t *testing.T) {
-	launchTemplate := defaultLaunchTemplate()
-	launchTemplate.EncryptionAtHost = lo.ToPtr(false)
-
-	profile := buildComputeProfile(FleetBodyOptions{
-		LaunchTemplate: launchTemplate,
-		SSHPublicKey:   testSSHPublicKey,
-		AdminUsername:  testAdminUsername,
-		NSGID:          testNSGID,
-	})
-
-	assert.Nil(t, profile.BaseVirtualMachineProfile.SecurityProfile)
-}
-
-func TestBuildIdentity(t *testing.T) {
-	identity := buildIdentity([]string{"/sub/rg/identity2", "/sub/rg/identity1"})
-
-	require.NotNil(t, identity)
-	assert.Equal(t, lo.ToPtr(armcomputefleet.ManagedServiceIdentityTypeUserAssigned), identity.Type)
-	assert.Len(t, identity.UserAssignedIdentities, 2)
-	assert.Contains(t, identity.UserAssignedIdentities, "/sub/rg/identity1")
-	assert.Contains(t, identity.UserAssignedIdentities, "/sub/rg/identity2")
-}
-
-func TestBuildIdentity_Empty(t *testing.T) {
-	assert.Nil(t, buildIdentity(nil))
-}
-
-func TestBuildNetworkProfile(t *testing.T) {
-	launchTemplate := defaultLaunchTemplate()
-	profile := buildNetworkProfile(launchTemplate.SubnetID, testNSGID, nil)
-
-	require.Len(t, profile.NetworkInterfaceConfigurations, 1)
-	nic := profile.NetworkInterfaceConfigurations[0]
-	assert.Equal(t, lo.ToPtr(nicConfigName), nic.Name)
-	require.NotNil(t, nic.Properties)
-	assert.Equal(t, lo.ToPtr(true), nic.Properties.Primary)
-	assert.Equal(t, lo.ToPtr(true), nic.Properties.EnableAcceleratedNetworking)
-	require.Len(t, nic.Properties.IPConfigurations, 1)
 	ipConfig := nic.Properties.IPConfigurations[0]
-	assert.Equal(t, lo.ToPtr(ipConfigName), ipConfig.Name)
-	assert.Equal(t, lo.ToPtr(launchTemplate.SubnetID), ipConfig.Properties.Subnet.ID)
-	require.NotNil(t, nic.Properties.NetworkSecurityGroup)
-	assert.Equal(t, lo.ToPtr(testNSGID), nic.Properties.NetworkSecurityGroup.ID)
+	g.Expect(*ipConfig.Properties.Subnet.ID).To(Equal(req.LaunchTemplate.SubnetID))
+
+	// LB pools should be sorted
+	g.Expect(ipConfig.Properties.LoadBalancerBackendAddressPools).To(HaveLen(2))
+	g.Expect(*ipConfig.Properties.LoadBalancerBackendAddressPools[0].ID).To(Equal("/pool/a"))
+	g.Expect(*ipConfig.Properties.LoadBalancerBackendAddressPools[1].ID).To(Equal("/pool/b"))
 }
 
-func TestBuildNetworkProfile_NoNSG(t *testing.T) {
-	profile := buildNetworkProfile(defaultLaunchTemplate().SubnetID, "", nil)
+func TestBuildFleetBody_IPConfigurations(t *testing.T) {
+	for _, count := range []int32{1, 2, 30, 250} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			g := NewWithT(t)
+			req := baseRequest()
+			req.NetworkPlugin = consts.NetworkPluginAzure
+			req.NetworkPluginMode = consts.NetworkPluginModeNone
+			req.MaxPods = count
+			req.LBBackendPools = []string{"/pool/b", "/pool/a"}
+			body, err := BuildFleetBody(req, 2, req.Tags)
+			g.Expect(err).NotTo(HaveOccurred())
 
-	assert.Nil(t, profile.NetworkInterfaceConfigurations[0].Properties.NetworkSecurityGroup)
+			data, err := json.Marshal(body)
+			g.Expect(err).NotTo(HaveOccurred())
+			var decoded armcomputefleet.Fleet
+			g.Expect(json.Unmarshal(data, &decoded)).To(Succeed())
+			network := decoded.Properties.ComputeProfile.BaseVirtualMachineProfile.NetworkProfile
+			g.Expect(network.NetworkInterfaceConfigurations).To(HaveLen(1))
+			nic := network.NetworkInterfaceConfigurations[0].Properties
+			g.Expect(*nic.Primary).To(BeTrue())
+			g.Expect(*nic.EnableIPForwarding).To(BeFalse())
+			g.Expect(*nic.EnableAcceleratedNetworking).To(BeTrue())
+			g.Expect(*nic.NetworkSecurityGroup.ID).To(Equal(req.NSG))
+			g.Expect(*nic.DeleteOption).To(Equal(armcomputefleet.DeleteOptionsDelete))
+			g.Expect(nic.IPConfigurations).To(HaveLen(int(count)))
+			for i, config := range nic.IPConfigurations {
+				g.Expect(*config.Name).To(Equal(fmt.Sprintf("ipconfig%d", i+1)))
+				g.Expect(*config.Properties.Primary).To(Equal(i == 0))
+				g.Expect(*config.Properties.Subnet.ID).To(Equal(req.LaunchTemplate.SubnetID))
+				if i == 0 {
+					g.Expect(config.Properties.LoadBalancerBackendAddressPools).To(HaveLen(2))
+					g.Expect(*config.Properties.LoadBalancerBackendAddressPools[0].ID).To(Equal("/pool/a"))
+					g.Expect(*config.Properties.LoadBalancerBackendAddressPools[1].ID).To(Equal("/pool/b"))
+				} else {
+					g.Expect(config.Properties.LoadBalancerBackendAddressPools).To(BeEmpty())
+				}
+			}
+			g.Expect(req.MaxPods).To(Equal(count))
+			g.Expect(req.LBBackendPools).To(Equal([]string{"/pool/b", "/pool/a"}))
+		})
+	}
 }
 
-func TestBuildNetworkProfile_LoadBalancerPools(t *testing.T) {
-	profile := buildNetworkProfile(
-		defaultLaunchTemplate().SubnetID,
-		testNSGID,
-		[]string{"/sub/rg/lb/pool2", "/sub/rg/lb/pool1"},
-	)
-
-	ipConfig := profile.NetworkInterfaceConfigurations[0].Properties.IPConfigurations[0]
-	require.Len(t, ipConfig.Properties.LoadBalancerBackendAddressPools, 2)
-	assert.Equal(t, lo.ToPtr("/sub/rg/lb/pool1"), ipConfig.Properties.LoadBalancerBackendAddressPools[0].ID)
-	assert.Equal(t, lo.ToPtr("/sub/rg/lb/pool2"), ipConfig.Properties.LoadBalancerBackendAddressPools[1].ID)
+func TestBuildFleetBody_IPConfigurationsByNetworkMode(t *testing.T) {
+	for _, tc := range []struct {
+		name, plugin, mode string
+		maxPods            int32
+		expected           int
+	}{
+		{"node subnet", consts.NetworkPluginAzure, consts.NetworkPluginModeNone, 30, 30},
+		{"node subnet custom", consts.NetworkPluginAzure, consts.NetworkPluginModeNone, 11, 11},
+		{"overlay", consts.NetworkPluginAzure, consts.NetworkPluginModeOverlay, 250, 1},
+		{"overlay custom", consts.NetworkPluginAzure, consts.NetworkPluginModeOverlay, 30, 1},
+		{"kubenet", "kubenet", "", 110, 1},
+		{"none", consts.NetworkPluginNone, "", 250, 1},
+		{"unspecified", "", "", 0, 1},
+		{"node subnet zero still has primary", consts.NetworkPluginAzure, "", 0, 1},
+		{"node subnet negative still has primary", consts.NetworkPluginAzure, "", -1, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			req := baseRequest()
+			req.NetworkPlugin = tc.plugin
+			req.NetworkPluginMode = tc.mode
+			req.MaxPods = tc.maxPods
+			body, err := BuildFleetBody(req, 1, req.Tags)
+			g.Expect(err).NotTo(HaveOccurred())
+			configs := body.Properties.ComputeProfile.BaseVirtualMachineProfile.NetworkProfile.NetworkInterfaceConfigurations[0].Properties.IPConfigurations
+			g.Expect(configs).To(HaveLen(tc.expected))
+			g.Expect(*configs[0].Properties.Primary).To(BeTrue())
+		})
+	}
 }
 
-func TestBuildStorageProfile_CommunityGalleryImage(t *testing.T) {
-	launchTemplate := defaultLaunchTemplate()
+func TestBuildFleetBody_NSG(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
 
-	profile := buildStorageProfile(launchTemplate, "")
-
-	assert.Nil(t, profile.ImageReference.ID)
-	assert.Equal(t, lo.ToPtr(launchTemplate.ImageID), profile.ImageReference.CommunityGalleryImageID)
+	nic := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.NetworkProfile.NetworkInterfaceConfigurations[0]
+	g.Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
+	g.Expect(*nic.Properties.NetworkSecurityGroup.ID).To(Equal(req.NSG))
 }
 
-func TestBuildStorageProfile_EphemeralDisk(t *testing.T) {
-	launchTemplate := defaultLaunchTemplate()
-	launchTemplate.StorageProfileIsEphemeral = true
-	launchTemplate.StorageProfilePlacement = armcompute.DiffDiskPlacementCacheDisk
+func TestBuildFleetBody_EphemeralDisk(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.LaunchTemplate.StorageProfileIsEphemeral = true
+	req.LaunchTemplate.StorageProfilePlacement = armcompute.DiffDiskPlacementResourceDisk
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
 
-	profile := buildStorageProfile(launchTemplate, "")
-
-	require.NotNil(t, profile.OSDisk.DiffDiskSettings)
-	assert.Equal(t, lo.ToPtr(armcomputefleet.DiffDiskOptionsLocal), profile.OSDisk.DiffDiskSettings.Option)
-	assert.Equal(t, lo.ToPtr(armcomputefleet.DiffDiskPlacementCacheDisk), profile.OSDisk.DiffDiskSettings.Placement)
-	assert.Equal(t, lo.ToPtr(armcomputefleet.CachingTypesReadOnly), profile.OSDisk.Caching)
+	osDisk := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.StorageProfile.OSDisk
+	g.Expect(osDisk.DiffDiskSettings).ToNot(BeNil())
+	g.Expect(*osDisk.DiffDiskSettings.Option).To(Equal(armcomputefleet.DiffDiskOptionsLocal))
+	g.Expect(*osDisk.DiffDiskSettings.Placement).To(Equal(armcomputefleet.DiffDiskPlacement(armcompute.DiffDiskPlacementResourceDisk)))
+	g.Expect(*osDisk.Caching).To(Equal(armcomputefleet.CachingTypesReadOnly))
 }
 
-func TestBuildStorageProfile_ManagedDisk(t *testing.T) {
-	profile := buildStorageProfile(defaultLaunchTemplate(), "")
-
-	assert.Nil(t, profile.OSDisk.DiffDiskSettings)
-	assert.Nil(t, profile.OSDisk.Caching)
-}
-
-func TestBuildStorageProfile_DiskEncryptionSet(t *testing.T) {
-	diskEncryptionSetID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/diskEncryptionSets/des"
-
-	profile := buildStorageProfile(defaultLaunchTemplate(), diskEncryptionSetID)
-
-	require.NotNil(t, profile.OSDisk.ManagedDisk)
-	require.NotNil(t, profile.OSDisk.ManagedDisk.DiskEncryptionSet)
-	assert.Equal(t, diskEncryptionSetID, *profile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)
-}
-
-func TestExtensionsToProfile_Empty(t *testing.T) {
-	assert.Nil(t, extensionsToProfile(nil))
-}
-
-func TestExtensionsToProfile(t *testing.T) {
-	profile := extensionsToProfile([]*armcompute.VirtualMachineExtension{{
+func TestConvertToScaleSetExtension(t *testing.T) {
+	g := NewWithT(t)
+	settings := map[string]any{"commandToExecute": "echo hello"}
+	ext := &armcompute.VirtualMachineExtension{
 		Name: lo.ToPtr("CSE"),
-		Properties: &armcompute.VirtualMachineExtensionProperties{
-			Publisher:          lo.ToPtr("Microsoft.Azure.Extensions"),
-			Type:               lo.ToPtr("CustomScript"),
-			TypeHandlerVersion: lo.ToPtr("2.1"),
-			Settings:           map[string]any{"commandToExecute": "echo hello"},
-		},
-	}})
-
-	require.NotNil(t, profile)
-	require.Len(t, profile.Extensions, 1)
-	assert.Equal(t, "echo hello", profile.Extensions[0].Properties.Settings["commandToExecute"])
-}
-
-func TestExtensionsToProfile_PointerToMap(t *testing.T) {
-	profile := extensionsToProfile([]*armcompute.VirtualMachineExtension{{
-		Name: lo.ToPtr("cse-agent-karpenter"),
 		Properties: &armcompute.VirtualMachineExtensionProperties{
 			Publisher:               lo.ToPtr("Microsoft.Azure.Extensions"),
 			Type:                    lo.ToPtr("CustomScript"),
-			TypeHandlerVersion:      lo.ToPtr("2.0"),
+			TypeHandlerVersion:      lo.ToPtr("2.1"),
 			AutoUpgradeMinorVersion: lo.ToPtr(true),
-			Settings:                &map[string]interface{}{},
-			ProtectedSettings: &map[string]interface{}{
-				"commandToExecute": "echo bootstrap",
-			},
+			Settings:                settings,
 		},
-	}})
+	}
 
-	require.NotNil(t, profile)
-	extension := profile.Extensions[0]
-	assert.Equal(t, "cse-agent-karpenter", *extension.Name)
-	assert.Equal(t, "Microsoft.Azure.Extensions", *extension.Properties.Publisher)
-	assert.Equal(t, "CustomScript", *extension.Properties.Type)
-	assert.Equal(t, "echo bootstrap", extension.Properties.ProtectedSettings["commandToExecute"])
+	result := ConvertToScaleSetExtension(ext)
+
+	g.Expect(*result.Name).To(Equal("CSE"))
+	g.Expect(*result.Properties.Publisher).To(Equal("Microsoft.Azure.Extensions"))
+	g.Expect(*result.Properties.Type).To(Equal("CustomScript"))
+	g.Expect(*result.Properties.TypeHandlerVersion).To(Equal("2.1"))
+	g.Expect(*result.Properties.AutoUpgradeMinorVersion).To(BeTrue())
+	g.Expect(result.Properties.Settings).To(Equal(settings))
 }
 
-func TestBuildFleetBody_RoundTripMarshal(t *testing.T) {
-	launchTemplate := defaultLaunchTemplate()
-	launchTemplate.StorageProfileIsEphemeral = true
-	launchTemplate.StorageProfilePlacement = armcompute.DiffDiskPlacementCacheDisk
-	launchTemplate.EncryptionAtHost = lo.ToPtr(true)
-	diskEncryptionSetID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/diskEncryptionSets/des"
+func TestConvertToScaleSetExtension_NilInput(t *testing.T) {
+	g := NewWithT(t)
+	result := ConvertToScaleSetExtension(nil)
+	g.Expect(result).ToNot(BeNil())
+	g.Expect(result.Properties).To(BeNil())
+}
 
-	original := BuildFleetBody(FleetBodyOptions{
-		CapacityType:        karpv1.CapacityTypeSpot,
-		AcceptableSKUs:      []string{"Standard_D4s_v3", "Standard_D8s_v3"},
-		AcceptableZones:     []string{"1", "2", "3"},
-		LaunchTemplate:      launchTemplate,
-		SSHPublicKey:        testSSHPublicKey,
-		AdminUsername:       testAdminUsername,
-		NodeIdentities:      []string{"/sub/rg/id1", "/sub/rg/id2"},
-		DiskEncryptionSetID: diskEncryptionSetID,
-		NSGID:               testNSGID,
-		LBBackendPools:      []string{"/sub/rg/lb/pool1"},
-		Location:            "eastus2",
-		TargetCapacity:      5,
-		Tags:                defaultTags(),
-	})
+func TestBuildFleetBody_Zones(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.AcceptableZones = []string{"3", "1"}
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
 
-	data, err := json.Marshal(original)
-	require.NoError(t, err)
-	require.NotEmpty(t, data)
+	g.Expect(fleet.Zones).To(HaveLen(2))
+	g.Expect(*fleet.Zones[0]).To(Equal("1"))
+	g.Expect(*fleet.Zones[1]).To(Equal("3"))
+}
 
-	var roundTripped armcomputefleet.Fleet
-	require.NoError(t, json.Unmarshal(data, &roundTripped))
+func TestBuildFleetBody_NoZones(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.AcceptableZones = nil
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
 
-	assert.Equal(t, *original.Location, *roundTripped.Location)
-	assert.Equal(t, len(original.Zones), len(roundTripped.Zones))
-	assert.Equal(t, len(original.Tags), len(roundTripped.Tags))
-	require.NotNil(t, roundTripped.Identity)
-	assert.Equal(t, *original.Identity.Type, *roundTripped.Identity.Type)
-	assert.Equal(t, len(original.Identity.UserAssignedIdentities), len(roundTripped.Identity.UserAssignedIdentities))
-	require.NotNil(t, roundTripped.Properties.SpotPriorityProfile)
-	assert.Equal(t, *original.Properties.SpotPriorityProfile.Capacity, *roundTripped.Properties.SpotPriorityProfile.Capacity)
-	assert.Equal(t, len(original.Properties.VMSizesProfile), len(roundTripped.Properties.VMSizesProfile))
+	g.Expect(fleet.Zones).To(BeNil())
+}
 
-	osDisk := roundTripped.Properties.ComputeProfile.BaseVirtualMachineProfile.StorageProfile.OSDisk
-	require.NotNil(t, osDisk.DiffDiskSettings)
-	require.NotNil(t, osDisk.ManagedDisk)
-	assert.Equal(t, diskEncryptionSetID, *osDisk.ManagedDisk.DiskEncryptionSet.ID)
-	require.NotNil(t, roundTripped.Properties.ComputeProfile.BaseVirtualMachineProfile.SecurityProfile)
+func TestBuildFleetBody_CustomData(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.LaunchTemplate = &launchtemplate.Template{
+		ImageID:              "/image",
+		SubnetID:             "/subnet",
+		ScriptlessCustomData: "base-custom-data",
+		StorageProfileSizeGB: 128,
+	}
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
 
-	ipConfig := roundTripped.Properties.ComputeProfile.BaseVirtualMachineProfile.NetworkProfile.
-		NetworkInterfaceConfigurations[0].Properties.IPConfigurations[0]
-	require.Len(t, ipConfig.Properties.LoadBalancerBackendAddressPools, 1)
+	osProfile := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.OSProfile
+	g.Expect(*osProfile.CustomData).To(Equal("base-custom-data"))
+}
+
+func TestBuildFleetBody_CustomScriptsCustomDataOverrides(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.LaunchTemplate = &launchtemplate.Template{
+		ImageID:                 "/image",
+		SubnetID:                "/subnet",
+		ScriptlessCustomData:    "base-custom-data",
+		CustomScriptsCustomData: "custom-scripts-data",
+		StorageProfileSizeGB:    128,
+	}
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	osProfile := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.OSProfile
+	g.Expect(*osProfile.CustomData).To(Equal("custom-scripts-data"))
+}
+
+func TestBuildFleetBody_ExtensionsViaProfile(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	settings := map[string]any{"cmd": "echo hi"}
+	req.Extensions = []*armcompute.VirtualMachineExtension{
+		{
+			Name: lo.ToPtr("ext1"),
+			Properties: &armcompute.VirtualMachineExtensionProperties{
+				Publisher:          lo.ToPtr("Microsoft.Azure.Extensions"),
+				Type:               lo.ToPtr("CustomScript"),
+				TypeHandlerVersion: lo.ToPtr("2.1"),
+				Settings:           settings,
+			},
+		},
+		nil, // should be skipped
+		{
+			Name: lo.ToPtr("ext2"),
+			Properties: &armcompute.VirtualMachineExtensionProperties{
+				Publisher: lo.ToPtr("Microsoft.Compute"),
+				Type:      lo.ToPtr("BGInfo"),
+			},
+		},
+	}
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	ep := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.ExtensionProfile
+	g.Expect(ep).ToNot(BeNil())
+	g.Expect(ep.Extensions).To(HaveLen(2))
+	g.Expect(*ep.Extensions[0].Name).To(Equal("ext1"))
+	g.Expect(*ep.Extensions[1].Name).To(Equal("ext2"))
+}
+
+func TestBuildFleetBody_EmptyIdentitiesSkipped(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.NodeIdentities = []string{"", ""}
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(fleet.Identity).To(BeNil(), "all-empty identity list should produce nil identity")
+}
+
+func TestToMapStringAny_PointerMap(t *testing.T) {
+	g := NewWithT(t)
+	m := map[string]interface{}{"key": "value"}
+	result := toMapStringAny(&m)
+	g.Expect(result).To(Equal(map[string]any{"key": "value"}))
+}
+
+func TestBuildFleetBody_ImageReference(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	image := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.StorageProfile.ImageReference
+	g.Expect(image).NotTo(BeNil())
+	g.Expect(image.ID).To(BeNil())
+	g.Expect(image.SharedGalleryImageID).To(BeNil())
+	g.Expect(image.CommunityGalleryImageID).To(Equal(lo.ToPtr(req.LaunchTemplate.ImageID)))
+}
+
+func TestBuildFleetBody_AcceleratedNetworking(t *testing.T) {
+	for _, capability := range []string{skewer.AcceleratedNetworking, skewer.EncryptionAtHost} {
+		t.Run(capability, func(t *testing.T) {
+			for _, tt := range []struct {
+				name           string
+				candidateIndex int
+				capability     compute.ResourceSkuCapabilities
+				omitCapability bool
+				extraSKU       bool
+				enabled        bool
+			}{
+				{name: "all supported", capability: compute.ResourceSkuCapabilities{Value: lo.ToPtr("True")}, enabled: true},
+				{name: "first unsupported", capability: compute.ResourceSkuCapabilities{Value: lo.ToPtr("False")}},
+				{name: "last unsupported", candidateIndex: 1, capability: compute.ResourceSkuCapabilities{Value: lo.ToPtr("False")}},
+				{name: "missing capability", omitCapability: true},
+				{name: "nil capability value", capability: compute.ResourceSkuCapabilities{}},
+				{name: "malformed capability", capability: compute.ResourceSkuCapabilities{Value: lo.ToPtr("not-a-bool")}},
+				{name: "case insensitive true", capability: compute.ResourceSkuCapabilities{Value: lo.ToPtr("tRuE")}, enabled: true},
+				{name: "extra unsupported SKU", extraSKU: true, capability: compute.ResourceSkuCapabilities{Value: lo.ToPtr("False")}, enabled: true},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					g := NewWithT(t)
+					req := baseRequest()
+					req.LaunchTemplate.EncryptionAtHost = lo.ToPtr(true)
+					name := req.AcceptableSKUs[tt.candidateIndex]
+					if tt.extraSKU {
+						name = "Standard_D2s_v3"
+					}
+					sku := req.ResolvedSKUs[name]
+					capabilities := []compute.ResourceSkuCapabilities{}
+					for _, existing := range *sku.Capabilities {
+						if *existing.Name != capability {
+							capabilities = append(capabilities, existing)
+						}
+					}
+					if !tt.omitCapability {
+						value := tt.capability
+						value.Name = lo.ToPtr(capability)
+						capabilities = append(capabilities, value)
+					}
+					sku.Capabilities = &capabilities
+					before, err := json.Marshal(req)
+					g.Expect(err).ToNot(HaveOccurred())
+					desiredEncryption := req.LaunchTemplate.EncryptionAtHost
+
+					fleet, err := BuildFleetBody(req, 1, req.Tags)
+					g.Expect(err).ToNot(HaveOccurred())
+
+					names := make([]string, 0, len(fleet.Properties.VMSizesProfile))
+					for _, profile := range fleet.Properties.VMSizesProfile {
+						names = append(names, *profile.Name)
+					}
+					expectedNames := req.AcceptableSKUs
+					if capability == skewer.EncryptionAtHost && !tt.enabled {
+						expectedNames = []string{req.AcceptableSKUs[1-tt.candidateIndex]}
+					}
+					g.Expect(names).To(Equal(expectedNames))
+					bp := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile
+					g.Expect(bp.NetworkProfile.NetworkInterfaceConfigurations).To(HaveLen(1))
+					nic := bp.NetworkProfile.NetworkInterfaceConfigurations[0]
+					g.Expect(nic.Properties.EnableAcceleratedNetworking).To(Equal(lo.ToPtr(capability != skewer.AcceleratedNetworking || tt.enabled)))
+					g.Expect(bp.SecurityProfile).ToNot(BeNil())
+					g.Expect(bp.SecurityProfile.EncryptionAtHost).To(Equal(lo.ToPtr(true)))
+					after, err := json.Marshal(req)
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(after).To(Equal(before), "building a fleet must not mutate the caller's request")
+					g.Expect(req.LaunchTemplate.EncryptionAtHost).To(BeIdenticalTo(desiredEncryption))
+				})
+			}
+		})
+	}
+}
+
+func TestBuildFleetBody_IncompleteSKUCapabilities(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		mutate        func(*FleetVMProvisionRequest)
+		expectedNames []string
+		expectError   bool
+	}{
+		{name: "unknown candidate", expectedNames: []string{"Standard_D4s_v3", "Standard_D8s_v3"}, mutate: func(req *FleetVMProvisionRequest) {
+			req.AcceptableSKUs = append(req.AcceptableSKUs, "unknown")
+		}},
+		{name: "missing SKU", expectedNames: []string{"Standard_D8s_v3"}, mutate: func(req *FleetVMProvisionRequest) {
+			delete(req.ResolvedSKUs, req.AcceptableSKUs[0])
+		}},
+		{name: "nil SKU", expectedNames: []string{"Standard_D4s_v3"}, mutate: func(req *FleetVMProvisionRequest) {
+			req.ResolvedSKUs[req.AcceptableSKUs[1]] = nil
+		}},
+		{name: "nil resolved SKUs", expectError: true, mutate: func(req *FleetVMProvisionRequest) {
+			req.ResolvedSKUs = nil
+		}},
+		{name: "all missing SKUs", expectError: true, mutate: func(req *FleetVMProvisionRequest) {
+			req.ResolvedSKUs = map[string]*skewer.SKU{}
+		}},
+		{name: "all nil SKUs", expectError: true, mutate: func(req *FleetVMProvisionRequest) {
+			for _, name := range req.AcceptableSKUs {
+				req.ResolvedSKUs[name] = nil
+			}
+		}},
+		{name: "empty candidates", expectError: true, mutate: func(req *FleetVMProvisionRequest) {
+			req.AcceptableSKUs = []string{}
+		}},
+		{name: "nil candidates", expectError: true, mutate: func(req *FleetVMProvisionRequest) {
+			req.AcceptableSKUs = nil
+		}},
+		{name: "nil capabilities", expectedNames: []string{"Standard_D8s_v3"}, mutate: func(req *FleetVMProvisionRequest) {
+			req.ResolvedSKUs[req.AcceptableSKUs[0]].Capabilities = nil
+		}},
+		{name: "empty capabilities", expectedNames: []string{"Standard_D8s_v3"}, mutate: func(req *FleetVMProvisionRequest) {
+			req.ResolvedSKUs[req.AcceptableSKUs[0]].Capabilities = &[]compute.ResourceSkuCapabilities{}
+		}},
+		{name: "nil capability name", expectedNames: []string{"Standard_D8s_v3"}, mutate: func(req *FleetVMProvisionRequest) {
+			req.ResolvedSKUs[req.AcceptableSKUs[0]].Capabilities = &[]compute.ResourceSkuCapabilities{
+				{Name: nil, Value: lo.ToPtr("True")},
+			}
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			req := baseRequest()
+			req.LaunchTemplate.EncryptionAtHost = lo.ToPtr(true)
+			tt.mutate(req)
+			before, err := json.Marshal(req)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			fleet, err := BuildFleetBody(req, 1, req.Tags)
+
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(fleet).To(BeNil())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				names := make([]string, 0, len(fleet.Properties.VMSizesProfile))
+				for _, profile := range fleet.Properties.VMSizesProfile {
+					names = append(names, *profile.Name)
+				}
+				g.Expect(names).To(Equal(tt.expectedNames))
+				bp := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile
+				g.Expect(bp.NetworkProfile.NetworkInterfaceConfigurations).To(HaveLen(1))
+				nic := bp.NetworkProfile.NetworkInterfaceConfigurations[0]
+				g.Expect(nic.Properties.EnableAcceleratedNetworking).To(Equal(lo.ToPtr(true)))
+				g.Expect(bp.SecurityProfile).ToNot(BeNil())
+				g.Expect(bp.SecurityProfile.EncryptionAtHost).To(Equal(lo.ToPtr(true)))
+			}
+			after, err := json.Marshal(req)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(after).To(Equal(before), "building a fleet must not mutate the caller's request")
+		})
+	}
+}
+
+func TestBuildFleetBody_InvalidRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		mutate func(*FleetVMProvisionRequest) *FleetVMProvisionRequest
+	}{
+		{name: "nil request", mutate: func(_ *FleetVMProvisionRequest) *FleetVMProvisionRequest {
+			return nil
+		}},
+		{name: "nil template", mutate: func(req *FleetVMProvisionRequest) *FleetVMProvisionRequest {
+			req.LaunchTemplate = nil
+			return req
+		}},
+		{name: "no candidates", mutate: func(req *FleetVMProvisionRequest) *FleetVMProvisionRequest {
+			req.AcceptableSKUs = nil
+			return req
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			req := tt.mutate(baseRequest())
+
+			fleet, err := BuildFleetBody(req, 1, nil)
+
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(fleet).To(BeNil())
+		})
+	}
+}
+
+func TestBuildFleetBody_AllCandidatesLackRequiredEncryption(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.LaunchTemplate.EncryptionAtHost = lo.ToPtr(true)
+	for _, name := range req.AcceptableSKUs {
+		req.ResolvedSKUs[name].Capabilities = &[]compute.ResourceSkuCapabilities{
+			{Name: lo.ToPtr(skewer.AcceleratedNetworking), Value: lo.ToPtr("True")},
+			{Name: lo.ToPtr(skewer.EncryptionAtHost), Value: lo.ToPtr("False")},
+		}
+	}
+	before, err := json.Marshal(req)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+
+	g.Expect(err).To(MatchError("building Fleet body: no candidate SKUs support requested encryption at host"))
+	g.Expect(fleet).To(BeNil())
+	after, err := json.Marshal(req)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(after).To(Equal(before))
+}
+
+func TestBuildFleetBody_OptionalEncryptionDoesNotFilterCandidates(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		encryption *bool
+	}{
+		{name: "nil"},
+		{name: "false", encryption: lo.ToPtr(false)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			req := baseRequest()
+			req.LaunchTemplate.EncryptionAtHost = tt.encryption
+			req.ResolvedSKUs["Standard_D8s_v3"].Capabilities = &[]compute.ResourceSkuCapabilities{
+				{Name: lo.ToPtr(skewer.AcceleratedNetworking), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr(skewer.EncryptionAtHost), Value: lo.ToPtr("False")},
+			}
+			req.AcceptableSKUs = append(req.AcceptableSKUs, "unknown", "nil-entry")
+			req.ResolvedSKUs["nil-entry"] = nil
+			before, err := json.Marshal(req)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			fleet, err := BuildFleetBody(req, 1, req.Tags)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			names := make([]string, 0, len(fleet.Properties.VMSizesProfile))
+			for _, profile := range fleet.Properties.VMSizesProfile {
+				names = append(names, *profile.Name)
+			}
+			g.Expect(names).To(ConsistOf(req.AcceptableSKUs))
+			bp := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile
+			g.Expect(bp.NetworkProfile.NetworkInterfaceConfigurations).To(HaveLen(1))
+			nic := bp.NetworkProfile.NetworkInterfaceConfigurations[0]
+			g.Expect(nic.Properties.EnableAcceleratedNetworking).To(Equal(lo.ToPtr(false)))
+			if tt.encryption == nil {
+				g.Expect(bp.SecurityProfile).To(BeNil())
+			} else {
+				g.Expect(bp.SecurityProfile).ToNot(BeNil())
+				g.Expect(bp.SecurityProfile.EncryptionAtHost).To(Equal(lo.ToPtr(false)))
+			}
+			after, err := json.Marshal(req)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(after).To(Equal(before))
+			g.Expect(req.LaunchTemplate.EncryptionAtHost).To(BeIdenticalTo(tt.encryption))
+		})
+	}
+}
+
+func TestBuildFleetBody_AcceleratedNetworkingAfterEncryptionFiltering(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.LaunchTemplate.EncryptionAtHost = lo.ToPtr(true)
+	req.ResolvedSKUs["Standard_D4s_v3"].Capabilities = &[]compute.ResourceSkuCapabilities{
+		{Name: lo.ToPtr(skewer.AcceleratedNetworking), Value: lo.ToPtr("False")},
+		{Name: lo.ToPtr(skewer.EncryptionAtHost), Value: lo.ToPtr("False")},
+	}
+	before, err := json.Marshal(req)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(fleet.Properties.VMSizesProfile).To(HaveLen(1))
+	g.Expect(fleet.Properties.VMSizesProfile[0].Name).To(Equal(lo.ToPtr("Standard_D8s_v3")))
+	bp := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile
+	g.Expect(bp.NetworkProfile.NetworkInterfaceConfigurations).To(HaveLen(1))
+	nic := bp.NetworkProfile.NetworkInterfaceConfigurations[0]
+	g.Expect(nic.Properties.EnableAcceleratedNetworking).To(Equal(lo.ToPtr(true)))
+	g.Expect(bp.SecurityProfile).ToNot(BeNil())
+	g.Expect(bp.SecurityProfile.EncryptionAtHost).To(Equal(lo.ToPtr(true)))
+	after, err := json.Marshal(req)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(after).To(Equal(before))
+}
+
+func TestToMapStringAny_NilPointer(t *testing.T) {
+	g := NewWithT(t)
+	var m *map[string]interface{}
+	result := toMapStringAny(m)
+	g.Expect(result).To(BeNil())
+}
+
+func TestToMapStringAny_UnknownType(t *testing.T) {
+	g := NewWithT(t)
+	result := toMapStringAny("not a map")
+	g.Expect(result).To(BeNil())
 }

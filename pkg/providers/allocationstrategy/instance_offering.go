@@ -17,6 +17,8 @@ limitations under the License.
 package allocationstrategy
 
 import (
+	"slices"
+
 	allocationstrategystages "github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy/stages"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
@@ -32,7 +34,7 @@ func NewInstanceOfferings(instanceTypes []*corecloudprovider.InstanceType) []Ins
 		}
 		instanceOfferings = append(instanceOfferings, InstanceOffering{
 			InstanceType: instanceType,
-			Offerings:    append(corecloudprovider.Offerings{}, instanceType.Offerings...),
+			Offerings:    slices.Clone(instanceType.Offerings),
 		})
 	}
 	return instanceOfferings

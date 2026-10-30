@@ -18,13 +18,16 @@ package fleet
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computefleet/armcomputefleet/v2"
+	"github.com/Azure/skewer"
 	"github.com/samber/lo"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
 
@@ -32,102 +35,105 @@ const (
 	vmNamePrefix       = "aks"
 	computerNamePrefix = "aks-"
 	nicConfigName      = "nic"
-	ipConfigName       = "ipconfig1"
 	sshKeyPathTemplate = "/home/%s/.ssh/authorized_keys"
 )
 
-// FleetBodyOptions contains the resolved inputs used to construct an Azure Compute Fleet body.
-type FleetBodyOptions struct {
-	CapacityType        string
-	AcceptableSKUs      []string
-	AcceptableZones     []string
-	LaunchTemplate      *launchtemplate.Template
-	SSHPublicKey        string
-	AdminUsername       string
-	NodeIdentities      []string
-	DiskEncryptionSetID string
-	NSGID               string
-	LBBackendPools      []string
-	Location            string
-	Extensions          []*armcompute.VirtualMachineExtension
-	TargetCapacity      int32
-	Tags                map[string]*string
-}
-
-// BuildFleetBody constructs the armcomputefleet.Fleet body from resolved provisioning inputs.
+// BuildFleetBody constructs the armcomputefleet.Fleet body from a provision request.
 // Slices (SKUs, zones) are sorted internally for deterministic JSON serialization.
-func BuildFleetBody(options FleetBodyOptions) *armcomputefleet.Fleet {
-	return &armcomputefleet.Fleet{
-		Location: lo.ToPtr(options.Location),
-		Tags:     options.Tags,
-		Zones:    buildZones(options.AcceptableZones),
-		Identity: buildIdentity(options.NodeIdentities),
-		Properties: buildFleetProperties(
-			options.CapacityType,
-			options.AcceptableSKUs,
-			buildComputeProfile(options),
-			options.TargetCapacity,
-		),
+func BuildFleetBody(req *FleetVMProvisionRequest, targetCapacity int32, tags map[string]*string) (*armcomputefleet.Fleet, error) {
+	if req == nil || req.LaunchTemplate == nil {
+		return nil, fmt.Errorf("building Fleet body: request and launch template are required")
 	}
+	if len(req.AcceptableSKUs) == 0 {
+		return nil, fmt.Errorf("building Fleet body: no candidate SKUs")
+	}
+	req, err := filterSKUsForEncryptionAtHost(req)
+	if err != nil {
+		return nil, fmt.Errorf("building Fleet body: %w", err)
+	}
+
+	fleet := &armcomputefleet.Fleet{
+		Location:   lo.ToPtr(req.Location),
+		Tags:       tags,
+		Zones:      buildZones(req.AcceptableZones),
+		Identity:   buildIdentity(req.NodeIdentities),
+		Properties: buildFleetProperties(req, req.LaunchTemplate, targetCapacity),
+	}
+
+	return fleet, nil
 }
 
-// buildZones converts sorted zone strings to the []*string shape required by the SDK.
-// Returns nil for an empty/nil zone slice (regional Fleet — no zone pinning).
+func filterSKUsForEncryptionAtHost(req *FleetVMProvisionRequest) (*FleetVMProvisionRequest, error) {
+	if !lo.FromPtr(req.LaunchTemplate.EncryptionAtHost) {
+		return req, nil
+	}
+	supportedSKUs := lo.Filter(req.AcceptableSKUs, func(name string, _ int) bool {
+		sku := req.ResolvedSKUs[name]
+		if sku != nil && sku.IsEncryptionAtHostSupported() {
+			return true
+		}
+		log.Log.Info("excluding Fleet candidate SKU because requested encryption at host is not supported", "sku", name)
+		return false
+	})
+	if len(supportedSKUs) == 0 {
+		return nil, fmt.Errorf("no candidate SKUs support requested encryption at host")
+	}
+
+	filteredReq := *req
+	filteredReq.AcceptableSKUs = supportedSKUs
+	return &filteredReq, nil
+}
+
+// buildZones sorts and converts zone strings to ARM zone pointers. Returns nil for regional Fleet.
 func buildZones(zones []string) []*string {
 	if len(zones) == 0 {
 		return nil
 	}
-	sortedZones := append([]string(nil), zones...)
-	sort.Strings(sortedZones)
-	return lo.Map(sortedZones, func(z string, _ int) *string {
-		return lo.ToPtr(z)
-	})
+	sortedZones := slices.Clone(zones)
+	slices.Sort(sortedZones)
+
+	zoneRefs := make([]*string, 0, len(sortedZones))
+	for _, zone := range sortedZones {
+		zoneRefs = append(zoneRefs, lo.ToPtr(zone))
+	}
+	return zoneRefs
 }
 
-// buildIdentity constructs the ManagedServiceIdentity from the NodeIdentities slice.
-// Returns nil if no identities are configured.
 func buildIdentity(identities []string) *armcomputefleet.ManagedServiceIdentity {
 	if len(identities) == 0 {
 		return nil
 	}
-	sortedIdentities := append([]string(nil), identities...)
-	sort.Strings(sortedIdentities)
+	sortedIdentities := slices.Clone(identities)
+	slices.Sort(sortedIdentities)
 
-	m := make(map[string]*armcomputefleet.UserAssignedIdentity, len(sortedIdentities))
-	for _, id := range sortedIdentities {
-		if id == "" {
+	identityMap := make(map[string]*armcomputefleet.UserAssignedIdentity, len(sortedIdentities))
+	for _, identity := range sortedIdentities {
+		if identity == "" {
 			continue
 		}
-		m[id] = &armcomputefleet.UserAssignedIdentity{}
+		identityMap[identity] = &armcomputefleet.UserAssignedIdentity{}
 	}
-	if len(m) == 0 {
+	if len(identityMap) == 0 {
 		return nil
 	}
 	return &armcomputefleet.ManagedServiceIdentity{
 		Type:                   lo.ToPtr(armcomputefleet.ManagedServiceIdentityTypeUserAssigned),
-		UserAssignedIdentities: m,
+		UserAssignedIdentities: identityMap,
 	}
 }
 
-// buildFleetProperties assembles the core FleetProperties with the appropriate priority profile.
-func buildFleetProperties(
-	capacityType string,
-	acceptableSKUs []string,
-	computeProfile *armcomputefleet.ComputeProfile,
-	targetCapacity int32,
-) *armcomputefleet.FleetProperties {
+// buildFleetProperties assembles FleetProperties with the appropriate priority profile.
+func buildFleetProperties(req *FleetVMProvisionRequest, lt *launchtemplate.Template, targetCapacity int32) *armcomputefleet.FleetProperties {
 	props := &armcomputefleet.FleetProperties{
-		VMSizesProfile: buildVMSizesProfile(acceptableSKUs),
-		ComputeProfile: computeProfile,
+		VMSizesProfile: buildVMSizesProfile(req.AcceptableSKUs),
+		ComputeProfile: buildComputeProfile(req, lt),
 		Mode:           lo.ToPtr(armcomputefleet.FleetModeLaunch),
 		VMNamePrefix:   lo.ToPtr(vmNamePrefix),
 	}
 
-	switch capacityType {
+	switch req.CapacityType {
 	case karpv1.CapacityTypeSpot:
 		props.SpotPriorityProfile = buildSpotProfile(targetCapacity)
-	case karpv1.CapacityTypeOnDemand:
-		props.RegularPriorityProfile = buildRegularProfile(targetCapacity)
 	default:
 		props.RegularPriorityProfile = buildRegularProfile(targetCapacity)
 	}
@@ -137,14 +143,14 @@ func buildFleetProperties(
 
 // buildVMSizesProfile creates one VMSizeProfile entry per candidate SKU, sorted.
 func buildVMSizesProfile(skus []string) []*armcomputefleet.VMSizeProfile {
-	sortedSKUs := append([]string(nil), skus...)
-	sort.Strings(sortedSKUs)
+	sortedSKUs := slices.Clone(skus)
+	slices.Sort(sortedSKUs)
 
-	out := make([]*armcomputefleet.VMSizeProfile, 0, len(sortedSKUs))
-	for _, s := range sortedSKUs {
-		out = append(out, &armcomputefleet.VMSizeProfile{Name: lo.ToPtr(s)})
+	profiles := make([]*armcomputefleet.VMSizeProfile, 0, len(sortedSKUs))
+	for _, sku := range sortedSKUs {
+		profiles = append(profiles, &armcomputefleet.VMSizeProfile{Name: lo.ToPtr(sku)})
 	}
-	return out
+	return profiles
 }
 
 // buildSpotProfile constructs the spot priority profile.
@@ -167,22 +173,14 @@ func buildRegularProfile(capacity int32) *armcomputefleet.RegularPriorityProfile
 	}
 }
 
-// buildComputeProfile constructs the BaseVirtualMachineProfile containing OS, storage,
-// network, security, and extension profiles.
-func buildComputeProfile(options FleetBodyOptions) *armcomputefleet.ComputeProfile {
-	var encryptionAtHost *bool
-	subnetID := ""
-	if options.LaunchTemplate != nil {
-		encryptionAtHost = options.LaunchTemplate.EncryptionAtHost
-		subnetID = options.LaunchTemplate.SubnetID
-	}
-
+// buildComputeProfile constructs the BaseVirtualMachineProfile.
+func buildComputeProfile(req *FleetVMProvisionRequest, lt *launchtemplate.Template) *armcomputefleet.ComputeProfile {
 	baseProfile := &armcomputefleet.BaseVirtualMachineProfile{
-		OSProfile:        buildOSProfile(options.LaunchTemplate, options.AdminUsername, options.SSHPublicKey),
-		StorageProfile:   buildStorageProfile(options.LaunchTemplate, options.DiskEncryptionSetID),
-		NetworkProfile:   buildNetworkProfile(subnetID, options.NSGID, options.LBBackendPools),
-		SecurityProfile:  buildSecurityProfile(encryptionAtHost),
-		ExtensionProfile: extensionsToProfile(options.Extensions),
+		OSProfile:        buildOSProfile(req, lt),
+		StorageProfile:   buildStorageProfile(lt, req.DiskEncryptionSetID),
+		NetworkProfile:   BuildFleetNetworkProfile(lt.SubnetID, req.NSG, req.LBBackendPools, allSKUsSupportCapability(req, skewer.AcceleratedNetworking), req.NetworkPlugin, req.NetworkPluginMode, req.MaxPods),
+		SecurityProfile:  buildSecurityProfile(lt.EncryptionAtHost),
+		ExtensionProfile: extensionsToProfile(req.Extensions),
 	}
 
 	return &armcomputefleet.ComputeProfile{
@@ -190,75 +188,71 @@ func buildComputeProfile(options FleetBodyOptions) *armcomputefleet.ComputeProfi
 	}
 }
 
-// buildOSProfile constructs the Linux OS profile with SSH key and custom data.
-func buildOSProfile(
-	launchTemplate *launchtemplate.Template,
-	adminUsername string,
-	sshPublicKey string,
-) *armcomputefleet.VirtualMachineScaleSetOSProfile {
-	sshPath := fmt.Sprintf(sshKeyPathTemplate, adminUsername)
+// A shared Fleet profile can enable a capability only when every candidate supports it.
+func allSKUsSupportCapability(req *FleetVMProvisionRequest, capability string) bool {
+	if len(req.AcceptableSKUs) == 0 {
+		log.Log.Info("disabling Fleet capability because there are no candidate SKUs", "capability", capability)
+		return false
+	}
+	for _, name := range req.AcceptableSKUs {
+		sku := req.ResolvedSKUs[name]
+		if sku == nil {
+			log.Log.Info("disabling Fleet capability because candidate SKU data is missing", "sku", name, "capability", capability)
+			return false
+		}
+		if !sku.HasCapability(capability) {
+			log.Log.Info("disabling Fleet capability because a candidate SKU does not support it", "sku", name, "capability", capability)
+			return false
+		}
+	}
+	return true
+}
 
-	profile := &armcomputefleet.VirtualMachineScaleSetOSProfile{
-		AdminUsername:      lo.ToPtr(adminUsername),
+// buildOSProfile constructs the Linux OS profile.
+func buildOSProfile(req *FleetVMProvisionRequest, lt *launchtemplate.Template) *armcomputefleet.VirtualMachineScaleSetOSProfile {
+	sshKeyPath := fmt.Sprintf(sshKeyPathTemplate, req.AdminUsername)
+
+	osProfile := &armcomputefleet.VirtualMachineScaleSetOSProfile{
+		AdminUsername:      lo.ToPtr(req.AdminUsername),
 		ComputerNamePrefix: lo.ToPtr(computerNamePrefix),
 		LinuxConfiguration: &armcomputefleet.LinuxConfiguration{
 			DisablePasswordAuthentication: lo.ToPtr(true),
 			SSH: &armcomputefleet.SSHConfiguration{
 				PublicKeys: []*armcomputefleet.SSHPublicKey{{
-					KeyData: lo.ToPtr(sshPublicKey),
-					Path:    lo.ToPtr(sshPath),
+					KeyData: lo.ToPtr(req.SSHPublicKey),
+					Path:    lo.ToPtr(sshKeyPath),
 				}},
 			},
 		},
 	}
 
-	if launchTemplate != nil {
-		customData := launchTemplate.ScriptlessCustomData
-		if launchTemplate.CustomScriptsCustomData != "" {
-			customData = launchTemplate.CustomScriptsCustomData
-		}
-		if customData != "" {
-			profile.CustomData = lo.ToPtr(customData)
-		}
+	customData := lt.ScriptlessCustomData
+	if lt.CustomScriptsCustomData != "" {
+		customData = lt.CustomScriptsCustomData
 	}
-	return profile
+	if customData != "" {
+		osProfile.CustomData = lo.ToPtr(customData)
+	}
+	return osProfile
 }
 
 // buildStorageProfile constructs the OS disk and image reference.
-func buildStorageProfile(
-	launchTemplate *launchtemplate.Template,
-	diskEncryptionSetID string,
-) *armcomputefleet.VirtualMachineScaleSetStorageProfile {
-	imageRef := &armcomputefleet.ImageReference{}
-	var imageID string
-	var sizeGB int32
-	var isEphemeral bool
-	var placement armcompute.DiffDiskPlacement
-
-	if launchTemplate != nil {
-		imageID = launchTemplate.ImageID
-		sizeGB = launchTemplate.StorageProfileSizeGB
-		isEphemeral = launchTemplate.StorageProfileIsEphemeral
-		placement = launchTemplate.StorageProfilePlacement
+func buildStorageProfile(lt *launchtemplate.Template, diskEncryptionSetID string) *armcomputefleet.VirtualMachineScaleSetStorageProfile {
+	imageRef := &armcomputefleet.ImageReference{
+		CommunityGalleryImageID: lo.ToPtr(lt.ImageID),
 	}
-
-	imageRef.CommunityGalleryImageID = lo.ToPtr(imageID)
 
 	osDisk := &armcomputefleet.VirtualMachineScaleSetOSDisk{
 		CreateOption: lo.ToPtr(armcomputefleet.DiskCreateOptionTypesFromImage),
-		DiskSizeGB:   lo.ToPtr(sizeGB),
+		DiskSizeGB:   lo.ToPtr(lt.StorageProfileSizeGB),
 		OSType:       lo.ToPtr(armcomputefleet.OperatingSystemTypesLinux),
 	}
 
-	// Ephemeral disk settings
-	if isEphemeral || placement != "" {
-		diffDiskPlacement := armcomputefleet.DiffDiskPlacement(placement)
-		if diffDiskPlacement == "" {
-			diffDiskPlacement = armcomputefleet.DiffDiskPlacementCacheDisk
-		}
+	// Ephemeral disk
+	if lt.StorageProfileIsEphemeral {
 		osDisk.DiffDiskSettings = &armcomputefleet.DiffDiskSettings{
 			Option:    lo.ToPtr(armcomputefleet.DiffDiskOptionsLocal),
-			Placement: lo.ToPtr(diffDiskPlacement),
+			Placement: lo.ToPtr(armcomputefleet.DiffDiskPlacement(lt.StorageProfilePlacement)),
 		}
 		osDisk.Caching = lo.ToPtr(armcomputefleet.CachingTypesReadOnly)
 	}
@@ -266,7 +260,6 @@ func buildStorageProfile(
 	// Disk encryption set
 	if diskEncryptionSetID != "" {
 		osDisk.ManagedDisk = &armcomputefleet.VirtualMachineScaleSetManagedDiskParameters{
-			StorageAccountType: lo.ToPtr(armcomputefleet.StorageAccountTypesStandardLRS),
 			DiskEncryptionSet: &armcomputefleet.DiskEncryptionSetParameters{
 				ID: lo.ToPtr(diskEncryptionSetID),
 			},
@@ -279,89 +272,95 @@ func buildStorageProfile(
 	}
 }
 
-// buildNetworkProfile constructs the network profile with subnet, NSG, and LB backend pools.
-func buildNetworkProfile(subnetID, nsgID string, lbBackendPools []string) *armcomputefleet.VirtualMachineScaleSetNetworkProfile {
-	nicProps := &armcomputefleet.VirtualMachineScaleSetNetworkConfigurationProperties{
+// BuildFleetNetworkProfile constructs the VMSS network profile with subnet, NSG, and primary-only LB backend pools.
+func BuildFleetNetworkProfile(subnetID, nsgID string, lbBackendPools []string, enableAcceleratedNetworking bool, networkPlugin, networkPluginMode string, maxPods int32) *armcomputefleet.VirtualMachineScaleSetNetworkProfile {
+	ipConfigurationCount := int32(1)
+	if networkPlugin == consts.NetworkPluginAzure && networkPluginMode != consts.NetworkPluginModeOverlay {
+		// always create a primary IP, then add secondary IPs up to MaxPods.
+		ipConfigurationCount = max(1, maxPods)
+	}
+	ipConfigurations := make([]*armcomputefleet.VirtualMachineScaleSetIPConfiguration, 0, ipConfigurationCount)
+	for i := int32(0); i < ipConfigurationCount; i++ {
+		properties := &armcomputefleet.VirtualMachineScaleSetIPConfigurationProperties{
+			Primary: lo.ToPtr(i == 0),
+			Subnet:  &armcomputefleet.APIEntityReference{ID: lo.ToPtr(subnetID)},
+		}
+		if i == 0 {
+			properties.LoadBalancerBackendAddressPools = buildPoolRefs(lbBackendPools)
+		}
+		ipConfigurations = append(ipConfigurations, &armcomputefleet.VirtualMachineScaleSetIPConfiguration{
+			Name:       lo.ToPtr(fmt.Sprintf("ipconfig%d", i+1)),
+			Properties: properties,
+		})
+	}
+	nicProperties := &armcomputefleet.VirtualMachineScaleSetNetworkConfigurationProperties{
 		Primary:                     lo.ToPtr(true),
-		EnableAcceleratedNetworking: lo.ToPtr(true),
+		EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
 		EnableIPForwarding:          lo.ToPtr(false),
 		DeleteOption:                lo.ToPtr(armcomputefleet.DeleteOptionsDelete),
-		IPConfigurations: []*armcomputefleet.VirtualMachineScaleSetIPConfiguration{{
-			Name: lo.ToPtr(ipConfigName),
-			Properties: &armcomputefleet.VirtualMachineScaleSetIPConfigurationProperties{
-				Primary:                         lo.ToPtr(true),
-				Subnet:                          &armcomputefleet.APIEntityReference{ID: lo.ToPtr(subnetID)},
-				LoadBalancerBackendAddressPools: buildPoolRefs(lbBackendPools),
-			},
-		}},
+		IPConfigurations:            ipConfigurations,
 	}
 	if nsgID != "" {
-		nicProps.NetworkSecurityGroup = &armcomputefleet.SubResource{ID: lo.ToPtr(nsgID)}
+		nicProperties.NetworkSecurityGroup = &armcomputefleet.SubResource{ID: lo.ToPtr(nsgID)}
 	}
 	return &armcomputefleet.VirtualMachineScaleSetNetworkProfile{
+		NetworkAPIVersion: lo.ToPtr(armcomputefleet.NetworkAPIVersionV20201101), // hardcoded; not available in LaunchTemplate
 		NetworkInterfaceConfigurations: []*armcomputefleet.VirtualMachineScaleSetNetworkConfiguration{{
 			Name:       lo.ToPtr(nicConfigName),
-			Properties: nicProps,
+			Properties: nicProperties,
 		}},
 	}
 }
 
-// buildSecurityProfile returns the security profile only when encryption at host is enabled.
-// When nil or false, returns nil matching the VM path which only sets it when enabled.
+// buildSecurityProfile returns the security profile when encryption at host is configured.
 func buildSecurityProfile(encryptionAtHost *bool) *armcomputefleet.SecurityProfile {
-	if encryptionAtHost == nil || !*encryptionAtHost {
+	if encryptionAtHost == nil {
 		return nil
 	}
 	return &armcomputefleet.SecurityProfile{
-		EncryptionAtHost: lo.ToPtr(true),
+		EncryptionAtHost: encryptionAtHost,
 	}
 }
 
-// extensionsToProfile converts armcompute VM extensions to the armcomputefleet VMSS extension
-// profile format. Returns nil when no extensions are provided.
-func extensionsToProfile(exts []*armcompute.VirtualMachineExtension) *armcomputefleet.VirtualMachineScaleSetExtensionProfile {
-	if len(exts) == 0 {
+// extensionsToProfile converts armcompute VM extensions to the armcomputefleet VMSS extension profile format.
+func extensionsToProfile(extensions []*armcompute.VirtualMachineExtension) *armcomputefleet.VirtualMachineScaleSetExtensionProfile {
+	if len(extensions) == 0 {
 		return nil
 	}
-	converted := make([]*armcomputefleet.VirtualMachineScaleSetExtension, 0, len(exts))
-	for _, e := range exts {
-		if e == nil {
+	fleetExtensions := make([]*armcomputefleet.VirtualMachineScaleSetExtension, 0, len(extensions))
+	for _, ext := range extensions {
+		if ext == nil {
 			continue
 		}
-		converted = append(converted, convertToScaleSetExtension(e))
+		fleetExtensions = append(fleetExtensions, ConvertToScaleSetExtension(ext))
 	}
-	if len(converted) == 0 {
+	if len(fleetExtensions) == 0 {
 		return nil
 	}
-	return &armcomputefleet.VirtualMachineScaleSetExtensionProfile{Extensions: converted}
+	return &armcomputefleet.VirtualMachineScaleSetExtensionProfile{Extensions: fleetExtensions}
 }
 
-// convertToScaleSetExtension converts a single armcompute.VirtualMachineExtension to the
-// armcomputefleet.VirtualMachineScaleSetExtension format.
-func convertToScaleSetExtension(ext *armcompute.VirtualMachineExtension) *armcomputefleet.VirtualMachineScaleSetExtension {
+// ConvertToScaleSetExtension converts armcompute.VirtualMachineExtension to armcomputefleet format.
+func ConvertToScaleSetExtension(ext *armcompute.VirtualMachineExtension) *armcomputefleet.VirtualMachineScaleSetExtension {
 	if ext == nil || ext.Properties == nil {
 		return &armcomputefleet.VirtualMachineScaleSetExtension{}
 	}
-	props := ext.Properties
+	extProps := ext.Properties
 
 	return &armcomputefleet.VirtualMachineScaleSetExtension{
 		Name: ext.Name,
 		Properties: &armcomputefleet.VirtualMachineScaleSetExtensionProperties{
-			Publisher:               props.Publisher,
-			Type:                    props.Type,
-			TypeHandlerVersion:      props.TypeHandlerVersion,
-			AutoUpgradeMinorVersion: props.AutoUpgradeMinorVersion,
-			Settings:                toMapStringAny(props.Settings),
-			ProtectedSettings:       toMapStringAny(props.ProtectedSettings),
+			Publisher:               extProps.Publisher,
+			Type:                    extProps.Type,
+			TypeHandlerVersion:      extProps.TypeHandlerVersion,
+			AutoUpgradeMinorVersion: extProps.AutoUpgradeMinorVersion,
+			Settings:                toMapStringAny(extProps.Settings),
+			ProtectedSettings:       toMapStringAny(extProps.ProtectedSettings),
 		},
 	}
 }
 
-// toMapStringAny extracts a map[string]any from the armcompute Settings/ProtectedSettings field.
-// The SDK declares these as `any`; the actual runtime value may be:
-//   - map[string]any — direct JSON unmarshalling
-//   - *map[string]interface{} — the pattern used in extension constructors (getCSExtension, etc.)
-//   - nil — no settings
+// toMapStringAny extracts map[string]any from armcompute Settings/ProtectedSettings.
 func toMapStringAny(v any) map[string]any {
 	if v == nil {
 		return nil
@@ -380,16 +379,16 @@ func toMapStringAny(v any) map[string]any {
 }
 
 // buildPoolRefs converts load balancer backend pool IDs to SubResource references.
-func buildPoolRefs(pools []string) []*armcomputefleet.SubResource {
-	if len(pools) == 0 {
+func buildPoolRefs(lbBackendPoolIDs []string) []*armcomputefleet.SubResource {
+	if len(lbBackendPoolIDs) == 0 {
 		return nil
 	}
-	sortedPools := append([]string(nil), pools...)
-	sort.Strings(sortedPools)
+	sortedPools := slices.Clone(lbBackendPoolIDs)
+	slices.Sort(sortedPools)
 
-	out := make([]*armcomputefleet.SubResource, 0, len(sortedPools))
-	for _, id := range sortedPools {
-		out = append(out, &armcomputefleet.SubResource{ID: lo.ToPtr(id)})
+	poolRefs := make([]*armcomputefleet.SubResource, 0, len(sortedPools))
+	for _, lbPoolID := range sortedPools {
+		poolRefs = append(poolRefs, &armcomputefleet.SubResource{ID: lo.ToPtr(lbPoolID)})
 	}
-	return out
+	return poolRefs
 }

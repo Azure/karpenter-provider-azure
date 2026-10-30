@@ -37,6 +37,8 @@ const (
 	Ubuntu2204Gen2ArmImageDefinition           = "2204gen2arm64containerd"
 	Ubuntu2204Gen2TrustedLaunchImageDefinition = "2204gen2TLcontainerd"
 	Ubuntu2204Gen2FIPSTLImageDefinition        = "2204gen2fipsTLcontainerd"
+	Ubuntu2204Gen2FIPSImageDefinition          = "2204gen2fipscontainerd"
+	Ubuntu2204Gen1FIPSImageDefinition          = "2204fipscontainerd"
 )
 
 type Ubuntu2204 struct {
@@ -47,7 +49,11 @@ func (u Ubuntu2204) Name() string {
 	return v1beta1.Ubuntu2204ImageFamily
 }
 
-func (u Ubuntu2204) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) []types.DefaultImageOutput {
+func (u Ubuntu2204) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
+	// There is no Kata (Pod Sandboxing) image for Ubuntu — only AzureLinux publishes one.
+	if kataEnabled {
+		return []types.DefaultImageOutput{}
+	}
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		if !useSIG {
@@ -68,8 +74,31 @@ func (u Ubuntu2204) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trust
 				},
 			}
 		}
-		//TODO: Fill out when Ubuntu 22.04 with FIPS becomes available
-		return []types.DefaultImageOutput{}
+
+		return []types.DefaultImageOutput{
+			{
+				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+				GalleryResourceGroup: AKSUbuntuResourceGroup,
+				GalleryName:          AKSUbuntuGalleryName,
+				ImageDefinition:      Ubuntu2204Gen2FIPSImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-ubuntu-fips-containerd-22.04-gen2",
+			},
+			{
+				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+				GalleryResourceGroup: AKSUbuntuResourceGroup,
+				GalleryName:          AKSUbuntuGalleryName,
+				ImageDefinition:      Ubuntu2204Gen1FIPSImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
+				),
+				Distro: "aks-ubuntu-fips-containerd-22.04",
+			},
+		}
 	}
 	if trustedLaunch {
 		return []types.DefaultImageOutput{
@@ -174,6 +203,7 @@ func (u Ubuntu2204) CustomScriptsNodeBootstrapping(
 	storageProfile string,
 	nodeBootstrappingClient types.NodeBootstrappingAPI,
 	fipsMode *v1beta1.FIPSMode,
+	workloadRuntime *v1beta1.WorkloadRuntime,
 	localDNS *v1beta1.LocalDNS,
 	artifactStreaming *v1beta1.ArtifactStreaming,
 	linuxOSConfig *v1beta1.LinuxOSConfiguration,
@@ -200,6 +230,7 @@ func (u Ubuntu2204) CustomScriptsNodeBootstrapping(
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
 		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 		FIPSMode:                       fipsMode,
+		WorkloadRuntime:                workloadRuntime,
 		LocalDNSProfile:                localDNS,
 		ArtifactStreaming:              artifactStreaming,
 		LinuxOSConfig:                  linuxOSConfig,

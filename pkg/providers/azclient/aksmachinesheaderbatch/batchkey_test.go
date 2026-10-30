@@ -236,6 +236,22 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 		{"different node image", func(p *armcontainerservice.MachineProperties) {
 			p.NodeImageVersion = lo.ToPtr("AKSUbuntu-2404gen2containerd-2025.03.01")
 		}},
+		{"different capacity reservation group", func(p *armcontainerservice.MachineProperties) {
+			p.CapacityReservation = &armcontainerservice.CapacityReservation{
+				CapacityReservationGroup: &armcontainerservice.CapacityReservationGroup{
+					ID: lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"),
+				},
+			}
+		}},
+		{"node public IP enabled", func(p *armcontainerservice.MachineProperties) { p.Network.EnableNodePublicIP = lo.ToPtr(true) }},
+		{"node public IP from a prefix", func(p *armcontainerservice.MachineProperties) {
+			p.Network.EnableNodePublicIP = lo.ToPtr(true)
+			p.Network.NodePublicIPPrefixID = lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix")
+		}},
+		{"node public IP tags", func(p *armcontainerservice.MachineProperties) {
+			p.Network.EnableNodePublicIP = lo.ToPtr(true)
+			p.Network.NodePublicIPTags = []*armcontainerservice.IPTag{{IPTagType: lo.ToPtr("RoutingPreference"), Tag: lo.ToPtr("Internet")}}
+		}},
 	}
 
 	for _, tt := range tests {

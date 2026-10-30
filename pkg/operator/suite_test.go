@@ -23,8 +23,11 @@ import (
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
+	autoscalingv1beta1 "sigs.k8s.io/karpenter/pkg/apis/autoscaling/v1beta1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	karpv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
@@ -53,12 +56,23 @@ var _ = AfterSuite(func() {
 })
 
 var _ = Describe("getRequiredGVKs", func() {
-	It("should return the GVKs of the CRDs", func() {
-		gvks := getRequiredGVKs()
+	It("should not require CapacityBuffer when its feature gate is disabled", func() {
+		disabledCtx := coreoptions.ToContext(ctx, coretest.Options())
+		gvks := getRequiredGVKs(disabledCtx)
 		Expect(gvks).To(HaveLen(4))
 		Expect(gvks).To(ContainElement(object.GVK(&karpv1.NodePool{})))
 		Expect(gvks).To(ContainElement(object.GVK(&karpv1.NodeClaim{})))
 		Expect(gvks).To(ContainElement(object.GVK(&karpv1alpha1.NodeOverlay{})))
 		Expect(gvks).To(ContainElement(object.GVK(&v1beta1.AKSNodeClass{})))
+		Expect(gvks).ToNot(ContainElement(object.GVK(&autoscalingv1beta1.CapacityBuffer{})))
+	})
+
+	It("should require CapacityBuffer v1beta1 when its feature gate is enabled", func() {
+		enabledCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
+			FeatureGates: coretest.FeatureGates{CapacityBuffer: lo.ToPtr(true)},
+		}))
+		gvks := getRequiredGVKs(enabledCtx)
+		Expect(gvks).To(HaveLen(5))
+		Expect(gvks).To(ContainElement(object.GVK(&autoscalingv1beta1.CapacityBuffer{})))
 	})
 })
