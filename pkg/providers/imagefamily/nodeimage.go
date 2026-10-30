@@ -35,11 +35,13 @@ import (
 )
 
 const (
-	ImageExpirationInterval    = time.Hour * 24 * 3
-	ImageCacheCleaningInterval = time.Hour * 1
+	ImageExpirationInterval       = time.Hour * 24 * 3
+	LatestImageExpirationInterval = 15 * time.Minute
+	ImageCacheCleaningInterval    = time.Hour * 1
 
 	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
 	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
+	latestImagesCacheKeyPrefix      = "latest:"
 )
 
 type NodeImage struct {
@@ -49,6 +51,7 @@ type NodeImage struct {
 
 type NodeImageProvider interface {
 	List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error)
+	ListLatest(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error)
 }
 
 type provider struct {
@@ -121,6 +124,49 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 	}
 	p.nodeImagesCache.Set(key, nodeImages, cache.DefaultExpiration)
 
+	return nodeImages, nil
+}
+
+// ListLatest returns the latest available NodeImages for the given AKSNodeClass sorted in priority ordering.
+func (p *provider) ListLatest(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
+	useSIG := options.FromContext(ctx).UseSIG
+
+	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS && !useSIG {
+		return []NodeImage{}, nil
+	}
+
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return []NodeImage{}, err
+	}
+	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.Windows2025ImageFamily && !SupportsWindows2025(kubernetesVersion) {
+		return []NodeImage{}, nil
+	}
+
+	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled())
+
+	key, err := p.cacheKey(supportedImages, kubernetesVersion)
+	if err != nil {
+		return []NodeImage{}, err
+	}
+	key = latestImagesCacheKeyPrefix + key
+
+	if nodeImages, ok := p.nodeImagesCache.Get(key); ok {
+		return nodeImages.([]NodeImage), nil
+	}
+
+	var nodeImages []NodeImage
+	if useSIG {
+		log.FromContext(ctx).V(1).Info("using SIG to list latest node images")
+		nodeImages, err = p.listSIG(ctx, supportedImages)
+	} else {
+		nodeImages, err = p.listCIG(ctx, supportedImages)
+	}
+	if err != nil {
+		return []NodeImage{}, err
+	}
+
+	p.nodeImagesCache.Set(key, nodeImages, LatestImageExpirationInterval)
 	return nodeImages, nil
 }
 
