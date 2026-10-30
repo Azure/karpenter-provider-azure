@@ -23,7 +23,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
+	"github.com/Azure/skewer"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -40,6 +43,7 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/capacitybuffer"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
+	"sigs.k8s.io/karpenter/pkg/controllers/node/health"
 	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
@@ -166,6 +170,7 @@ func validateNodeClaimCommon(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodeP
 	Expect(nodeClaim.Labels).To(HaveKey(v1beta1.LabelSKUFamily))
 	Expect(nodeClaim.Labels).To(HaveKey(v1beta1.LabelSKUCPU))
 	Expect(nodeClaim.Labels).To(HaveKey(v1beta1.LabelSKUMemory))
+	Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationCapacityReservationGroupID))
 
 	// Zone validation (conditional)
 	zone := nodeClaim.Labels[v1.LabelTopologyZone]
@@ -341,6 +346,95 @@ func runCapacityBufferTests(expectCreateCalls func(expectedCalls int)) {
 }
 
 var _ = Describe("CloudProvider", func() {
+	Context("Repair", func() {
+		const (
+			legacyRepairMode      = true
+			budgetAwareRepairMode = false
+		)
+
+		It("should explicitly reject in-place reboot", func() {
+			err := (&CloudProvider{}).Reboot(ctx, nodeClaim, "operation-id")
+			Expect(corecloudprovider.IsNodeRebootNotImplementedError(err)).To(BeTrue())
+		})
+
+		DescribeTable("should preserve repair tolerations and forceful drain bounds", func(conditionType v1.NodeConditionType, conditionStatus v1.ConditionStatus, toleration time.Duration) {
+			repairCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
+				FeatureGates:     coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
+				LegacyNodeRepair: lo.ToPtr(false),
+			}))
+			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil, legacyRepairMode)
+			Expect(legacyProvider.RepairPolicies()).To(HaveLen(4))
+			Expect(legacyProvider.RepairPolicies()).To(ContainElement(corecloudprovider.RepairPolicy{
+				ConditionType:      conditionType,
+				ConditionStatus:    conditionStatus,
+				TolerationDuration: toleration,
+				Action:             corecloudprovider.ReplaceNode,
+			}))
+
+			provider := New(nil, nil, nil, nil, nil, nil, nil, budgetAwareRepairMode)
+			matcher, err := health.NewRepairPolicyMatcher(repairCtx, provider)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(matcher).ToNot(BeNil())
+			now := fakeClock.Now()
+			node := coretest.Node()
+			node.CreationTimestamp = metav1.NewTime(now.Add(-time.Hour))
+			node.Status.Conditions = []v1.NodeCondition{{
+				Type:               conditionType,
+				Status:             conditionStatus,
+				Reason:             "UnrecognizedReason",
+				LastTransitionTime: metav1.NewTime(now),
+			}}
+			matches := matcher.Match(node)
+			Expect(matches).To(HaveLen(1))
+			Expect(health.Resolve(matches, now.Add(toleration-time.Nanosecond), time.Time{}).Action).To(BeEmpty())
+			result := health.Resolve(matches, now.Add(toleration), time.Time{})
+			Expect(result.Action).To(Equal(corecloudprovider.ReplaceNode))
+			Expect(result.Condition).To(Equal(conditionType))
+			Expect(result.TerminationGracePeriod).To(Equal(lo.ToPtr(time.Duration(0))))
+
+			node.Status.Conditions[0].Status = lo.Ternary(conditionStatus == v1.ConditionTrue, v1.ConditionFalse, v1.ConditionTrue)
+			Expect(matcher.Match(node)).To(BeEmpty())
+		},
+			Entry("NodeReady=False", v1.NodeReady, v1.ConditionFalse, 10*time.Minute),
+			Entry("NodeReady=Unknown", v1.NodeReady, v1.ConditionUnknown, 10*time.Minute),
+			Entry("NodeHealthy=False", v1.NodeConditionType("kubernetes.azure.com/NodeHealthy"), v1.ConditionFalse, time.Duration(0)),
+			Entry("PreemptionScheduled=True", v1.NodeConditionType(SpotConditionPreemptionScheduled), v1.ConditionTrue, time.Duration(0)),
+		)
+
+		It("should select the legacy policy set explicitly", func() {
+			provider := New(nil, nil, nil, nil, nil, nil, nil, legacyRepairMode)
+			policies := provider.RepairPolicies()
+			Expect(policies).To(HaveLen(4))
+			for _, policy := range policies {
+				Expect(policy.Action).To(Equal(corecloudprovider.ReplaceNode))
+				Expect(policy.ReasonRegex).To(BeEmpty())
+				Expect(policy.TerminationGracePeriod).To(BeNil())
+			}
+		})
+
+		It("should not construct the new matcher for legacy repair", func() {
+			repairCtx := coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
+				FeatureGates:     coretest.FeatureGates{NodeRepair: lo.ToPtr(true)},
+				LegacyNodeRepair: lo.ToPtr(true),
+			}))
+			provider := New(nil, nil, nil, nil, nil, nil, nil, legacyRepairMode)
+			matcher, err := health.NewRepairPolicyMatcher(repairCtx, provider)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(matcher).To(BeNil())
+		})
+
+		It("should keep returned repair policy profiles independent", func() {
+			legacyProvider := New(nil, nil, nil, nil, nil, nil, nil, legacyRepairMode)
+			provider := New(nil, nil, nil, nil, nil, nil, nil, budgetAwareRepairMode)
+			legacyPolicies := legacyProvider.RepairPolicies()
+			policies := provider.RepairPolicies()
+			legacyPolicies[0].TolerationDuration = time.Hour
+			*policies[0].TerminationGracePeriod = time.Minute
+			Expect(legacyProvider.RepairPolicies()[0].TolerationDuration).To(Equal(10 * time.Minute))
+			Expect(provider.RepairPolicies()[0].TerminationGracePeriod).To(Equal(lo.ToPtr(time.Duration(0))))
+		})
+	})
+
 	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
 	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.
 	// If ProvisionMode = AKSScriptless is no longer supported, their code/tests will be replaced with ProvisionMode = AKSMachineAPI.
@@ -355,7 +449,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
@@ -416,6 +510,192 @@ var _ = Describe("CloudProvider", func() {
 			resp, _ := azureEnv.VirtualMachinesAPI.Get(ctx, azureEnv.AzureResourceGraphAPI.ResourceGroup, nodeClaims[0].Name, nil)
 			Expect(resp.VirtualMachine).ToNot(BeNil())
 		})
+
+		It("should track quota across accepted VM create and delete", func() {
+			sku := fake.MakeSKU("Standard_D2_v3")
+			vCPUs := lo.Must(sku.VCPU())
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+				CurrentValue: lo.ToPtr(int32(100 - vCPUs)),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{sku.GetName()},
+				},
+				{
+					Key:      karpv1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{karpv1.CapacityTypeOnDemand},
+				},
+			}
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+
+			created, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+
+			retried, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(retried).ToNot(BeNil())
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+
+			nodeClaim.Status = created.Status
+			nodeClaim.Labels = created.Labels
+			nodeClaim.Annotations = created.Annotations
+			// The completed delete releases quota immediately.
+			Expect(cloudProvider.Delete(ctx, nodeClaim)).To(Succeed())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+
+			// A subsequent NotFound remains idempotent.
+			err = cloudProvider.Delete(ctx, nodeClaim)
+			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+		})
+
+		It("should not adjust family quota for Spot VM create or delete", func() {
+			spotSKU := fake.MakeSKU("Standard_D2s_v3")
+			largerSKU := fake.MakeSKU("Standard_D4s_v3")
+			Expect(largerSKU.GetFamilyName()).To(Equal(spotSKU.GetFamilyName()))
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(spotSKU.GetFamilyName())},
+				CurrentValue: lo.ToPtr[int32](98),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{spotSKU.GetName()}},
+				{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot}},
+			}
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+
+			created, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeSpot))
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, spotSKU)).To(BeTrue(), "Spot create must not consume family quota")
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, largerSKU)).To(BeFalse())
+
+			// Clear any create adjustment before verifying delete independently.
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			nodeClaim.Status = created.Status
+			nodeClaim.Labels = created.Labels
+			nodeClaim.Annotations = created.Annotations
+			Expect(cloudProvider.Delete(ctx, nodeClaim)).To(Succeed())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, largerSKU)).To(BeFalse(), "Spot delete must not release family quota")
+		})
+
+		It("should release quota after failed VM creation cleanup", func() {
+			sku := fake.MakeSKU("Standard_D2_v3")
+			vCPUs := lo.Must(sku.VCPU())
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+				CurrentValue: lo.ToPtr(int32(100 - vCPUs)),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			delete(nodeClaim.Labels, karpv1.NodePoolLabelKey)
+			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}},
+				{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+			}
+			ExpectApplied(ctx, env.Client, nodeClass, nodeClaim)
+			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.Error.Set(&azcore.ResponseError{ErrorCode: "InternalOperationError"})
+
+			created, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(created).To(BeNil())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.Error.Set(nil)
+			created, err = cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created).ToNot(BeNil())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+		})
+
+		It("should retain quota when VM promise cleanup cannot delete the instance", func() {
+			sku := fake.MakeSKU("Standard_D2_v3")
+			vCPUs := lo.Must(sku.VCPU())
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+				CurrentValue: lo.ToPtr(int32(100 - vCPUs)),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}},
+				{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+			}
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			instanceTypes = lo.Filter(instanceTypes, func(instanceType *corecloudprovider.InstanceType, _ int) bool {
+				return instanceType.Name == sku.GetName()
+			})
+			Expect(instanceTypes).To(HaveLen(1))
+			promise, err := azureEnv.VMInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+
+			azureEnv.VirtualMachinesAPI.VirtualMachineDeleteBehavior.BeginError.Set(&azcore.ResponseError{ErrorCode: "DeleteFailed"})
+
+			err = promise.Cleanup(ctx)
+			Expect(err).To(HaveOccurred())
+			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse(), "failed cleanup must retain the accepted-create debit")
+		})
+
+		Context("Quota deletion metadata", func() {
+			initializeQuota := func() *skewer.SKU {
+				sku := fake.MakeSKU("Standard_D2_v3")
+				azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+					CurrentValue: lo.ToPtr[int32](100),
+					Limit:        lo.ToPtr[int64](100),
+				})
+				Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+				nodeClaim.Labels[v1.LabelInstanceTypeStable] = sku.GetName()
+				nodeClaim.Labels[karpv1.CapacityTypeLabelKey] = karpv1.CapacityTypeOnDemand
+				return sku
+			}
+
+			It("should release quota for an ordinary instance after the NodeClass adds a reservation", func() {
+				sku := initializeQuota()
+				nodeClaim.Annotations = map[string]string{v1beta1.AnnotationCapacityReservationGroupID: ""}
+				nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg")}
+
+				err := azureEnv.VMInstanceProvider.Delete(ctx, nodeClaim, "missing")
+				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+				Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+			})
+
+			It("should not release quota for a reserved instance after the NodeClass removes its reservation", func() {
+				sku := initializeQuota()
+				nodeClaim.Annotations = map[string]string{v1beta1.AnnotationCapacityReservationGroupID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg"}
+				nodeClass.Spec.CapacityReservation = nil
+
+				err := azureEnv.VMInstanceProvider.Delete(ctx, nodeClaim, "missing")
+				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+				Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+			})
+
+			It("should release quota while the NodeClass is terminating", func() {
+				sku := initializeQuota()
+				nodeClaim.Annotations = map[string]string{v1beta1.AnnotationCapacityReservationGroupID: ""}
+				nodeClass.Finalizers = []string{test.TestingFinalizer}
+				ExpectApplied(ctx, env.Client, nodeClass)
+				Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
+
+				err := azureEnv.VMInstanceProvider.Delete(ctx, nodeClaim, "missing")
+				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+				Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+			})
+		})
+
 		It("should list nodeclaim with correct instance type even after capacity error marks offerings unavailable", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
@@ -524,7 +804,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))

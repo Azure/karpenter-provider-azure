@@ -23,6 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/skewer"
 	"github.com/samber/lo"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -45,7 +46,7 @@ func newErrorDetailTestCase(name string) *errorDetailTestCaseBuilder {
 }
 
 func (b *errorDetailTestCaseBuilder) withInstanceType(offerings ...offering) *errorDetailTestCaseBuilder {
-	b.tc.instanceType = createInstanceType(testInstanceName, offerings...)
+	b.tc.instanceType = createInstanceType(offerings...)
 	return b
 }
 
@@ -80,6 +81,11 @@ func (b *errorDetailTestCaseBuilder) expectReason(reason string) *errorDetailTes
 	return b
 }
 
+func (b *errorDetailTestCaseBuilder) expectSharedAcrossGroups() *errorDetailTestCaseBuilder {
+	b.tc.expectedSharedAcrossGroups = true
+	return b
+}
+
 func (b *errorDetailTestCaseBuilder) expectUnavailable(offerings ...offeringToCheck) *errorDetailTestCaseBuilder {
 	b.tc.expectedUnavailableOfferingsInformation = offerings
 	return b
@@ -104,6 +110,7 @@ type errorDetailTestCase struct {
 	cloudErr                                armcontainerservice.ErrorDetail
 	expectedErr                             error
 	expectedReason                          string
+	expectedSharedAcrossGroups              bool
 	expectedUnavailableOfferingsInformation []offeringToCheck
 	expectedAvailableOfferingsInformation   []offeringToCheck
 }
@@ -122,6 +129,55 @@ func newTestErrorDetailHandling() *ErrorDetailHandler {
 
 func setupErrorDetailTestCases() []errorDetailTestCase {
 	return []errorDetailTestCase{
+		newErrorDetailTestCase("Frontend code is not treated as an asynchronous Compute error").
+			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+			withErrorDetail("AvailabilityZoneNotSupported", "The requested availability zone is not supported.").
+			expectAvailable(allDefaultTestOfferingInfo()...).
+			build(),
+		newErrorDetailTestCase("Generic VM creation failure mentioning a zone error is not classified").
+			withInstanceType(zone2OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("FailedToCreateOrUpdateVirtualMachine", "InvalidAvailabilityZone: the requested zone is not supported.").
+			expectAvailable(allDefaultTestOfferingInfo()...).
+			build(),
+		newErrorDetailTestCase("Invalid availability zone for spot").
+			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+			withErrorDetail("InvalidAvailabilityZone", "The requested zone is not supported.").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectSharedAcrossGroups().
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+			).
+			expectAvailable(
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeSpot),
+			).
+			build(),
+		newErrorDetailTestCase("Invalid availability zone for reserved capacity").
+			withInstanceType(zone2OnDemand, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withCapacityReservationGroup(testCapacityReservationGroupID).
+			withErrorDetail("InvalidAvailabilityZone", "The requested zone is not supported.").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectSharedAcrossGroups().
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+			).
+			expectAvailable(
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+			).
+			build(),
 		newErrorDetailTestCase("Cloud error is empty").
 			withEmptyInstanceType().
 			withZoneAndCapacity("", karpv1.CapacityTypeOnDemand).
@@ -324,7 +380,18 @@ func TestHandleErrorDetails(t *testing.T) {
 			)
 
 			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
-			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, tc.expectedSharedAcrossGroups, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
+}
+
+func TestHandleErrorDetailWithoutCode(t *testing.T) {
+	provider := newTestErrorDetailHandling()
+	err := provider.Handle(t.Context(), createDefaultTestSKU(), createInstanceType(zone2OnDemand),
+		testZone2, karpv1.CapacityTypeOnDemand, "", armcontainerservice.ErrorDetail{
+			Message: lo.ToPtr("The requested zone is not supported. The supported zones for location 'westus' are '3,1'"),
+		})
+
+	assertHandledError(t, err, nil, "")
+	assertOfferingsState(t, provider.UnavailableOfferings, "", false, nil, allDefaultTestOfferingInfo())
 }

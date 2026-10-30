@@ -27,6 +27,7 @@ import (
 
 	"github.com/patrickmn/go-cache"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
@@ -184,7 +185,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	pricingProvider := pricing.NewProvider(ctx, azureEnv, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(region, env.KubernetesInterface, kubernetesVersionCache, aksManagedClustersAPI)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
-	quotaProvider := quota.NewProvider(usageAPI, quotaCategoryVMFamilyMappingAPI, region)
+	quotaProvider := quota.NewProvider(usageAPI, quotaCategoryVMFamilyMappingAPI, region, clock.RealClock{})
 	instanceTypesProvider := instancetype.NewDefaultProvider(
 		region,
 		instanceTypeCache,
@@ -279,6 +280,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.ProvisionMode,
 		testOptions.DiskEncryptionSetID,
 		azureEnv,
+		quotaProvider,
 	)
 
 	if testOptions.IsAKSMachineAPIMode() && testOptions.AKSMachinesPoolName != "" {
@@ -319,6 +321,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		region,
 		batchCreationEnabled,
 		aksMachineCache,
+		quotaProvider,
 	)
 
 	store := nodeoverlay.NewInstanceTypeStore()

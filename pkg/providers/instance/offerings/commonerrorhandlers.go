@@ -37,6 +37,9 @@ var (
 	OverconstrainedZonalAllocationFailureReason = "OverconstrainedZonalAllocationFailure"
 	OverconstrainedAllocationFailureReason      = "OverconstrainedAllocationFailure"
 	SKUNotAvailableReason                       = "SKUNotAvailable"
+	// InvalidAvailabilityZoneReason is the Compute error code and the normalized
+	// reporting reason for rejected SKU-zone placements from Compute and AKS Machines.
+	InvalidAvailabilityZoneReason = "InvalidAvailabilityZone"
 
 	// LowQuotaTTL is the TTL for offerings that return a quota error but the quota limit is not 0.
 	// This means there is still some quota available, just not enough to fulfill the current request.
@@ -62,6 +65,8 @@ var (
 	// AllocationFailureTTL is the TTL for offerings that returned an allocation failure from Azure. AllocationFailure usually means that there is a capacity
 	// crunch of some kind (for that zone, for that offering, etc). It's unlikely that the capacity crunch resolves itself in a very short amount of time, hence the longer TTL.
 	AllocationFailureTTL = 1 * time.Hour
+	// InvalidAvailabilityZoneTTL controls how often to retry a rejected SKU-zone placement.
+	InvalidAvailabilityZoneTTL = 4 * time.Hour
 	// SKUNotAvailableSpotTTL can happen if the SKU isn't available at all, OR if it's out of capacity for Spot.
 	// In the first case we'd ideally set a longer TTL like we do for on-demand below, but in the other case it may resolve more quickly,
 	// so we set a 1h TTL.
@@ -233,6 +238,25 @@ func handleSKUNotAvailableError(
 		zone,
 		capacityType)
 	return corecloudprovider.NewCreateError(err, SKUNotAvailableReason, err.Error())
+}
+
+func handleInvalidAvailabilityZoneError(
+	ctx context.Context,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
+	_ *skewer.SKU,
+	instanceType *corecloudprovider.InstanceType,
+	zone,
+	_,
+	_,
+	_ string,
+) error {
+	if zone == "" || zone == zones.Regional {
+		return nil
+	}
+	// Zone validity is treated as SKU-specific, independent of priority or reservations.
+	unavailableOfferings.MarkSKUZoneUnavailableWithTTL(ctx, InvalidAvailabilityZoneReason, instanceType.Name, zone, InvalidAvailabilityZoneTTL)
+	err := fmt.Errorf("availability zone %s is not supported for instance type %s (will try another available placement)", zone, instanceType.Name)
+	return corecloudprovider.NewCreateError(err, InvalidAvailabilityZoneReason, err.Error())
 }
 
 // For zonal allocation failure, we will mark all instance types from this SKU family that have >= CPU count as the one that hit the error in this zone
