@@ -126,7 +126,6 @@ func NewStaticValidationReconciler(
 // Reconcile performs static validation checks on the given AKSNodeClass and updates its status accordingly.
 // Complex checks or checks that are dependent on external systems (e.g. calling Azure) should be performed in their own status controller.
 func (r *StaticValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-
 	validators := []validator{
 		r.validateKubernetesVersion,
 		r.validateFIPS,

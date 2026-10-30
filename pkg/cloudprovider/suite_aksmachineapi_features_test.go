@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
-	"github.com/Masterminds/semver/v3"
+	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -220,9 +220,9 @@ var _ = Describe("CloudProvider", func() {
 			// Note: Community Images tests are not ported since Community Images are not supported for AKS Machine API
 			// This aligns with the warning in utils.GetAKSMachineNodeImageVersionFromImageID()
 
-			v132 := semver.MustParse("v1.32.0")
-			v134 := semver.MustParse("v1.34.0")
-			v137 := semver.MustParse("v1.37.0")
+			v132 := new(semver.MustParse("1.32.0"))
+			v134 := new(semver.MustParse("1.34.0"))
+			v137 := new(semver.MustParse("1.37.0"))
 
 			// Ported from VM test DescribeTable: "should select the right Shared Image Gallery image for a given instance type"
 			DescribeTable("should select the right Shared Image Gallery NodeImageVersion for a given instance type",
@@ -233,13 +233,13 @@ var _ = Describe("CloudProvider", func() {
 					minK8sVersion *semver.Version, // Minimum bound (inclusive) for which this test case applies
 					maxK8sVersion *semver.Version, // Maximum bound (exclusive) for which this test case applies
 				) {
-					kubernetesVersion, err := semver.NewVersion(lo.FromPtr(nodeClass.Status.KubernetesVersion))
+					kubernetesVersion, err := semver.Parse(lo.FromPtr(nodeClass.Status.KubernetesVersion))
 					Expect(err).ToNot(HaveOccurred())
-					if minK8sVersion != nil && kubernetesVersion.LessThan(minK8sVersion) {
-						Skip(fmt.Sprintf("requires Kubernetes >= %s; found %s", minK8sVersion, kubernetesVersion))
+					if minK8sVersion != nil && kubernetesVersion.LT(*minK8sVersion) {
+						Skip(fmt.Sprintf("requires Kubernetes >= %s; found %s", *minK8sVersion, kubernetesVersion))
 					}
-					if maxK8sVersion != nil && !kubernetesVersion.LessThan(maxK8sVersion) {
-						Skip(fmt.Sprintf("requires Kubernetes < %s; found %s", maxK8sVersion, kubernetesVersion))
+					if maxK8sVersion != nil && !kubernetesVersion.LT(*maxK8sVersion) {
+						Skip(fmt.Sprintf("requires Kubernetes < %s; found %s", *maxK8sVersion, kubernetesVersion))
 					}
 
 					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
