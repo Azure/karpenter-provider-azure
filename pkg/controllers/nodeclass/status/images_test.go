@@ -17,6 +17,7 @@ limitations under the License.
 package status_test
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -253,6 +254,16 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 					nodeClass.Status.Images = testCase.expectedImages(testCase.oldVersion)
 					nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 				})
+
+				if testCase.useSIG {
+					It("should return an error when getting the latest image version fails", func() {
+						azureEnv.NodeImageVersionsAPI.Error = fmt.Errorf("image lookup failed")
+						imageReconciler := status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, "")
+
+						_, err := imageReconciler.Reconcile(ctx, nodeClass)
+						Expect(err).To(MatchError("getting latest node image version, image lookup failed"))
+					})
+				}
 
 				When("versions are requested", func() {
 					var imageReconciler *status.NodeImageReconciler

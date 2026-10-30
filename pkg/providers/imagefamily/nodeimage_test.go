@@ -649,6 +649,23 @@ var _ = Describe("NodeImageProvider tests", func() {
 	})
 
 	Context("Caching tests", func() {
+		It("should get the latest image version independently from the List cache", func() {
+			cachedImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			communityImageVersionsAPI.Reset()
+			laterCIGImageVersionTest := laterCIGImageVersion
+			communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &laterCIGImageVersionTest})
+
+			latestVersion, err := nodeImageProvider.GetLatestVersion(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(latestVersion).To(Equal(laterCIGImageVersion))
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(Equal(cachedImages))
+		})
+
 		It("should ensure List images uses cached data", func() {
 			// Parse K8s version to determine ImageFamily versions
 			version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
