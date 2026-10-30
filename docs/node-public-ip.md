@@ -1,17 +1,18 @@
 # Node Public IP
 
-Status: available in the AKS Machine API provisioning modes
+Status: available in VM-based and AKS Machine API provisioning modes
 
 An `AKSNodeClass` can give every node it launches its own public IP address, optionally
 allocated from a [public IP prefix](https://learn.microsoft.com/azure/virtual-network/ip-services/public-ip-address-prefix)
 you own. This is the Karpenter equivalent of an agent pool's
 [instance-level public IPs](https://learn.microsoft.com/azure/aks/use-node-public-ips).
 
-AKS creates each address together with the node and deletes it with the node. Karpenter
-has no cleanup of its own to do.
+In Machine API modes, AKS creates each address together with the node and deletes it
+with the node. In VM modes, Karpenter manages the address and its cleanup.
 
 ## Contents
 
+- [Use case: bursty, download-heavy workers](#use-case-bursty-download-heavy-workers)
 - [Supported configurations](#supported-configurations)
 - [Limitations](#limitations)
 - [Prerequisites](#prerequisites)
@@ -25,27 +26,57 @@ has no cleanup of its own to do.
 - [Finding a node's address](#finding-a-nodes-address)
 - [Troubleshooting](#troubleshooting)
 
+## Use case: bursty, download-heavy workers
+
+Batch jobs, CI workers, and data-processing pods can trigger rapid node scale-out
+and then open many concurrent outbound connections to download datasets, packages,
+or build artifacts. Operators using public-IP-enabled AKS agent pools may want to
+retain that egress model when moving those workers to Karpenter.
+
+Without node public IP support in the selected provisioning mode, those workers
+must use another configured egress path. A shared load balancer's outbound SNAT
+port allocation can become a constraint as concurrency increases. A NAT gateway
+can provide scalable SNAT, but its hourly and data-processing charges may be a
+poor fit for high-volume downloads. Compute savings from autoscaling can therefore
+be offset by higher networking costs.
+
+With `nodePublicIP.enabled: true`, each worker node can use its own public IPv4
+address for Internet egress when the network topology permits it. This extends
+the existing Machine API capability to VM-based Karpenter nodes, so operators
+can evaluate per-node egress without giving up workload-driven autoscaling.
+
+This is an opt-in alternative, not a universal performance or cost improvement.
+Public IPv4 address charges, applicable bandwidth charges, quotas, connection
+limits, and the number and lifetime of nodes still matter. Compare these costs
+with the current NAT/SNAT configuration using representative traffic. This
+feature does not remove a NAT gateway or change cluster routing: an attached NAT
+gateway, forced routes, or a separately NAT-enabled pod subnet can still determine
+the egress path. See [Outbound traffic](#outbound-traffic).
+
 ## Supported configurations
 
 | Provisioning mode | Supported |
 | --- | --- |
 | `aksmachineapi` | Yes, on NAP and self-hosted |
 | `aksmachineapiheaderbatch` | Yes, on NAP and self-hosted |
-| `aksscriptless` | No |
-| `bootstrappingclient` | No |
+| `aksscriptless` | Yes, without prefixes or IP tags |
+| `bootstrappingclient` | Yes, without prefixes or IP tags |
 
-The self-hosted default mode is `aksscriptless`, so most self-hosted installations must
-switch to an AKS Machine API mode before they can use this feature.
+VM modes create an owned Standard, Regional, static IPv4 and attach it to the primary
+NIC IP configuration. Its zone follows the selected node zone. The provider requires
+the existing cluster NSG before attachment and does not open inbound rules.
+VM modes reject `nodePublicIP.prefixIDs` and `nodePublicIP.ipTags` with reason
+`NodePublicIPUnsupportedProvisionMode` before creating resources. Both Machine API
+modes support these options; header batching includes the network profile in its
+shared template and grouping.
 
-In an unsupported mode, a NodeClass with `nodePublicIP.enabled: true` will have its
-ValidationSucceeded condition report `False` with reason `NodePublicIPUnsupportedProvisionMode`,
-indicating you are not in a supported provisioning mode. Switching an existing installation from an AKS
-Machine API mode to a VM mode has the same effect: existing nodes keep running, but no new capacity
-is created.
+VM modes use the existing `spec.nodePublicIP.enabled` field. Omitting it keeps
+the current behavior; this feature does not change the default egress model.
 
 ## Limitations
 
-- **VM-based modes.** `aksscriptless` and `bootstrappingclient` aren't supported.
+- **VM-based modes.** Prefixes and IP tags aren't supported. Existing public IP IDs
+  and custom DNS names aren't supported either.
 - **Dual-stack clusters.** Not supported. On a dual-stack cluster, each node would also get a
   public IPv6 address. That address never comes from the prefix, so it isn't on any
   allow-list you built from the prefix, and NSG rules for IPv6 Internet traffic apply to it.
@@ -64,6 +95,11 @@ is created.
   on Windows nodes.
 
 ## Prerequisites
+
+In VM modes, the controller identity requires Network Contributor or equivalent
+narrowly scoped public-IP/NIC permissions on the node resource group. Public IP
+quotas also limit scale-out; bound NodePool capacity and check regional limits.
+The prefix prerequisites below apply only to Machine API modes.
 
 ### Karpenter's identity and the cluster identity can join the prefix
 
@@ -157,7 +193,7 @@ spec:
     enabled: true
 ```
 
-With a prefix, each node gets an address from that prefix:
+In Machine API modes, each node can get an address from a prefix:
 
 ```yaml
 apiVersion: karpenter.azure.com/v1beta1
@@ -297,6 +333,10 @@ spec:
 
 The outbound type is set per cluster, and Karpenter doesn't read it.
 
+The table and AKS rejection codes below describe Machine API modes. In VM modes,
+Karpenter excludes outbound-rule backend pools itself; NAT gateways and forced
+routes can still take precedence over node public IP egress.
+
 Karpenter configures node public IPs. AKS and Azure networking determine routing, egress source
 addresses, and inbound access.
 
@@ -324,7 +364,7 @@ from the NAT gateway's IPs, not from the node IP.
 
 ## API server authorized IP ranges
 
-If the cluster uses
+In Machine API modes, if the cluster uses
 [API server authorized IP ranges](https://learn.microsoft.com/azure/aks/api-server-authorized-ip-ranges),
 each NodeClass with node public IP must use a prefix, and the prefix's range must be in the
 authorized list.
@@ -333,6 +373,9 @@ authorized list.
   API Server VNet Integration.
 - AKS doesn't check that the prefix is in the authorized list. If it isn't, nodes may fail to
   reach the API server and never register.
+
+VM modes cannot use prefixes. Ensure nodes can reach the API server through an
+allowed path, such as private connectivity, before enabling node public IPs.
 
 ## Network security and host ports
 
@@ -357,13 +400,15 @@ unless a network security group (NSG) allows it.
   Automatic enables lockdown by default.
 - **AKS-managed VNet.** Persistence of custom rules in the AKS-managed NSG across AKS
   reconciliation is unverified. Check that required rules remain in place after reconciliation.
-- **BYO VNet.** Attachment of the AKS-managed NSG to node NICs is unverified for this setup.
-  Inspect each node NIC's NSG association before relying on subnet NSG rules alone.
+- **BYO VNet.** VM modes explicitly attach the AKS-managed NSG. Attachment in Machine
+  API modes is unverified for this setup. Inspect each node NIC's NSG association
+  before relying on subnet NSG rules alone.
 
 ## Finding a node's address
 
-Karpenter doesn't publish the address on the NodeClaim or NodeClass. Read the node's
-`ExternalIP`:
+Karpenter doesn't publish the address on the NodeClaim or NodeClass. In Machine API
+modes, read the node's `ExternalIP`; for VM modes, inspect Azure directly as shown
+under [Verification](#verification):
 
 ```bash
 kubectl get node <node> -o jsonpath='{.status.addresses[?(@.type=="ExternalIP")].address}'
@@ -371,6 +416,7 @@ kubectl get node <node> -o jsonpath='{.status.addresses[?(@.type=="ExternalIP")]
 
 ## Troubleshooting
 
+The AKS-specific errors below apply to Machine API modes.
 Public IP errors are about the NodeClass, not the VM size or zone, so Karpenter doesn't try
 other sizes or zones, and it doesn't mark any offering as unavailable. It shows the Azure error
 code and message in one of two places.
@@ -412,3 +458,84 @@ kubectl get events -A --field-selector involvedObject.kind=NodeClaim,reason=Asyn
 
 Where AKS doesn't pass on a more specific network error, the code is
 `CreateOrUpdatePublicIPAddressError`.
+## VM load balancer compatibility
+
+Azure rejects a NIC with an instance public IP if it references a backend pool
+used by an LB outbound rule (`NicWithPublicIpCannotReferencePoolWithOutboundRule`).
+The VM path excludes the AKS outbound pools and any pools explicitly referenced
+by outbound rules, including on retries, while retaining eligible inbound pools.
+If an inbound service shares the same outbound-rule pool, split those pools in
+the load-balancer configuration before using public-IP nodes for that service.
+
+## Egress and Cost
+
+A node public IP is an explicit outbound method, but does not itself remove a NAT
+Gateway, a load balancer, or a user-defined route. In particular, an associated
+NAT Gateway or a route through an NVA/firewall can take precedence. Verify the
+actual external source IP instead of assuming the new address is used.
+
+It may avoid NAT Gateway/LB processing charges for direct traffic. Public IPv4
+hours and normal outbound data-transfer charges still apply. More public IPs may
+cost more at large node counts; this feature is not a general promise of lower
+total cost. Review current regional prices and security requirements.
+
+For a new isolated validation cluster:
+
+1. Use an independent resource group and BYO subnet with no NAT Gateway and no
+   forced-tunneling default route. Disable implicit `defaultOutboundAccess` so
+   successful Internet access cannot be mistaken for default SNAT.
+2. Give the AKS system pool its own public IPs with `--enable-node-public-ip` too.
+   Karpenter's NodeClass does not configure the AKS system pool.
+3. Use an AKS-supported egress topology. Current AKS documentation restricts
+   `outboundType: none` to network-isolated clusters, with its associated bootstrap
+   artifact and networking requirements. Do not simply set `none` on an ordinary
+   cluster without satisfying those requirements. `userDefinedRouting` has its
+   own route validation requirements and is not a free shortcut.
+4. If retaining `outboundType: loadBalancer`, node-level direct egress can be
+   tested, but the managed LB may still exist and incur resource charges. Do not
+   claim a zero-LB deployment in that case.
+5. Do not alter the egress mode of an existing production cluster as part of this
+   test; changing outbound topology can break current connections.
+
+## Verification
+
+```bash
+kubectl get aksnodeclass public --output yaml
+kubectl get nodeclaims --output wide
+az network public-ip list --subscription "$AZURE_SUBSCRIPTION_ID" \
+  --resource-group "$NODE_RESOURCE_GROUP" \
+  --query '[].{name:name,ip:ipAddress,sku:sku.name,zones:zones,owner:tags}' --output json
+az network nic show --subscription "$AZURE_SUBSCRIPTION_ID" \
+  --resource-group "$NODE_RESOURCE_GROUP" --name "$NODE_VM_NAME" \
+  --query '{nsg:networkSecurityGroup.id,ips:ipConfigurations[].publicIPAddress.id}' --output json
+```
+
+Run a small Pod pinned to the new node and query an approved external IP echo
+endpoint. Compare the observed source address with the node's public IP. For
+Azure CNI overlay this verifies pod-to-node SNAT and Internet egress together.
+Treat non-overlay Pod networking as a separate network configuration requiring
+its own egress verification.
+
+Also inspect the subnet's NAT Gateway and route table and the node resource
+group's load balancers. The expected evidence is the actual source IP plus the
+resource topology, not merely `nodePublicIP.enabled: true` in YAML.
+
+## Cleanup and Failure Handling
+
+The VM path creates a tagged NIC before allocating the IP, so interrupted
+provisioning remains discoverable by existing garbage collection. Retries reuse
+an owned address. Cleanup deletes the VM, then NIC, then the owned public IP.
+The NIC garbage collector also scans orphaned IPs, protecting addresses linked
+to live NodeClaims/VMs, existing NICs, other clusters, or other IP configurations.
+Authorization, dependency, and delete failures are returned for retry, not hidden.
+
+After deleting a test NodeClaim, wait for Azure LROs and garbage collection, then
+verify that both NIC and owned IP are gone. Repeat with an intentionally invalid
+VM creation request and confirm that no billable orphan is left behind. Do not
+delete arbitrary IPs by name; only provider-owned IPs carry the required owner
+and cluster tags.
+
+References: [AKS node public IPs](https://learn.microsoft.com/azure/aks/use-node-public-ips),
+[AKS egress types](https://learn.microsoft.com/azure/aks/egress-outboundtype),
+[explicit outbound access](https://learn.microsoft.com/azure/virtual-network/ip-services/default-outbound-access),
+[public IP pricing](https://azure.microsoft.com/pricing/details/ip-addresses/).

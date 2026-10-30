@@ -17,7 +17,12 @@ limitations under the License.
 package instance
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"path"
 	"strings"
 	"testing"
 
@@ -27,13 +32,90 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
+
+func TestOwnedPublicIPLifecycle(test *testing.T) {
+	expect := NewWithT(test)
+	transport := &publicIPTestPolicy{addresses: map[string]armnetwork.PublicIPAddress{}}
+	api, err := armnetwork.NewPublicIPAddressesClient("subscriptionID", nil, &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+		PerCallPolicies: []policy.Policy{transport},
+	}})
+	expect.Expect(err).NotTo(HaveOccurred())
+	provider := &DefaultVMProvider{azClient: &azclient.AZClient{PublicIPAddressesClient: api}, resourceGroup: "nodes", location: "eastus2"}
+	ctx := options.ToContext(context.Background(), &options.Options{ClusterName: "test-cluster"})
+	address, err := provider.ensurePublicIP(ctx, "aks-test", "eastus2-1", nil)
+	expect.Expect(err).NotTo(HaveOccurred())
+	expect.Expect(address.SKU.Name).To(Equal(lo.ToPtr(armnetwork.PublicIPAddressSKUNameStandard)))
+	expect.Expect(address.Properties.PublicIPAllocationMethod).To(Equal(lo.ToPtr(armnetwork.IPAllocationMethodStatic)))
+	expect.Expect(address.Zones).To(Equal([]*string{lo.ToPtr("1")}))
+	_, err = provider.ensurePublicIP(ctx, "aks-test", "eastus2-1", nil)
+	expect.Expect(err).NotTo(HaveOccurred())
+	expect.Expect(transport.creates).To(Equal(1))
+	expect.Expect(provider.deletePublicIP(ctx, "aks-test")).To(Succeed())
+	expect.Expect(provider.deletePublicIP(ctx, "aks-test")).To(Succeed())
+	expect.Expect(transport.deletes).To(Equal(1))
+	transport.addresses["external"] = armnetwork.PublicIPAddress{Name: lo.ToPtr("external")}
+	_, err = provider.ensurePublicIP(ctx, "external", "eastus2-1", nil)
+	expect.Expect(err).To(HaveOccurred())
+	expect.Expect(provider.deletePublicIP(ctx, "external")).To(Succeed())
+	expect.Expect(transport.deletes).To(Equal(1))
+}
+
+type publicIPTestPolicy struct {
+	addresses map[string]armnetwork.PublicIPAddress
+	creates   int
+	deletes   int
+}
+
+func (transport *publicIPTestPolicy) Do(request *policy.Request) (*http.Response, error) {
+	name := path.Base(request.Raw().URL.Path)
+	response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Request: request.Raw()}
+	var result interface{}
+	switch request.Raw().Method {
+	case http.MethodGet:
+		address, exists := transport.addresses[name]
+		if !exists {
+			response.StatusCode = http.StatusNotFound
+			result = map[string]interface{}{"error": map[string]string{"code": "ResourceNotFound"}}
+		} else {
+			result = address
+		}
+	case http.MethodPut:
+		var address armnetwork.PublicIPAddress
+		if err := json.NewDecoder(request.Raw().Body).Decode(&address); err != nil {
+			return nil, err
+		}
+		address.Name = &name
+		address.ID = lo.ToPtr(request.Raw().URL.Path)
+		address.Properties.ProvisioningState = lo.ToPtr(armnetwork.ProvisioningStateSucceeded)
+		transport.addresses[name] = address
+		transport.creates++
+		result = address
+	case http.MethodDelete:
+		delete(transport.addresses, name)
+		transport.deletes++
+		response.StatusCode = http.StatusNoContent
+	default:
+		return nil, fmt.Errorf("unexpected public IP test method %s", request.Raw().Method)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	response.Body = io.NopCloser(strings.NewReader(string(encoded)))
+	return response, nil
+}
 
 func TestVMFIPS1403EncryptionPayload(t *testing.T) {
 	for _, fips := range []bool{false, true} {

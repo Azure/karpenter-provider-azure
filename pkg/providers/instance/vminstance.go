@@ -166,6 +166,7 @@ type VMProvider interface {
 	GetNic(context.Context, string, string) (*armnetwork.Interface, error)
 	DeleteNic(context.Context, string) error
 	ListNics(context.Context) ([]*armnetwork.Interface, error)
+	CleanupPublicIPs(context.Context, sets.Set[string]) error
 }
 
 // assert that DefaultProvider implements Provider interface
@@ -402,6 +403,11 @@ func (p *DefaultVMProvider) deleteImpl(ctx context.Context, resourceName string)
 	// Since get quota is generally higher, we prefer to check w/ get rather than issue 2 deletes.
 	vm, err := p.Get(ctx, resourceName)
 	if err != nil {
+		if corecloudprovider.IsNodeClaimNotFoundError(err) {
+			if cleanupErr := p.DeleteNic(ctx, resourceName); cleanupErr != nil {
+				return true, cleanupErr
+			}
+		}
 		return corecloudprovider.IsNodeClaimNotFoundError(err), err
 	}
 	// Check if the instance is already shutting down to reduce the number of API calls.
@@ -445,7 +451,10 @@ func (p *DefaultVMProvider) ListNics(ctx context.Context) ([]*armnetwork.Interfa
 }
 
 func (p *DefaultVMProvider) DeleteNic(ctx context.Context, nicName string) error {
-	return deleteNicIfExists(ctx, p.azClient.NetworkInterfacesClient(), p.resourceGroup, nicName)
+	if err := deleteNicIfExists(ctx, p.azClient.NetworkInterfacesClient(), p.resourceGroup, nicName); err != nil {
+		return err
+	}
+	return p.deletePublicIP(ctx, nicName)
 }
 
 // createAKSIdentifyingExtension attaches a VM extension to identify that this VM participates in an AKS cluster
@@ -547,6 +556,8 @@ func GenerateResourceName(nodeClaimName string) string {
 
 type createNICOptions struct {
 	NICName                string
+	Zone                   string
+	EnableNodePublicIP     bool
 	BackendPools           *loadbalancer.BackendAddressPools
 	InstanceType           *corecloudprovider.InstanceType
 	LaunchTemplate         *launchtemplate.Template
@@ -560,9 +571,24 @@ func (p *DefaultVMProvider) createNetworkInterface(ctx context.Context, opts *cr
 	nic := p.newNetworkInterfaceForVM(opts)
 	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
 	log.FromContext(ctx).V(1).Info("creating network interface", "nicName", opts.NICName)
-	res, err := createNic(ctx, p.azClient.NetworkInterfacesClient(), p.resourceGroup, opts.NICName, nic)
+	var res *armnetwork.Interface
+	var err error
+	if opts.EnableNodePublicIP {
+		res, err = p.GetNic(ctx, p.resourceGroup, opts.NICName)
+		if err != nil && !sdkerrors.IsNotFoundErr(err) {
+			return "", err
+		}
+	}
+	if res == nil {
+		res, err = createNic(ctx, p.azClient.NetworkInterfacesClient(), p.resourceGroup, opts.NICName, nic)
+	}
 	if err != nil {
 		return "", err
+	}
+	if opts.EnableNodePublicIP {
+		if err := p.attachPublicIP(ctx, res, opts); err != nil {
+			return "", err
+		}
 	}
 	log.FromContext(ctx).V(1).Info("successfully created network interface", "nicName", opts.NICName, "nicID", *res.ID)
 	return *res.ID, nil
@@ -830,7 +856,10 @@ func resolveUltraSSDRequested(nodeClaim *karpv1.NodeClaim) bool {
 	return compatibleWithTrue && !compatibleWithFalse
 }
 
-func filterBackendPools(pools *loadbalancer.BackendAddressPools, nodeClaim *karpv1.NodeClaim) *loadbalancer.BackendAddressPools {
+func filterBackendPools(pools *loadbalancer.BackendAddressPools, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) *loadbalancer.BackendAddressPools {
+	if nodeClass.IsNodePublicIPEnabled() {
+		pools = pools.WithoutOutboundPools()
+	}
 	// Azure CCM's updateNodeCaches adds nodes to its load balancer exclusion cache based on label
 	// presence, regardless of value. Match that here so initial NIC backend pool assignment agrees.
 	// https://github.com/kubernetes-sigs/cloud-provider-azure/blob/e2712175252faaf96b39313b303f94b79a1d1171/pkg/provider/azure.go#L851-L868
@@ -884,6 +913,9 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		return nil, fmt.Errorf("getting VM %q: %w", resourceName, err)
 	}
 
+	if len(nodeClass.GetNodePublicIPPrefixIDs()) > 0 || len(nodeClass.GetNodePublicIPTags()) > 0 {
+		return nil, fmt.Errorf("nodePublicIP.prefixIDs and nodePublicIP.ipTags require an AKS Machine API provision mode")
+	}
 	selection := p.allocationStrategyProvider.Allocate(
 		ctx,
 		instanceTypes,
@@ -907,7 +939,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	if err != nil {
 		return nil, fmt.Errorf("getting backend pools: %w", err)
 	}
-	backendPools = filterBackendPools(backendPools, nodeClaim)
+	backendPools = filterBackendPools(backendPools, nodeClaim, nodeClass)
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
 
@@ -916,7 +948,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		return nil, fmt.Errorf("checking if vnet is managed: %w", err)
 	}
 	var nsgID string
-	if !isAKSManagedVNET {
+	if !isAKSManagedVNET || nodeClass.IsNodePublicIPEnabled() {
 		nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("getting managed network security group: %w", err)
@@ -930,6 +962,8 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	// TODO: emitted in capacity failure cases that we probably want.
 	nicOpts := &createNICOptions{
 		NICName:                resourceName,
+		Zone:                   zone,
+		EnableNodePublicIP:     nodeClass.IsNodePublicIPEnabled(),
 		NetworkPlugin:          networkPlugin,
 		NetworkPluginMode:      networkPluginMode,
 		MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
@@ -948,7 +982,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		if refreshErr != nil {
 			return nil, fmt.Errorf("refreshing backend pools after network interface failure: %w", refreshErr)
 		}
-		nicOpts.BackendPools = filterBackendPools(refreshedPools, nodeClaim)
+		nicOpts.BackendPools = filterBackendPools(refreshedPools, nodeClaim, nodeClass)
 		// Try again
 		nicReference, err = p.createNetworkInterface(ctx, nicOpts)
 	}
@@ -1109,7 +1143,7 @@ func (p *DefaultVMProvider) cleanupAzureResources(ctx context.Context, resourceN
 	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
 	// then we attempt to delete the nic.
 
-	nicErr := deleteNicIfExists(ctx, p.azClient.NetworkInterfacesClient(), p.resourceGroup, resourceName)
+	nicErr := p.DeleteNic(ctx, resourceName)
 
 	if mustDeleteNic {
 		// Don't log NIC error here since mustDeleteNic is true (critical cleanup scenario).

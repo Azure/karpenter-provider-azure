@@ -92,6 +92,8 @@ var _ = Describe("CloudProvider", func() {
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 		})
 
+		runNodePublicIPTests(consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch)
+
 		It("should pass the capacity reservation group through the Machine template", func() {
 			groupID := "/subscriptions/subscriptionID/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"
 			nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{
