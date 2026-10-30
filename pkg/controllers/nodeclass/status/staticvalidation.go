@@ -18,6 +18,7 @@ package status
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -38,6 +40,9 @@ const (
 	FIPSRequired                      = "FIPSRequired"
 	IncompatibleProvisionMode         = "IncompatibleProvisionMode"
 	SIGRequiredForAzureContainerLinux = "SIGRequiredForAzureContainerLinux"
+	// ImageFamilyKubernetesVersionIncompatible identifies a pinned Ubuntu family
+	// outside its supported Kubernetes version range.
+	ImageFamilyKubernetesVersionIncompatible = "ImageFamilyKubernetesVersionIncompatible"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -75,6 +80,9 @@ type StaticValidationReconciler struct {
 	parsedDiskEncryptionSetID *arm.ResourceID // parsed by options.Validate(), will be nil if DiskEncryptionSetID is not set
 }
 
+// validator defines the signature for a static validation function that checks an AKSNodeClass.
+// It returns a validationResult indicating whether the check passed, failed, or should be retried, along with any error encountered.
+// Errors must be reserved for failures to perform validation, not for invalid configuration.
 type validator func(context.Context, *v1beta1.AKSNodeClass) (validationResult, error)
 
 type validationResult struct {
@@ -119,6 +127,7 @@ func NewStaticValidationReconciler(
 // Complex checks or checks that are dependent on external systems (e.g. calling Azure) should be performed in their own status controller.
 func (r *StaticValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	validators := []validator{
+		r.validateKubernetesVersion,
 		r.validateFIPS,
 		r.validateACLConfiguration,
 		r.validateWindowsCompatibility,
@@ -126,6 +135,7 @@ func (r *StaticValidationReconciler) Reconcile(ctx context.Context, nodeClass *v
 		r.validateManagedGPUProvisionMode,
 		r.validateNodePublicIPProvisionMode,
 		r.validateKataImageFamily,
+		r.validateImageFamilyCompatibility,
 		r.validateDiskEncryptionSetRBAC,
 	}
 
@@ -134,12 +144,14 @@ func (r *StaticValidationReconciler) Reconcile(ctx context.Context, nodeClass *v
 		if err != nil {
 			return reconcile.Result{}, err
 		}
+
 		if !result.passed {
 			nodeClass.StatusConditions().SetFalse(
 				v1beta1.ConditionTypeValidationSucceeded,
 				result.reason,
 				result.message,
 			)
+
 			return reconcile.Result{RequeueAfter: result.requeueAfter}, nil
 		}
 	}
@@ -147,6 +159,36 @@ func (r *StaticValidationReconciler) Reconcile(ctx context.Context, nodeClass *v
 	// All validations passed - requeue to detect permission revocations
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
+}
+
+// Validates the Kubernetes version from AKSNodeClass to catch problems early before other validators
+// stumble on the value.
+// This frees up other validators to return an error if they can't be evaluated due to an invalid Kubernetes version,
+// simplifying their internal logic, because in practice they'll never be called if it's invalid.
+func (r *StaticValidationReconciler) validateKubernetesVersion(
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+) (validationResult, error) {
+	// Retrieve the Kubernetes version from the node class
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		// We couldn't get the Kubernetes version, which may be because it's not ready yet.
+		// Fail validation instead of returning an error
+		return fail(
+			"KubernetesVersionNotReady",
+			fmt.Sprintf("getting kubernetes version: %v", err),
+		), nil
+	}
+
+	_, err = semver.ParseTolerant(kubernetesVersion)
+	if err != nil {
+		return fail(
+			"MalformedKubernetesVersion",
+			fmt.Sprintf("malformed Kubernetes version %q: %v", kubernetesVersion, err),
+		), nil
+	}
+
+	return pass(), nil
 }
 
 func (r *StaticValidationReconciler) validateACLConfiguration(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
@@ -252,6 +294,21 @@ func (r *StaticValidationReconciler) validateKataImageFamily(_ context.Context, 
 			), nil
 		}
 	}
+	return pass(), nil
+}
+
+func (r *StaticValidationReconciler) validateImageFamilyCompatibility(_ context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
+	if err := imagefamily.ValidateImageFamilyCompatibility(nodeClass); err != nil {
+		var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
+		if errors.As(err, &incompatibleErr) {
+			// Spec changes and Kubernetes version reconciliation drive reevaluation;
+			// polling cannot resolve this static incompatibility.
+			return fail(ImageFamilyKubernetesVersionIncompatible, err.Error()), nil
+		}
+
+		return validationResult{}, fmt.Errorf("validating image family compatibility: %w", err)
+	}
+
 	return pass(), nil
 }
 

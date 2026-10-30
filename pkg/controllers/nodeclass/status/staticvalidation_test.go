@@ -32,13 +32,13 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/samber/lo"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
 
 // createZoneOverride creates a LocalDNSZoneOverride with all required fields
@@ -60,6 +60,46 @@ func createZoneOverride(zone string, forwardToVnetDNS bool) v1beta1.LocalDNSZone
 	}
 }
 
+var _ = Describe("NodeClass Status Controller image family compatibility", func() {
+	DescribeTable("derives readiness from Ubuntu compatibility with the selected Kubernetes version",
+		func(controlPlaneVersion, requestedVersion string, compatible bool) {
+			provider := &testKubernetesVersionProvider{
+				controlPlaneVersion: controlPlaneVersion,
+				supportedVersions:   map[string]bool{requestedVersion: true},
+			}
+			statusController := status.NewController(
+				env.Client, azureEnv.SubscriptionID, fake.Region, provider, azureEnv.ImageProvider,
+				env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface,
+				azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID,
+				options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
+				azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI,
+				azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace,
+			)
+			pinnedNodeClass := test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
+			pinnedNodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+			if requestedVersion != "" {
+				pinnedNodeClass.Spec.Versions = &v1beta1.Versions{KubernetesVersion: lo.ToPtr(requestedVersion)}
+			}
+			ExpectApplied(ctx, env.Client, pinnedNodeClass)
+			ExpectObjectReconciled(ctx, env.Client, statusController, pinnedNodeClass)
+			pinnedNodeClass = ExpectExists(ctx, env.Client, pinnedNodeClass)
+
+			Expect(pinnedNodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue()).To(BeTrue())
+			Expect(pinnedNodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue()).To(BeTrue())
+			validation := pinnedNodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(validation.IsTrue()).To(Equal(compatible))
+			Expect(pinnedNodeClass.StatusConditions().Root().IsTrue()).To(Equal(compatible))
+			if !compatible {
+				Expect(validation.Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
+				Expect(pinnedNodeClass.StatusConditions().Root().IsFalse()).To(BeTrue())
+			}
+		},
+		Entry("incompatible discovered version", "1.31.0", "", false),
+		Entry("compatible discovered version", "1.32.0", "", true),
+		Entry("incompatible pinned version despite compatible control plane", "1.32.0", "1.31.0", false),
+	)
+})
+
 var _ = Describe("Validation Reconciler", func() {
 	var ctx context.Context
 	var reconciler *status.StaticValidationReconciler
@@ -72,13 +112,10 @@ var _ = Describe("Validation Reconciler", func() {
 		fakeDesAPI = &fake.DiskEncryptionSetsAPI{}
 
 		reconciler = status.NewStaticValidationReconciler(fakeDesAPI, emptyDiskEncryptionSetID)
-		nodeClass = &v1beta1.AKSNodeClass{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:       "test-nodeclass",
-				Generation: 1,
-			},
-			Spec: v1beta1.AKSNodeClassSpec{},
-		}
+
+		nodeClass = test.AKSNodeClass(
+			test.WithDefaultStatus(env, false),
+			test.WithVersionBasedDefaults(env.Version))
 	})
 
 	Context("provision mode compatibility", func() {
@@ -188,6 +225,241 @@ var _ = Describe("Validation Reconciler", func() {
 		})
 	})
 
+	Context("image family Kubernetes version compatibility", func() {
+		setVersion := func(version string) {
+			nodeClass.Status.KubernetesVersion = lo.ToPtr(version)
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+		}
+
+		DescribeTable("validates pinned Ubuntu families",
+			func(family, version string, fips bool, expectedMessage string) {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(family)
+				if fips {
+					nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+				}
+				setVersion(version)
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				if expectedMessage == "" {
+					Expect(condition.IsTrue()).To(BeTrue())
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				} else {
+					Expect(condition.IsFalse()).To(BeTrue())
+					Expect(condition.Reason).To(Equal("ImageFamilyKubernetesVersionIncompatible"))
+					Expect(condition.Message).To(Equal(expectedMessage))
+					Expect(nodeClass.StatusConditions().Root().IsFalse()).To(BeTrue())
+					Expect(result).To(Equal(reconcile.Result{}))
+				}
+			},
+			Entry("Ubuntu2404 below lower bound", v1beta1.Ubuntu2404ImageFamily, "1.31", false,
+				`requested image family Ubuntu2404 is not supported with discovered Kubernetes version "1.31"; supported range is >= 1.32.0`),
+			Entry("Ubuntu2404 lower bound", v1beta1.Ubuntu2404ImageFamily, "1.32.0", false, ""),
+			Entry("Ubuntu2204 lower bound", v1beta1.Ubuntu2204ImageFamily, "1.25.2", false, ""),
+			Entry("Ubuntu2204 upper bound", v1beta1.Ubuntu2204ImageFamily, "1.37.0", false,
+				`requested image family Ubuntu2204 is not supported with discovered Kubernetes version "1.37.0"; supported range is >= 1.25.2 and < 1.37.0`),
+			Entry("Ubuntu2204 FIPS extended range", v1beta1.Ubuntu2204ImageFamily, "1.38.9", true, ""),
+			Entry("Ubuntu2204 FIPS upper bound", v1beta1.Ubuntu2204ImageFamily, "1.39.0", true,
+				`requested image family Ubuntu2204 FIPS is not supported with discovered Kubernetes version "1.39.0"; supported range is >= 1.25.2 and < 1.39.0`),
+		)
+
+		DescribeTable("applies the same policy in every provisioning mode",
+			func(mode string) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: mode})
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+				setVersion("1.31.0")
+				_, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason).To(Equal("ImageFamilyKubernetesVersionIncompatible"))
+			},
+			Entry("scriptless", consts.ProvisionModeAKSScriptless),
+			Entry("bootstrapping client", consts.ProvisionModeBootstrappingClient),
+			Entry("Machine API", consts.ProvisionModeAKSMachineAPI),
+			Entry("batched Machine API", consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
+
+		It("recovers after a spec change or Kubernetes upgrade", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+			setVersion("1.31.0")
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsFalse()).To(BeTrue())
+
+			nodeClass.Generation++
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			setVersion("1.31.0")
+			_, err = reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+
+			nodeClass.Generation++
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+			setVersion("1.31.0")
+			_, err = reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsFalse()).To(BeTrue())
+
+			setVersion("1.32.0")
+			_, err = reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+
+		DescribeTable("reports unavailable or malformed versions as validation failures and recovers",
+			func(version *string, versionReady bool, expectedReason, expectedMessage string) {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
+				nodeClass.Generation++
+				nodeClass.Status.KubernetesVersion = version
+				if versionReady {
+					nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+				} else {
+					nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionUnsupported", "requested version is not supported")
+				}
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal(reconcile.Result{}))
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(expectedReason))
+				Expect(condition.Message).To(ContainSubstring(expectedMessage))
+				Expect(condition.ObservedGeneration).To(Equal(nodeClass.Generation))
+				Expect(nodeClass.StatusConditions().Root().IsFalse()).To(BeTrue())
+
+				setVersion("1.32.0")
+				result, err = reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				condition = nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsTrue()).To(BeTrue())
+				Expect(condition.ObservedGeneration).To(Equal(nodeClass.Generation))
+			},
+			Entry("version not ready", nil, false, "KubernetesVersionNotReady", "requested version is not supported"),
+			Entry("version not ready despite a populated status", lo.ToPtr("1.32.0"), false, "KubernetesVersionNotReady", "requested version is not supported"),
+			Entry("uninitialized version", nil, true, "KubernetesVersionNotReady", "KubernetesVersion is uninitialized"),
+			Entry("empty version", lo.ToPtr(""), true, "KubernetesVersionNotReady", "KubernetesVersion is uninitialized"),
+			Entry("malformed version", lo.ToPtr("1.32.x"), true, "MalformedKubernetesVersion", `malformed Kubernetes version "1.32.x"`),
+			Entry("bogus version", lo.ToPtr("Bogus"), true, "MalformedKubernetesVersion", `malformed Kubernetes version "Bogus"`),
+		)
+
+		It("waits for Kubernetes version readiness to catch up with the current generation", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
+			nodeClass.Generation++
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal("KubernetesVersionNotReady"))
+			Expect(condition.Message).To(ContainSubstring("ObservedGeneration"))
+			Expect(condition.ObservedGeneration).To(Equal(nodeClass.Generation))
+
+			setVersion("1.32.0")
+			result, err = reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+
+		DescribeTable("validates DES for unpinned families once the Kubernetes version is ready",
+			func(family *string, desDenied bool) {
+				nodeClass.Spec.ImageFamily = family
+				parsedID := lo.Must(arm.ParseResourceID("/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Compute/diskEncryptionSets/test-des"))
+				reconciler = status.NewStaticValidationReconciler(fakeDesAPI, parsedID)
+				calls := 0
+				fakeDesAPI.GetFunc = func(context.Context, string, string, *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
+					calls++
+					if desDenied {
+						return armcompute.DiskEncryptionSetsClientGetResponse{}, &azcore.ResponseError{StatusCode: http.StatusForbidden}
+					}
+					return armcompute.DiskEncryptionSetsClientGetResponse{}, nil
+				}
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(calls).To(Equal(1))
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				if desDenied {
+					Expect(condition.IsFalse()).To(BeTrue())
+					Expect(condition.Reason).To(Equal(status.DiskEncryptionSetRBACMissing))
+					Expect(result.RequeueAfter).To(Equal(status.ValidationFailureRequeueInterval))
+				} else {
+					Expect(condition.IsTrue()).To(BeTrue())
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				}
+			},
+			Entry("generic Ubuntu with DES access", lo.ToPtr(v1beta1.UbuntuImageFamily), false),
+			Entry("generic Ubuntu without DES access", lo.ToPtr(v1beta1.UbuntuImageFamily), true),
+			Entry("unset with DES access", nil, false),
+			Entry("unset without DES access", nil, true),
+			Entry("AzureLinux with DES access", lo.ToPtr(v1beta1.AzureLinuxImageFamily), false),
+			Entry("AzureLinux without DES access", lo.ToPtr(v1beta1.AzureLinuxImageFamily), true),
+		)
+
+		DescribeTable("defers DES validation until the Kubernetes version is ready",
+			func(family *string, kata bool) {
+				nodeClass.Spec.ImageFamily = family
+				if kata {
+					nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+					ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeAKSMachineAPI})
+				}
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionInvalidFormat", "invalid kubernetes version format")
+				parsedID := lo.Must(arm.ParseResourceID("/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Compute/diskEncryptionSets/test-des"))
+				reconciler = status.NewStaticValidationReconciler(fakeDesAPI, parsedID)
+				calls := 0
+				fakeDesAPI.GetFunc = func(context.Context, string, string, *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
+					calls++
+					return armcompute.DiskEncryptionSetsClientGetResponse{}, nil
+				}
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal(reconcile.Result{}))
+				Expect(calls).To(BeZero())
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("KubernetesVersionNotReady"))
+
+				setVersion("1.32.0")
+				result, err = reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				Expect(calls).To(Equal(1))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+			},
+			Entry("Ubuntu2204", lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), false),
+			Entry("Ubuntu2404", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), false),
+			Entry("generic Ubuntu", lo.ToPtr(v1beta1.UbuntuImageFamily), false),
+			Entry("unset image family", nil, false),
+			Entry("AzureLinux", lo.ToPtr(v1beta1.AzureLinuxImageFamily), false),
+			Entry("AzureLinux with Kata", lo.ToPtr(v1beta1.AzureLinuxImageFamily), true),
+		)
+
+		It("skips DES validation until the pinned image family is compatible", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+			parsedID := lo.Must(arm.ParseResourceID("/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Compute/diskEncryptionSets/test-des"))
+			reconciler = status.NewStaticValidationReconciler(fakeDesAPI, parsedID)
+			calls := 0
+			fakeDesAPI.GetFunc = func(context.Context, string, string, *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
+				calls++
+				return armcompute.DiskEncryptionSetsClientGetResponse{}, nil
+			}
+			setVersion("1.31.0")
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(calls).To(BeZero())
+
+			setVersion("1.32.0")
+			_, err = reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(calls).To(Equal(1))
+		})
+	})
+
 	Context("Windows network dataplane validation", func() {
 		DescribeTable("should fail validation for Windows image families on Cilium",
 			func(imageFamily string) {
@@ -223,6 +495,8 @@ var _ = Describe("Validation Reconciler", func() {
 		It("should pass validation for Linux on Cilium", func() {
 			ctx = options.ToContext(ctx, &options.Options{NetworkDataplane: consts.NetworkDataplaneCilium})
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.32.0")
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
@@ -281,6 +555,8 @@ var _ = Describe("Validation Reconciler", func() {
 					ProvisionMode:    provisionMode,
 				})
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.32.0")
+				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 				result, err := reconciler.Reconcile(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
