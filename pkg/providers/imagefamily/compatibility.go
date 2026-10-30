@@ -153,6 +153,7 @@ func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass) error {
 	if err != nil {
 		return fmt.Errorf("malformed Kubernetes version %q: %w", kubernetesVersion, err)
 	}
+
 	// AKS build suffixes describe a released Kubernetes version, not a prerelease.
 	// Keep genuine prereleases (alpha, beta, rc) subject to normal semver ordering.
 	if len(version.Pre) > 0 && strings.HasPrefix(version.Pre[0].VersionStr, "aks") {
