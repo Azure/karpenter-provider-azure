@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
+	"github.com/Masterminds/semver/v3"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -219,9 +220,28 @@ var _ = Describe("CloudProvider", func() {
 			// Note: Community Images tests are not ported since Community Images are not supported for AKS Machine API
 			// This aligns with the warning in utils.GetAKSMachineNodeImageVersionFromImageID()
 
+			v132 := semver.MustParse("v1.32.0")
+			v134 := semver.MustParse("v1.34.0")
+			v137 := semver.MustParse("v1.37.0")
+
 			// Ported from VM test DescribeTable: "should select the right Shared Image Gallery image for a given instance type"
 			DescribeTable("should select the right Shared Image Gallery NodeImageVersion for a given instance type",
-				func(instanceType string, imageFamily string, expectedImageDefinition string) {
+				func(
+					instanceType string,
+					imageFamily string,
+					expectedImageDefinition string,
+					minK8sVersion *semver.Version, // Minimum bound (inclusive) for which this test case applies
+					maxK8sVersion *semver.Version, // Maximum bound (exclusive) for which this test case applies
+				) {
+					kubernetesVersion, err := semver.NewVersion(lo.FromPtr(nodeClass.Status.KubernetesVersion))
+					Expect(err).ToNot(HaveOccurred())
+					if minK8sVersion != nil && kubernetesVersion.LessThan(minK8sVersion) {
+						Skip(fmt.Sprintf("requires Kubernetes >= %s; found %s", minK8sVersion, kubernetesVersion))
+					}
+					if maxK8sVersion != nil && !kubernetesVersion.LessThan(maxK8sVersion) {
+						Skip(fmt.Sprintf("requires Kubernetes < %s; found %s", maxK8sVersion, kubernetesVersion))
+					}
+
 					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelInstanceTypeStable,
@@ -243,105 +263,31 @@ var _ = Describe("CloudProvider", func() {
 					nodeImageVersion := lo.FromPtr(aksMachine.Properties.NodeImageVersion)
 					Expect(nodeImageVersion).To(ContainSubstring(expectedImageDefinition))
 				},
-				// Ported entries from VM test, covering SIG images for different generations and architectures
-				Entry("Gen2, Gen1 instance type with AKSUbuntu image family", "Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition),
-				Entry("Gen1 instance type with AKSUbuntu image family", "Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition),
-				Entry("ARM instance type with AKSUbuntu image family", "Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition),
-				Entry("Gen2 instance type with Ubuntu2404 image family", "Standard_D2_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ImageDefinition),
-				Entry("Gen1 instance type with Ubuntu2404 image family", "Standard_D2_v3", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen1ImageDefinition),
-				Entry("ARM instance type with Ubuntu2404 image family", "Standard_D16plds_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ArmImageDefinition),
+				// Ubuntu2204 for K8s < 1.37
+				Entry("Gen2, Gen1 instance type with Ubuntu2204 image family", "Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, nil, v137),
+				Entry("Gen1 instance type with Ubuntu2204 image family", "Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, nil, v137),
+				Entry("ARM instance type with Ubuntu2204 image family", "Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, nil, v137),
+				// Ubuntu2404 for K8s >= 1.32
+				Entry("Gen2 instance type with Ubuntu2404 image family", "Standard_D2_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ImageDefinition, v132, nil),
+				Entry("Gen1 instance type with Ubuntu2404 image family", "Standard_D2_v3", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen1ImageDefinition, v132, nil),
+				Entry("ARM instance type with Ubuntu2404 image family", "Standard_D16plds_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ArmImageDefinition, v132, nil),
+				// Ubuntu < for K8s 1.34
+				Entry("Gen2 instance type with Ubuntu image family before Kubernetes 1.34", "Standard_D2_v5", v1beta1.UbuntuImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, nil, v134),
+				Entry("Gen1 instance type with Ubuntu image family before Kubernetes 1.34", "Standard_D2_v3", v1beta1.UbuntuImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, nil, v134),
+				Entry("ARM instance type with Ubuntu image family before Kubernetes 1.34", "Standard_D16plds_v5", v1beta1.UbuntuImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, nil, v134),
+				// Ubuntu >= for K8s 1.34
+				Entry("Gen2 instance type with Ubuntu image family from Kubernetes 1.34", "Standard_D2_v5", v1beta1.UbuntuImageFamily, imagefamily.Ubuntu2404Gen2ImageDefinition, v134, nil),
+				Entry("Gen1 instance type with Ubuntu image family from Kubernetes 1.34", "Standard_D2_v3", v1beta1.UbuntuImageFamily, imagefamily.Ubuntu2404Gen1ImageDefinition, v134, nil),
+				Entry("ARM instance type with Ubuntu image family from Kubernetes 1.34", "Standard_D16plds_v5", v1beta1.UbuntuImageFamily, imagefamily.Ubuntu2404Gen2ArmImageDefinition, v134, nil),
+				// AzureLinux < for K8s 1.32
+				Entry("Gen2 instance type with AzureLinux image family before Kubernetes 1.32", "Standard_D2_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ImageDefinition, nil, v132),
+				Entry("Gen1 instance type with AzureLinux image family before Kubernetes 1.32", "Standard_D2_v3", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1ImageDefinition, nil, v132),
+				Entry("ARM instance type with AzureLinux image family before Kubernetes 1.32", "Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, nil, v132),
+				// AzureLinux >= 1.32
+				Entry("Gen2 instance type with AzureLinux image family from Kubernetes 1.32", "Standard_D2_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinux3Gen2ImageDefinition, v132, nil),
+				Entry("Gen1 instance type with AzureLinux image family from Kubernetes 1.32", "Standard_D2_v3", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinux3Gen1ImageDefinition, v132, nil),
+				Entry("ARM instance type with AzureLinux image family from Kubernetes 1.32", "Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinux3Gen2ArmImageDefinition, v132, nil),
 			)
-
-			It("should select the right Shared Image Gallery NodeImageVersion for a given instance type, Gen2 instance type with AzureLinux image family", func() {
-				instanceType := "Standard_D2_v5"
-				imageFamily := v1beta1.AzureLinuxImageFamily
-				kubernetesVersion := lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
-				expectUseAzureLinux3 := imagefamily.UseAzureLinux3(kubernetesVersion)
-				expectedImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ImageDefinition, imagefamily.AzureLinuxGen2ImageDefinition)
-
-				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{instanceType}})
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-				aksMachine := createInput.AKSMachine
-				Expect(aksMachine.Properties.NodeImageVersion).ToNot(BeNil())
-
-				// NodeImageVersion should contain the expected image definition
-				nodeImageVersion := lo.FromPtr(aksMachine.Properties.NodeImageVersion)
-				Expect(nodeImageVersion).To(ContainSubstring(expectedImageDefinition))
-			})
-
-			It("should select the right Shared Image Gallery NodeImageVersion for a given instance type, Gen1 instance type with AzureLinux image family", func() {
-				instanceType := "Standard_D2_v3"
-				imageFamily := v1beta1.AzureLinuxImageFamily
-				kubernetesVersion := lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
-				expectUseAzureLinux3 := imagefamily.UseAzureLinux3(kubernetesVersion)
-				expectedImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen1ImageDefinition, imagefamily.AzureLinuxGen1ImageDefinition)
-
-				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{instanceType}})
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-				aksMachine := createInput.AKSMachine
-				Expect(aksMachine.Properties.NodeImageVersion).ToNot(BeNil())
-
-				// NodeImageVersion should contain the expected image definition
-				nodeImageVersion := lo.FromPtr(aksMachine.Properties.NodeImageVersion)
-				Expect(nodeImageVersion).To(ContainSubstring(expectedImageDefinition))
-			})
-
-			It("should select the right Shared Image Gallery NodeImageVersion for a given instance type, ARM instance type with AzureLinux image family", func() {
-				instanceType := "Standard_D16plds_v5"
-				imageFamily := v1beta1.AzureLinuxImageFamily
-				kubernetesVersion := lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
-				expectUseAzureLinux3 := imagefamily.UseAzureLinux3(kubernetesVersion)
-				expectedImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ArmImageDefinition, imagefamily.AzureLinuxGen2ArmImageDefinition)
-
-				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{instanceType}})
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-				aksMachine := createInput.AKSMachine
-				Expect(aksMachine.Properties.NodeImageVersion).ToNot(BeNil())
-
-				// NodeImageVersion should contain the expected image definition
-				nodeImageVersion := lo.FromPtr(aksMachine.Properties.NodeImageVersion)
-				Expect(nodeImageVersion).To(ContainSubstring(expectedImageDefinition))
-
-				// Clean up
-				cluster.Reset()
-				azureEnv.Reset(ctx)
-			})
 		})
 
 		Context("Create - Windows", func() {
