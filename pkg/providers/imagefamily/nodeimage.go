@@ -19,6 +19,7 @@ package imagefamily
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -51,7 +52,7 @@ type NodeImage struct {
 
 type NodeImageProvider interface {
 	List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error)
-	ListLatest(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error)
+	GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (string, error)
 }
 
 type provider struct {
@@ -78,6 +79,25 @@ func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location
 
 // Returns the list of available NodeImages for the given AKSNodeClass sorted in priority ordering
 func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
+	return p.listWithCache(ctx, nodeClass, "", cache.DefaultExpiration)
+}
+
+// GetLatestVersion returns the latest image version available for the NodeClass.
+// All node images in a region share the same version, so the first image is representative.
+func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (string, error) {
+	nodeImages, err := p.listWithCache(ctx, nodeClass, latestImagesCacheKeyPrefix, LatestImageExpirationInterval)
+	if err != nil {
+		return "", err
+	}
+	if len(nodeImages) == 0 {
+		return "", nil
+	}
+
+	imageIDParts := strings.Split(nodeImages[0].ID, "/")
+	return imageIDParts[len(imageIDParts)-1], nil
+}
+
+func (p *provider) listWithCache(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, keyPrefix string, expiration time.Duration) ([]NodeImage, error) {
 	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.
 	useSIG := options.FromContext(ctx).UseSIG
 
@@ -96,14 +116,11 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 	}
 
 	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled())
-
-	key, err := p.cacheKey(
-		supportedImages,
-		kubernetesVersion,
-	)
+	key, err := p.cacheKey(supportedImages, kubernetesVersion)
 	if err != nil {
 		return []NodeImage{}, err
 	}
+	key = keyPrefix + key
 
 	if nodeImages, ok := p.nodeImagesCache.Get(key); ok {
 		return nodeImages.([]NodeImage), nil
@@ -122,51 +139,8 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 			return []NodeImage{}, err
 		}
 	}
-	p.nodeImagesCache.Set(key, nodeImages, cache.DefaultExpiration)
+	p.nodeImagesCache.Set(key, nodeImages, expiration)
 
-	return nodeImages, nil
-}
-
-// ListLatest returns the latest available NodeImages for the given AKSNodeClass sorted in priority ordering.
-func (p *provider) ListLatest(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
-	useSIG := options.FromContext(ctx).UseSIG
-
-	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS && !useSIG {
-		return []NodeImage{}, nil
-	}
-
-	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
-	if err != nil {
-		return []NodeImage{}, err
-	}
-	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.Windows2025ImageFamily && !SupportsWindows2025(kubernetesVersion) {
-		return []NodeImage{}, nil
-	}
-
-	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled())
-
-	key, err := p.cacheKey(supportedImages, kubernetesVersion)
-	if err != nil {
-		return []NodeImage{}, err
-	}
-	key = latestImagesCacheKeyPrefix + key
-
-	if nodeImages, ok := p.nodeImagesCache.Get(key); ok {
-		return nodeImages.([]NodeImage), nil
-	}
-
-	var nodeImages []NodeImage
-	if useSIG {
-		log.FromContext(ctx).V(1).Info("using SIG to list latest node images")
-		nodeImages, err = p.listSIG(ctx, supportedImages)
-	} else {
-		nodeImages, err = p.listCIG(ctx, supportedImages)
-	}
-	if err != nil {
-		return []NodeImage{}, err
-	}
-
-	p.nodeImagesCache.Set(key, nodeImages, LatestImageExpirationInterval)
 	return nodeImages, nil
 }
 
