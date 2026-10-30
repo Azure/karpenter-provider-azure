@@ -127,8 +127,8 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			kubernetesVersion: "1.39.0",
 		},
 
-		// Generic and unset Ubuntu are out of scope: what they resolve to is the
-		// resolver's (or the AKS RP's) decision, and it stays valid across versions.
+		// Generic and unset Ubuntu are out of scope for pinned-family validation.
+		// Acceptance here does not guarantee that the resolved OS version is supported.
 		"generic ubuntu is unrestricted below the ubuntu2204 lower bound": {
 			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
 			kubernetesVersion: "1.25.1",
