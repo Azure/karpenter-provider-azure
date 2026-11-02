@@ -71,9 +71,6 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		return nil, fmt.Errorf("failed to resolve node image version: %w", err)
 	}
 
-	// GPUProfile
-	gpuProfile := configureGPUProfile(instanceType, nodeClass)
-
 	// OrchestratorVersion (i.e., Kubernetes version)
 	orchestratorVersion, err := nodeClass.GetKubernetesVersion()
 	if err != nil {
@@ -120,12 +117,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		Properties: &armcontainerservice.MachineProperties{
 			NodeImageVersion: nodeImageVersionPtr,
 			Network:          configureNetwork(nodeClass),
-			Hardware: &armcontainerservice.MachineHardwareProfile{
-				VMSize: lo.ToPtr(instanceType.Name),
-				// GPUInstanceProfile: nil,
-				GpuProfile:      gpuProfile,
-				UltraSsdEnabled: lo.ToPtr(ultraSSD),
-			},
+			Hardware:         configureHardwareProfile(instanceType, nodeClass, ultraSSD),
 			OperatingSystem: &armcontainerservice.MachineOSProfile{
 				OSType:       configureOSType(nodeClass),
 				OSSKU:        osSku,
@@ -201,6 +193,19 @@ func configureCapacityReservation(nodeClass *v1beta1.AKSNodeClass) *armcontainer
 	}
 }
 
+func configureHardwareProfile(instanceType *corecloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass, ultraSSD bool) *armcontainerservice.MachineHardwareProfile {
+	hardware := &armcontainerservice.MachineHardwareProfile{
+		VMSize:          lo.ToPtr(instanceType.Name),
+		GpuProfile:      configureGPUProfile(instanceType, nodeClass),
+		UltraSsdEnabled: lo.ToPtr(ultraSSD),
+	}
+	// Send the partition size only when the guarded GPU profile enables managed MIG.
+	if hardware.GpuProfile != nil && hardware.GpuProfile.Nvidia != nil && hardware.GpuProfile.Nvidia.MigStrategy != nil {
+		hardware.GpuInstanceProfile = lo.ToPtr(armcontainerservice.GPUInstanceProfile(nodeClass.GetGPUInstanceProfile()))
+	}
+	return hardware
+}
+
 func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.GPUProfile {
 	// Non-GPU SKUs don't need a GPU profile.
 	if !utils.IsGPUSKU(instanceType.Name) {
@@ -230,6 +235,12 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 		nodeClass.IsGPUDriverInstallationEnabled() {
 		gpuProfile.Nvidia = &armcontainerservice.NvidiaGPUProfile{
 			ManagementMode: lo.ToPtr(armcontainerservice.ManagementModeManaged),
+		}
+		// None must remain omitted for compatibility with Machine API versions that
+		// do not accept an explicit None. Only static managed MIG is supported.
+		strategy := nodeClass.GetMigStrategy()
+		if (strategy == v1beta1.MigStrategySingle || strategy == v1beta1.MigStrategyMixed) && nodeClass.GetGPUInstanceProfile() != "" {
+			gpuProfile.Nvidia.MigStrategy = lo.ToPtr(armcontainerservice.MigStrategy(strategy))
 		}
 	}
 	return gpuProfile

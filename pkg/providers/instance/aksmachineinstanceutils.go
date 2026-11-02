@@ -154,6 +154,19 @@ func ultraSSDLabelFromAKSMachineTemplate(aksMachineTemplate *armcontainerservice
 	return fmt.Sprint(aksMachineTemplate != nil && aksMachineTemplate.Properties != nil && aksMachineTemplate.Properties.Hardware != nil && lo.FromPtr(aksMachineTemplate.Properties.Hardware.UltraSsdEnabled))
 }
 
+// MIGConfigurationFromAKSMachine returns the persisted layout, defaulting an omitted strategy to None.
+func MIGConfigurationFromAKSMachine(machine *armcontainerservice.Machine) (v1beta1.MigStrategy, v1beta1.GPUInstanceProfile) {
+	strategy := v1beta1.MigStrategyNone
+	if machine.Properties == nil || machine.Properties.Hardware == nil {
+		return strategy, ""
+	}
+	hardware := machine.Properties.Hardware
+	if hardware.GpuProfile != nil && hardware.GpuProfile.Nvidia != nil && lo.FromPtr(hardware.GpuProfile.Nvidia.MigStrategy) != "" {
+		strategy = v1beta1.MigStrategy(*hardware.GpuProfile.Nvidia.MigStrategy)
+	}
+	return strategy, v1beta1.GPUInstanceProfile(lo.FromPtr(hardware.GpuInstanceProfile))
+}
+
 // Expect AKS machine struct to be fully populated as if it comes from GET.
 // Not assuming that NodeClaim exists.
 func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainerservice.Machine, possibleInstanceTypes []*corecloudprovider.InstanceType, aksMachineLocation string) (*karpv1.NodeClaim, error) {

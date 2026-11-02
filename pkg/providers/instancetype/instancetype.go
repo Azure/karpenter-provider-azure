@@ -261,7 +261,7 @@ func getArchitecture(architecture string) string {
 }
 
 func computeCapacity(ctx context.Context, sku *skewer.SKU, params *instanceTypeParameters) corev1.ResourceList {
-	return corev1.ResourceList{
+	capacity := corev1.ResourceList{
 		corev1.ResourceCPU:                    *cpu(sku),
 		corev1.ResourceMemory:                 *memoryWithoutOverhead(ctx, sku),
 		corev1.ResourceEphemeralStorage:       *ephemeralStorage(sku, params),
@@ -269,6 +269,20 @@ func computeCapacity(ctx context.Context, sku *skewer.SKU, params *instanceTypeP
 		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
 		corev1.ResourceName("amd.com/gpu"):    *gpuAMDCount(sku),
 	}
+	if params.MigStrategy == v1beta1.MigStrategySingle || params.MigStrategy == v1beta1.MigStrategyMixed {
+		// All physical GPUs are partitioned; never advertise both full GPUs and MIG devices.
+		delete(capacity, corev1.ResourceName("nvidia.com/gpu"))
+		delete(capacity, corev1.ResourceName("amd.com/gpu"))
+		profile, partitions := utils.GetMIGProfile(sku.GetName(), params.GPUInstanceProfile)
+		if gpus, err := sku.GPU(); err == nil && gpus > 0 && partitions > 0 {
+			name := corev1.ResourceName("nvidia.com/gpu")
+			if params.MigStrategy == v1beta1.MigStrategyMixed {
+				name = corev1.ResourceName("nvidia.com/mig-" + profile)
+			}
+			capacity[name] = *resource.NewQuantity(gpus*partitions, resource.DecimalSI)
+		}
+	}
+	return capacity
 }
 
 // gpuNvidiaCount returns the number of Nvidia GPUs in the SKU.

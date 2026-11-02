@@ -17,6 +17,7 @@ limitations under the License.
 package instance
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
@@ -1212,6 +1213,64 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(version).To(Equal("2022.10.03"))
 			})
 		})
+	})
+
+	Context("configureHardwareProfile", func() {
+		It("should map both static managed MIG settings for every supported profile", func() {
+			instanceType.Name = "Standard_NC24ads_A100_v4"
+			for _, strategy := range []v1beta1.MigStrategy{v1beta1.MigStrategySingle, v1beta1.MigStrategyMixed} {
+				for _, profile := range []v1beta1.GPUInstanceProfile{v1beta1.GPUInstanceProfileMIG1g, v1beta1.GPUInstanceProfileMIG2g, v1beta1.GPUInstanceProfileMIG3g, v1beta1.GPUInstanceProfileMIG4g, v1beta1.GPUInstanceProfileMIG7g} {
+					nodeClass.Spec.GPU = &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{
+						ManagementMode:     lo.ToPtr(v1beta1.ManagementModeManaged),
+						MigStrategy:        lo.ToPtr(strategy),
+						GPUInstanceProfile: lo.ToPtr(profile),
+					}}
+					hardware := configureHardwareProfile(instanceType, nodeClass, true)
+					Expect(hardware.VMSize).To(Equal(lo.ToPtr(instanceType.Name)))
+					Expect(hardware.UltraSsdEnabled).To(Equal(lo.ToPtr(true)))
+					Expect(hardware.GpuInstanceProfile).To(Equal(lo.ToPtr(armcontainerservice.GPUInstanceProfile(profile))))
+					Expect(hardware.GpuProfile).To(Equal(&armcontainerservice.GPUProfile{
+						Driver: lo.ToPtr(armcontainerservice.GPUDriverInstall),
+						Nvidia: &armcontainerservice.NvidiaGPUProfile{
+							ManagementMode: lo.ToPtr(armcontainerservice.ManagementModeManaged),
+							MigStrategy:    lo.ToPtr(armcontainerservice.MigStrategy(strategy)),
+						},
+					}))
+					payload := lo.Must(json.Marshal(hardware))
+					var wire map[string]any
+					Expect(json.Unmarshal(payload, &wire)).To(Succeed())
+					Expect(wire["gpuInstanceProfile"]).To(Equal(string(profile)))
+					Expect(wire["gpuProfile"].(map[string]any)["nvidia"].(map[string]any)["migStrategy"]).To(Equal(string(strategy)))
+				}
+			}
+		})
+		DescribeTable("should omit both MIG fields when static managed MIG is not enabled",
+			func(sku string, mode *v1beta1.GPUMode, management *v1beta1.ManagementMode, strategy *v1beta1.MigStrategy, profile *v1beta1.GPUInstanceProfile) {
+				instanceType.Name = sku
+				nodeClass.Spec.GPU = &v1beta1.GPU{Mode: mode, Nvidia: &v1beta1.NvidiaGPU{
+					ManagementMode: management, MigStrategy: strategy, GPUInstanceProfile: profile,
+				}}
+				hardware := configureHardwareProfile(instanceType, nodeClass, false)
+				Expect(hardware.GpuInstanceProfile).To(BeNil())
+				if hardware.GpuProfile != nil && hardware.GpuProfile.Nvidia != nil {
+					Expect(hardware.GpuProfile.Nvidia.MigStrategy).To(BeNil())
+				}
+				payload := string(lo.Must(json.Marshal(hardware)))
+				Expect(payload).ToNot(ContainSubstring("gpuInstanceProfile"))
+				Expect(payload).ToNot(ContainSubstring("migStrategy"))
+			},
+			Entry("default", "Standard_NC24ads_A100_v4", nil, nil, nil, nil),
+			Entry("managed default", "Standard_NC24ads_A100_v4", nil, lo.ToPtr(v1beta1.ManagementModeManaged), nil, nil),
+			Entry("explicit None", "Standard_NC24ads_A100_v4", nil, lo.ToPtr(v1beta1.ManagementModeManaged), lo.ToPtr(v1beta1.MigStrategyNone), nil),
+			Entry("None with stray profile", "Standard_NC24ads_A100_v4", nil, lo.ToPtr(v1beta1.ManagementModeManaged), lo.ToPtr(v1beta1.MigStrategyNone), lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g)),
+			Entry("profile without strategy", "Standard_NC24ads_A100_v4", nil, lo.ToPtr(v1beta1.ManagementModeManaged), nil, lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g)),
+			Entry("strategy without profile", "Standard_NC24ads_A100_v4", nil, lo.ToPtr(v1beta1.ManagementModeManaged), lo.ToPtr(v1beta1.MigStrategySingle), nil),
+			Entry("management omitted", "Standard_NC24ads_A100_v4", nil, nil, lo.ToPtr(v1beta1.MigStrategySingle), lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g)),
+			Entry("Unmanaged", "Standard_NC24ads_A100_v4", nil, lo.ToPtr(v1beta1.ManagementModeUnmanaged), lo.ToPtr(v1beta1.MigStrategyMixed), lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g)),
+			Entry("driver disabled", "Standard_NC24ads_A100_v4", lo.ToPtr(v1beta1.GPUModeNone), lo.ToPtr(v1beta1.ManagementModeManaged), lo.ToPtr(v1beta1.MigStrategySingle), lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g)),
+			Entry("AMD GPU", "Standard_NV4as_v4", nil, lo.ToPtr(v1beta1.ManagementModeManaged), lo.ToPtr(v1beta1.MigStrategyMixed), lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g)),
+			Entry("non-GPU", "Standard_D2_v2", nil, lo.ToPtr(v1beta1.ManagementModeManaged), lo.ToPtr(v1beta1.MigStrategySingle), lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g)),
+		)
 	})
 
 	Context("configureGPUProfile", func() {

@@ -718,6 +718,9 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 	existingAKSMachineCreationTimestamp := lo.FromPtr(existingAKSMachine.Properties.Status.CreationTimestamp)
 
 	instanceType := offerings.GetInstanceTypeFromVMSize(existingAKSMachineVMSize, instanceTypes)
+	if instanceType == nil {
+		return nil, fmt.Errorf("found existing AKS machine %s, but VM size %q does not match the requested instance types", aksMachineName, existingAKSMachineVMSize)
+	}
 	capacityType := getCapacityTypeFromAKSScaleSetPriority(existingAKSMachinePriority)
 	zone, err := zones.MakeAKSLabelZoneFromARMZones(p.aksMachinesPoolLocation, existingAKSMachine.Zones)
 	if err != nil {
@@ -776,6 +779,16 @@ func validateExistingAKSMachineForReuse(aksMachineName string, nodeClass *v1beta
 	}
 	if err := validateExistingAKSMachineNodePublicIP(existingAKSMachine, nodeClass); err != nil {
 		return fmt.Errorf("found existing AKS machine %s, but it %w", aksMachineName, err)
+	}
+	// Reuse stamps the current NodeClass hash, so accepting a different immutable
+	// layout would hide the mismatch from drift and advertise the wrong GPU capacity.
+	actualStrategy, actualProfile := MIGConfigurationFromAKSMachine(existingAKSMachine)
+	desiredStrategy := nodeClass.GetMigStrategy()
+	if desiredStrategy == "" {
+		desiredStrategy = v1beta1.MigStrategyNone
+	}
+	if actualStrategy != desiredStrategy || actualProfile != nodeClass.GetGPUInstanceProfile() {
+		return fmt.Errorf("found existing AKS machine %s with MIG strategy %q and profile %q, but the NodeClass now specifies strategy %q and profile %q", aksMachineName, actualStrategy, actualProfile, desiredStrategy, nodeClass.GetGPUInstanceProfile())
 	}
 	if existingAKSMachine.Properties.Tags == nil || existingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] == nil {
 		// This is not included in validateRetrievedAKSMachineBasicProperties as inplaceupdate can repair it.

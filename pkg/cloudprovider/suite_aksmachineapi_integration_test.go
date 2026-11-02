@@ -26,6 +26,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
@@ -59,9 +60,82 @@ func validateAKSMachineNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.N
 	Expect(nodeClaim.Annotations[v1beta1.AnnotationAKSMachineResourceID]).ToNot(BeEmpty())
 }
 
+func runMIGLifecycleTests() {
+	for _, mode := range []string{consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch} {
+		Context("MIG lifecycle "+mode, func() {
+			createAndWait := func() (*karpv1.NodeClaim, error) {
+				result, err := cloudProvider.Create(ctx, nodeClaim.DeepCopy())
+				fresh := ExpectExists(ctx, cloudProvider.kubeClient, nodeClaim)
+				fresh.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+				Expect(cloudProvider.kubeClient.Status().Update(ctx, fresh)).To(Succeed())
+				cloudProvider.WaitForInstancePromises()
+				return result, err
+			}
+			BeforeEach(func() {
+				testOptions.ProvisionMode = mode
+				ctx = options.ToContext(ctx, testOptions)
+				azureEnv = test.NewEnvironment(ctx, env)
+				cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				nodeClass.Spec.GPU = &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{
+					ManagementMode:     lo.ToPtr(v1beta1.ManagementModeManaged),
+					MigStrategy:        lo.ToPtr(v1beta1.MigStrategySingle),
+					GPUInstanceProfile: lo.ToPtr(v1beta1.GPUInstanceProfileMIG7g),
+				}}
+				nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{{
+					Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{"Standard_NC24ads_A100_v4"},
+				}}
+				// Exercise lifecycle independently of generated CRD schemas, which may not
+				// yet contain MIG fields. Azure clients and instance type resolution remain real fakes.
+				cloudProvider.kubeClient = clientfake.NewClientBuilder().WithScheme(env.Client.Scheme()).WithStatusSubresource(nodeClass, nodeClaim).WithObjects(nodeClass, nodePool, nodeClaim).Build()
+			})
+
+			It("should reject a retry across a Single MIG profile change and clean up the owned machine", func() {
+				created, err := createAndWait()
+				Expect(err).ToNot(HaveOccurred())
+				quantity := created.Status.Capacity[v1.ResourceName("nvidia.com/gpu")]
+				Expect(quantity.Value()).To(Equal(int64(1)))
+				nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g)
+				Expect(cloudProvider.kubeClient.Update(ctx, nodeClass)).To(Succeed())
+				azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+				azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Reset()
+
+				retried, err := createAndWait()
+				Expect(err).To(MatchError(ContainSubstring("MIG strategy")))
+				Expect(retried).To(BeNil())
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(1))
+				machineID := fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, nodeClaim.Name)
+				_, exists := azureEnv.AKSDataStorage.AKSMachines.Load(machineID)
+				Expect(exists).To(BeFalse())
+
+				replacement, err := createAndWait()
+				Expect(err).ToNot(HaveOccurred())
+				quantity = replacement.Status.Capacity[v1.ResourceName("nvidia.com/gpu")]
+				Expect(quantity.Value()).To(Equal(int64(7)))
+				Expect(replacement.Annotations[v1beta1.AnnotationAKSNodeClassHash]).To(Equal(nodeClass.Hash()))
+			})
+
+			It("should reuse a machine with the same MIG layout", func() {
+				created, err := createAndWait()
+				Expect(err).ToNot(HaveOccurred())
+				azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+				azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Reset()
+				reused, err := createAndWait()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(reused.Status).To(Equal(created.Status))
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(BeZero())
+			})
+		})
+	}
+}
+
 // runSharedAKSMachineAPITests contains the common test cases that should be run
 // for both ManageExistingAKSMachines = true and false configurations
 func runSharedAKSMachineAPITests() {
+	runMIGLifecycleTests()
+
 	It("should be able to handle basic operations", func() {
 		ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 

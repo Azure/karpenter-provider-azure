@@ -237,7 +237,7 @@ var _ = Describe("Hash", func() {
 	It("should not mutate NVIDIA settings while hashing", func() {
 		nodeClass.Spec.GPU = &v1beta1.GPU{
 			Mode:   lo.ToPtr(v1beta1.GPUModeDriver),
-			Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeUnmanaged)},
+			Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeUnmanaged), MigStrategy: lo.ToPtr(v1beta1.MigStrategyNone)},
 		}
 		original := nodeClass.DeepCopy()
 
@@ -245,6 +245,52 @@ var _ = Describe("Hash", func() {
 
 		Expect(nodeClass).To(Equal(original))
 	})
+	DescribeTable("should hash explicit MIG None like omission", func(management *v1beta1.ManagementMode) {
+		nodeClass.Spec.GPU = &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: management}}
+		hash := nodeClass.Hash()
+		nodeClass.Spec.GPU.Nvidia.MigStrategy = lo.ToPtr(v1beta1.MigStrategyNone)
+		Expect(nodeClass.Hash()).To(Equal(hash))
+	},
+		Entry("default management", (*v1beta1.ManagementMode)(nil)),
+		Entry("Unmanaged", lo.ToPtr(v1beta1.ManagementModeUnmanaged)),
+		Entry("Managed", lo.ToPtr(v1beta1.ManagementModeManaged)),
+	)
+	DescribeTable("should resolve omitted MIG settings to defaults", func(gpu *v1beta1.GPU) {
+		nodeClass.Spec.GPU = gpu
+		Expect(nodeClass.GetMigStrategy()).To(Equal(v1beta1.MigStrategyNone))
+		Expect(nodeClass.GetGPUInstanceProfile()).To(Equal(v1beta1.GPUInstanceProfile("")))
+	},
+		Entry("GPU omitted", (*v1beta1.GPU)(nil)),
+		Entry("NVIDIA omitted", &v1beta1.GPU{}),
+		Entry("empty NVIDIA", &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{}}),
+		Entry("explicit None", &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{MigStrategy: lo.ToPtr(v1beta1.MigStrategyNone)}}),
+	)
+	DescribeTable("should preserve MIG settings when normalizing NVIDIA defaults", func(management *v1beta1.ManagementMode) {
+		nodeClass.Spec.GPU = &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: management}}
+		noMIGHash := nodeClass.Hash()
+		hashes := make([]string, 1, 11)
+		hashes[0] = noMIGHash
+		for _, strategy := range []v1beta1.MigStrategy{v1beta1.MigStrategySingle, v1beta1.MigStrategyMixed} {
+			for _, profile := range []v1beta1.GPUInstanceProfile{v1beta1.GPUInstanceProfileMIG1g, v1beta1.GPUInstanceProfileMIG2g, v1beta1.GPUInstanceProfileMIG3g, v1beta1.GPUInstanceProfileMIG4g, v1beta1.GPUInstanceProfileMIG7g} {
+				nodeClass.Spec.GPU.Nvidia.MigStrategy = lo.ToPtr(strategy)
+				nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = lo.ToPtr(profile)
+				Expect(nodeClass.GetMigStrategy()).To(Equal(strategy))
+				Expect(nodeClass.GetGPUInstanceProfile()).To(Equal(profile))
+				original := nodeClass.DeepCopy()
+				hash := nodeClass.Hash()
+				Expect(hashes).ToNot(ContainElement(hash))
+				Expect(nodeClass).To(Equal(original))
+				hashes = append(hashes, hash)
+			}
+		}
+		nodeClass.Spec.GPU.Nvidia.MigStrategy = nil
+		nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = nil
+		Expect(nodeClass.Hash()).To(Equal(noMIGHash))
+	},
+		Entry("default management", (*v1beta1.ManagementMode)(nil)),
+		Entry("Unmanaged", lo.ToPtr(v1beta1.ManagementModeUnmanaged)),
+		Entry("Managed", lo.ToPtr(v1beta1.ManagementModeManaged)),
+	)
 	It("should not change hash when tags are re-ordered", func() {
 		hash := nodeClass.Hash()
 		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}

@@ -130,6 +130,44 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
 		})
 
+		It("should preserve resolved non-MIG GPU capacity without GPU count metadata", func() {
+			instanceType := possibleInstanceTypes[0]
+			instanceType.Name = "Standard_NC48ads_A100_v4"
+			instanceType.Capacity["nvidia.com/gpu"] = resource.MustParse("14")
+			capacity := instanceType.Capacity.DeepCopy()
+			allocatable := instanceType.Allocatable().DeepCopy()
+			aksMachine.Properties.Hardware.VMSize = lo.ToPtr(instanceType.Name)
+
+			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClaim.Status.Capacity).To(Equal(capacity))
+			Expect(nodeClaim.Status.Allocatable).To(Equal(allocatable))
+			Expect(instanceType.Capacity).To(Equal(capacity))
+			Expect(instanceType.Allocatable()).To(Equal(allocatable))
+		})
+
+		DescribeTable("should compare normalized persisted MIG configuration before reuse", func(actualStrategy armcontainerservice.MigStrategy, actualProfile armcontainerservice.GPUInstanceProfile, desiredStrategy v1beta1.MigStrategy, desiredProfile v1beta1.GPUInstanceProfile, matches bool) {
+			aksMachine.Properties.Hardware.GpuProfile = &armcontainerservice.GPUProfile{Nvidia: &armcontainerservice.NvidiaGPUProfile{MigStrategy: lo.EmptyableToPtr(actualStrategy)}}
+			aksMachine.Properties.Hardware.GpuInstanceProfile = lo.EmptyableToPtr(actualProfile)
+			nodeClass := &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{
+				MigStrategy: lo.EmptyableToPtr(desiredStrategy), GPUInstanceProfile: lo.EmptyableToPtr(desiredProfile),
+			}}}}
+			err := validateExistingAKSMachineForReuse("test-machine", nodeClass, aksMachine)
+			if matches {
+				Expect(err).ToNot(HaveOccurred())
+			} else {
+				Expect(err).To(MatchError(ContainSubstring("MIG strategy")))
+			}
+		},
+			Entry("matching Single", armcontainerservice.MigStrategySingle, armcontainerservice.GPUInstanceProfileMIG7G, v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG7g, true),
+			Entry("profile changed", armcontainerservice.MigStrategySingle, armcontainerservice.GPUInstanceProfileMIG7G, v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG1g, false),
+			Entry("strategy changed", armcontainerservice.MigStrategySingle, armcontainerservice.GPUInstanceProfileMIG7G, v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG7g, false),
+			Entry("MIG disabled", armcontainerservice.MigStrategySingle, armcontainerservice.GPUInstanceProfileMIG7G, v1beta1.MigStrategyNone, v1beta1.GPUInstanceProfile(""), false),
+			Entry("MIG enabled", armcontainerservice.MigStrategy(""), armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG1g, false),
+			Entry("omitted actual means None", armcontainerservice.MigStrategy(""), armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyNone, v1beta1.GPUInstanceProfile(""), true),
+			Entry("omitted desired means None", armcontainerservice.MigStrategyNone, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategy(""), v1beta1.GPUInstanceProfile(""), true),
+		)
+
 		DescribeTable("should propagate AKS machine VM state to the NodeClaim", func(vmState armcontainerservice.VMState) {
 			aksMachine.Properties.Status.VMState = lo.ToPtr(vmState)
 

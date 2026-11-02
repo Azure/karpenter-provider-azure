@@ -152,6 +152,7 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // +kubebuilder:validation:XValidation:message="linuxOSConfig is not supported for Windows image families",rule="!has(self.linuxOSConfig) || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
 // +kubebuilder:validation:XValidation:message="artifactStreaming is not supported for Windows image families",rule="!has(self.artifactStreaming) || !has(self.artifactStreaming.enabled) || self.artifactStreaming.enabled == false || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
 // +kubebuilder:validation:XValidation:message="localDNS is not supported for Windows image families",rule="!has(self.localDNS) || self.localDNS.mode == 'Disabled' || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
+// +kubebuilder:validation:XValidation:message="gpu.nvidia.migStrategy Single or Mixed is not supported for Windows image families",rule="!has(self.gpu) || !has(self.gpu.nvidia) || !has(self.gpu.nvidia.migStrategy) || !(self.gpu.nvidia.migStrategy in ['Single','Mixed']) || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
 // +kubebuilder:validation:XValidation:message="AzureContainerLinux requires security.trustedLaunch.vtpm and security.trustedLaunch.secureBoot to be explicitly set to true",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || (has(self.security) && has(self.security.trustedLaunch) && has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm && has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)"
 // +kubebuilder:validation:XValidation:message="AzureContainerLinux requires an OS disk of at least 60 GB",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
@@ -512,7 +513,30 @@ const (
 	ManagementModeUnmanaged ManagementMode = "Unmanaged"
 )
 
+// +kubebuilder:validation:Enum:={None,Single,Mixed}
+type MigStrategy string
+
+const (
+	MigStrategyNone   MigStrategy = "None"
+	MigStrategySingle MigStrategy = "Single"
+	MigStrategyMixed  MigStrategy = "Mixed"
+)
+
+// +kubebuilder:validation:Enum:={MIG1g,MIG2g,MIG3g,MIG4g,MIG7g}
+type GPUInstanceProfile string
+
+const (
+	GPUInstanceProfileMIG1g GPUInstanceProfile = "MIG1g"
+	GPUInstanceProfileMIG2g GPUInstanceProfile = "MIG2g"
+	GPUInstanceProfileMIG3g GPUInstanceProfile = "MIG3g"
+	GPUInstanceProfileMIG4g GPUInstanceProfile = "MIG4g"
+	GPUInstanceProfileMIG7g GPUInstanceProfile = "MIG7g"
+)
+
 // NvidiaGPU contains NVIDIA-specific GPU settings.
+// +kubebuilder:validation:XValidation:message="gpu.nvidia.migStrategy Single or Mixed requires managementMode Managed",rule="!has(self.migStrategy) || !(self.migStrategy in ['Single', 'Mixed']) || (has(self.managementMode) && self.managementMode == 'Managed')"
+// +kubebuilder:validation:XValidation:message="gpu.nvidia.migStrategy Single or Mixed requires gpuInstanceProfile",rule="!has(self.migStrategy) || !(self.migStrategy in ['Single', 'Mixed']) || has(self.gpuInstanceProfile)"
+// +kubebuilder:validation:XValidation:message="gpu.nvidia.gpuInstanceProfile requires migStrategy Single or Mixed",rule="!has(self.gpuInstanceProfile) || (has(self.migStrategy) && self.migStrategy in ['Single', 'Mixed'])"
 type NvidiaGPU struct {
 	// managementMode toggles the managed GPU experience for NVIDIA GPUs.
 	// When set to Managed, AKS installs additional components (e.g. DCGM metrics
@@ -527,6 +551,28 @@ type NvidiaGPU struct {
 	// For more details of what is installed, see aka.ms/aks/managed-gpu.
 	// +optional
 	ManagementMode *ManagementMode `json:"managementMode,omitempty"`
+	// migStrategy configures managed Multi-Instance GPU (MIG) support. None (the default)
+	// disables MIG and is omitted from the Machine request. Single exposes partitions as
+	// nvidia.com/gpu; Mixed exposes profile-specific nvidia.com/mig-<profile> resources.
+	// Both active strategies use static, homogeneous partitions selected by gpuInstanceProfile;
+	// heterogeneous layouts and dynamic partitioning are not supported.
+	// Single and Mixed require managementMode Managed and an AKS Machine API provision mode
+	// (aksmachineapi or aksmachineapiheaderbatch), with a supported NVIDIA GPU and Linux image.
+	// MIG settings are immutable on a Machine. Changing them on the NodeClass marks nodes
+	// drifted, but disruption still requires workloads to be schedulable elsewhere.
+	// Switching between Single and Mixed changes resource names; existing workloads cannot
+	// reschedule without a compatible pool. Migrate workloads using a second pool and update
+	// their resource requests before retiring the old pool.
+	// +optional
+	MigStrategy *MigStrategy `json:"migStrategy,omitempty"`
+	// gpuInstanceProfile selects the static MIG partition size for every GPU on the node.
+	// Requires migStrategy Single or Mixed and a VM size that supports the selected profile.
+	// This setting is immutable on a Machine; changing it on the NodeClass marks nodes drifted,
+	// but disruption still obeys workload schedulability. Changing the profile with Mixed
+	// changes resource names. Migrate workloads using a second pool and updated resource
+	// requests before retiring the old pool; existing requests still need a compatible pool.
+	// +optional
+	GPUInstanceProfile *GPUInstanceProfile `json:"gpuInstanceProfile,omitempty"`
 }
 
 // GPU contains configuration for GPU-enabled nodes.
@@ -1001,13 +1047,8 @@ func (in *AKSNodeClass) Hash() string {
 	if lo.FromPtr(spec.WorkloadRuntime) == WorkloadRuntimeOCIContainer {
 		spec.WorkloadRuntime = nil
 	}
-	// An omitted NVIDIA configuration and explicit Unmanaged are equivalent:
-	// both produce a driver-only machine request. Normalize the empty/default
-	// wrapper so expressing the default does not drift otherwise unchanged nodes.
-	if spec.GPU != nil && (spec.GPU.Nvidia == nil ||
-		spec.GPU.Nvidia.ManagementMode == nil ||
-		lo.FromPtr(spec.GPU.Nvidia.ManagementMode) == ManagementModeUnmanaged) {
-		spec.GPU.Nvidia = nil
+	if spec.GPU != nil {
+		spec.GPU.Nvidia = normalizeNvidiaGPUForHash(spec.GPU.Nvidia)
 	}
 	// A disabled node public IP block requests nothing, so omitted, {}, and {enabled: false} must
 	// hash the same. ARM resource IDs are case-insensitive, so prefix ID casing must not drift nodes.
@@ -1029,6 +1070,24 @@ func (in *AKSNodeClass) Hash() string {
 		IgnoreZeroValue: true,
 		ZeroNil:         true,
 	})))
+}
+
+// normalizeNvidiaGPUForHash normalizes defaults on the copied spec so explicit
+// Unmanaged and MIG None do not drift nodes, while preserving active MIG settings.
+func normalizeNvidiaGPUForHash(nvidia *NvidiaGPU) *NvidiaGPU {
+	if nvidia == nil {
+		return nil
+	}
+	if lo.FromPtr(nvidia.ManagementMode) == ManagementModeUnmanaged {
+		nvidia.ManagementMode = nil
+	}
+	if lo.FromPtr(nvidia.MigStrategy) == MigStrategyNone {
+		nvidia.MigStrategy = nil
+	}
+	if nvidia.ManagementMode == nil && nvidia.MigStrategy == nil && nvidia.GPUInstanceProfile == nil {
+		return nil
+	}
+	return nvidia
 }
 
 // AKSNodeClassList contains a list of AKSNodeClass
@@ -1189,6 +1248,22 @@ func (in *AKSNodeClass) GetManagementMode() ManagementMode {
 // enabled (gpu.nvidia.managementMode == Managed). Returns false when unset.
 func (in *AKSNodeClass) IsManagedGPUEnabled() bool {
 	return in.GetManagementMode() == ManagementModeManaged
+}
+
+// GetMigStrategy returns the configured MIG strategy, defaulting to None when unset.
+func (in *AKSNodeClass) GetMigStrategy() MigStrategy {
+	if in.Spec.GPU == nil || in.Spec.GPU.Nvidia == nil || in.Spec.GPU.Nvidia.MigStrategy == nil {
+		return MigStrategyNone
+	}
+	return *in.Spec.GPU.Nvidia.MigStrategy
+}
+
+// GetGPUInstanceProfile returns the configured MIG partition size, or empty when unset.
+func (in *AKSNodeClass) GetGPUInstanceProfile() GPUInstanceProfile {
+	if in.Spec.GPU == nil || in.Spec.GPU.Nvidia == nil {
+		return ""
+	}
+	return lo.FromPtr(in.Spec.GPU.Nvidia.GPUInstanceProfile)
 }
 
 // GetWorkloadRuntime returns the effective workload runtime, defaulting to

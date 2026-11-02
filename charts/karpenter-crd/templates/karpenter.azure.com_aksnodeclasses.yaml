@@ -1493,6 +1493,21 @@ spec:
                       nvidia contains NVIDIA-specific GPU settings, such as the managed GPU
                       experience. Ignored for non-NVIDIA VM sizes.
                     properties:
+                      gpuInstanceProfile:
+                        description: |-
+                          gpuInstanceProfile selects the static MIG partition size for every GPU on the node.
+                          Requires migStrategy Single or Mixed and a VM size that supports the selected profile.
+                          This setting is immutable on a Machine; changing it on the NodeClass marks nodes drifted,
+                          but disruption still obeys workload schedulability. Changing the profile with Mixed
+                          changes resource names. Migrate workloads using a second pool and updated resource
+                          requests before retiring the old pool; existing requests still need a compatible pool.
+                        enum:
+                        - MIG1g
+                        - MIG2g
+                        - MIG3g
+                        - MIG4g
+                        - MIG7g
+                        type: string
                       managementMode:
                         description: |-
                           managementMode toggles the managed GPU experience for NVIDIA GPUs.
@@ -1510,7 +1525,39 @@ spec:
                         - Managed
                         - Unmanaged
                         type: string
+                      migStrategy:
+                        description: |-
+                          migStrategy configures managed Multi-Instance GPU (MIG) support. None (the default)
+                          disables MIG and is omitted from the Machine request. Single exposes partitions as
+                          nvidia.com/gpu; Mixed exposes profile-specific nvidia.com/mig-<profile> resources.
+                          Both active strategies use static, homogeneous partitions selected by gpuInstanceProfile;
+                          heterogeneous layouts and dynamic partitioning are not supported.
+                          Single and Mixed require managementMode Managed and an AKS Machine API provision mode
+                          (aksmachineapi or aksmachineapiheaderbatch), with a supported NVIDIA GPU and Linux image.
+                          MIG settings are immutable on a Machine. Changing them on the NodeClass marks nodes
+                          drifted, but disruption still requires workloads to be schedulable elsewhere.
+                          Switching between Single and Mixed changes resource names; existing workloads cannot
+                          reschedule without a compatible pool. Migrate workloads using a second pool and update
+                          their resource requests before retiring the old pool.
+                        enum:
+                        - None
+                        - Single
+                        - Mixed
+                        type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: gpu.nvidia.migStrategy Single or Mixed requires managementMode
+                        Managed
+                      rule: '!has(self.migStrategy) || !(self.migStrategy in [''Single'',
+                        ''Mixed'']) || (has(self.managementMode) && self.managementMode
+                        == ''Managed'')'
+                    - message: gpu.nvidia.migStrategy Single or Mixed requires gpuInstanceProfile
+                      rule: '!has(self.migStrategy) || !(self.migStrategy in [''Single'',
+                        ''Mixed'']) || has(self.gpuInstanceProfile)'
+                    - message: gpu.nvidia.gpuInstanceProfile requires migStrategy
+                        Single or Mixed
+                      rule: '!has(self.gpuInstanceProfile) || (has(self.migStrategy)
+                        && self.migStrategy in [''Single'', ''Mixed''])'
                 type: object
                 x-kubernetes-validations:
                 - message: gpu.nvidia.managementMode 'Managed' requires gpu.mode to
@@ -2513,6 +2560,11 @@ spec:
             - message: localDNS is not supported for Windows image families
               rule: '!has(self.localDNS) || self.localDNS.mode == ''Disabled'' ||
                 !has(self.imageFamily) || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
+            - message: gpu.nvidia.migStrategy Single or Mixed is not supported for
+                Windows image families
+              rule: '!has(self.gpu) || !has(self.gpu.nvidia) || !has(self.gpu.nvidia.migStrategy)
+                || !(self.gpu.nvidia.migStrategy in [''Single'',''Mixed'']) || !has(self.imageFamily)
+                || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
             - message: AzureContainerLinux requires security.trustedLaunch.vtpm and
                 security.trustedLaunch.secureBoot to be explicitly set to true
               rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
