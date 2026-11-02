@@ -401,7 +401,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.EventuallyExpectNodeCount("==", 3)
 		})
 		It("should provision a node using a NodePool with higher priority", func() {
-			nodePoolLowPri := test.NodePool(karpv1.NodePool{
+			nodePoolLowPri := azkarptest.NodePoolWithShortName(karpv1.NodePool{
 				Spec: karpv1.NodePoolSpec{
 					Weight: lo.ToPtr(int32(10)),
 					Template: karpv1.NodeClaimTemplate{
@@ -427,7 +427,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 					},
 				},
 			})
-			nodePoolHighPri := test.NodePool(karpv1.NodePool{
+			nodePoolHighPri := azkarptest.NodePoolWithShortName(karpv1.NodePool{
 				Spec: karpv1.NodePoolSpec{
 					Weight: lo.ToPtr(int32(100)),
 					Template: karpv1.NodeClaimTemplate{

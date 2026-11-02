@@ -19,12 +19,20 @@ package test
 import (
 	"context"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
 
 func NodePool(options karpv1.NodePool) *karpv1.NodePool {
-	nodePool := test.NodePool(options)
+	nodePool := NodePoolWithShortName(options)
 	nodePool.SetDefaults(context.Background())
 	return nodePool
+}
+
+// NodePoolWithShortName leaves room for the suffix added to provisioned NodeClaim names.
+func NodePoolWithShortName(overrides ...karpv1.NodePool) *karpv1.NodePool {
+	return test.NodePool(append([]karpv1.NodePool{{
+		ObjectMeta: metav1.ObjectMeta{Name: RandomName("nodepool")},
+	}}, overrides...)...)
 }

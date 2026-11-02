@@ -29,7 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -67,7 +66,7 @@ var _ = Describe("In Place Update Controller", func() {
 
 			// Create a test AKSNodeClass that the NodeClaim can reference
 			nodeClass = test.AKSNodeClass()
-			nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+			nodeClaim = test.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: nodeClaimName,
 				},

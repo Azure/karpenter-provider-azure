@@ -348,7 +348,7 @@ var _ = Describe("Drift", func() {
 	})
 
 	DescribeTable("NodePool Drift", func(nodeClaimTemplate karpv1.NodeClaimTemplate) {
-		updatedNodePool := coretest.NodePool(
+		updatedNodePool := test.NodePoolWithShortName(
 			karpv1.NodePool{
 				Spec: karpv1.NodePoolSpec{
 					Template: karpv1.NodeClaimTemplate{

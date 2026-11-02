@@ -112,7 +112,7 @@ var _ = BeforeEach(func() {
 	nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 	test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
-	nodePool = coretest.NodePool(karpv1.NodePool{
+	nodePool = test.NodePoolWithShortName(karpv1.NodePool{
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
 				Spec: karpv1.NodeClaimTemplateSpec{
@@ -239,7 +239,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 							},
 						})
 						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), *newVM)
-						nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+						nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 							Status: karpv1.NodeClaimStatus{
 								ProviderID: utils.VMResourceIDToProviderID(ctx, *vm.ID),
 							},
@@ -282,7 +282,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 				vm.Properties.TimeCreated = lo.ToPtr(time.Now().Add(-time.Minute * 10))
 				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 					Status: karpv1.NodeClaimStatus{
 						ProviderID: providerID,
 					},
@@ -346,7 +346,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 	var _ = Context("VM instances", func() {
 		It("should not delete a network interface if a nodeclaim exists for it", func() {
 			// Create and apply a NodeClaim that references this NIC
-			nodeClaim := coretest.NodeClaim()
+			nodeClaim := test.NodeClaim()
 			ExpectApplied(ctx, env.Client, nodeClaim)
 
 			// Create a managed NIC

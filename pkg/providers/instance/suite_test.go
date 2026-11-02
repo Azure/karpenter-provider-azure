@@ -203,7 +203,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
-		nodePool = coretest.NodePool(karpv1.NodePool{
+		nodePool = test.NodePoolWithShortName(karpv1.NodePool{
 			Spec: karpv1.NodePoolSpec{
 				Template: karpv1.NodeClaimTemplate{
 					Spec: karpv1.NodeClaimTemplateSpec{
@@ -217,7 +217,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			},
 		})
 
-		nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+		nodeClaim = test.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
 					karpv1.NodePoolLabelKey: nodePool.Name,
@@ -1094,7 +1094,7 @@ var _ = Describe("VMInstanceProvider", func() {
 
 		It("should fall back to a lower-weight NodePool when the primary NodePool's only SKU family is exhausted", func() {
 			// NodePool A (weight 100): Ds_v3 series (standardDSv3Family) — preferred but limited quota
-			nodePoolA := coretest.NodePool(karpv1.NodePool{
+			nodePoolA := test.NodePoolWithShortName(karpv1.NodePool{
 				Spec: karpv1.NodePoolSpec{
 					Weight: lo.ToPtr(int32(100)),
 					Template: karpv1.NodeClaimTemplate{
@@ -1122,7 +1122,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			)
 
 			// NodePool B (weight 10): D_v5 series (standardDv5Family) — different family, lower priority
-			nodePoolB := coretest.NodePool(karpv1.NodePool{
+			nodePoolB := test.NodePoolWithShortName(karpv1.NodePool{
 				Spec: karpv1.NodePoolSpec{
 					Weight: lo.ToPtr(int32(10)),
 					Template: karpv1.NodeClaimTemplate{

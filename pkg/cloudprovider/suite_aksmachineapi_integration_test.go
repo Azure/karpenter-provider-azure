@@ -377,7 +377,7 @@ func runSharedAKSMachineAPITests() {
 		// Note: currently, we do not support different offerings requirements for the NodeClaim with the same name that attempted creation recently. The same applies with VM-based provisioning.
 		It("should handle AKS machine create - found in get, with the same requirements", func() {
 			// Create a fresh nodeClaim with explicit requirements so we know exactly what it will have
-			firstNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			firstNodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				},
@@ -461,7 +461,7 @@ func runSharedAKSMachineAPITests() {
 				ExpectApplied(ctx, env.Client, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
-				firstNodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+				firstNodeClaim = test.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 					},
@@ -528,7 +528,7 @@ func runSharedAKSMachineAPITests() {
 
 		It("should handle AKS machine create failures - not found in get, but somehow found during create, although with same configuration", func() {
 			// Create a fresh nodeClaim with explicit requirements so we know exactly what it will have
-			firstNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			firstNodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				},
@@ -595,7 +595,7 @@ func runSharedAKSMachineAPITests() {
 
 		It("should handle AKS machine create failures - not found in get, but somehow found during create, although with conflicted configuration", func() {
 			// Create a fresh nodeClaim with explicit requirements so we know exactly what it will have
-			firstNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			firstNodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				},

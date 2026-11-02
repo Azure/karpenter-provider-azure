@@ -85,7 +85,7 @@ var _ = Describe("Unit tests", func() {
 		}
 
 		nodeClass = test.AKSNodeClass()
-		nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+		nodeClaim = test.NodeClaim(karpv1.NodeClaim{
 			Spec: karpv1.NodeClaimSpec{
 				NodeClassRef: &karpv1.NodeClassReference{
 					Group: object.GVK(nodeClass).Group,
@@ -202,12 +202,12 @@ var _ = Describe("Unit tests", func() {
 			}
 
 			// Regular VM NodeClaim
-			vmNodeClaim := coretest.NodeClaim()
+			vmNodeClaim := test.NodeClaim()
 			hash1, err := inplaceupdate.HashFromNodeClaim(options, vmNodeClaim, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
 			// AKS Machine NodeClaim
-			aksMachineNodeClaim := coretest.NodeClaim()
+			aksMachineNodeClaim := test.NodeClaim()
 			aksMachineNodeClaim.Annotations = map[string]string{
 				v1beta1.AnnotationAKSMachineResourceID: "/subscriptions/123/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines/test-machine",
 			}
@@ -761,7 +761,7 @@ var _ = Describe("In Place Update Controller", func() {
 
 			// Create a test AKSNodeClass that the NodeClaim can reference
 			nodeClass = test.AKSNodeClass()
-			nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+			nodeClaim = test.NodeClaim(karpv1.NodeClaim{
 				Spec: karpv1.NodeClaimSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
 						Group: object.GVK(nodeClass).Group,

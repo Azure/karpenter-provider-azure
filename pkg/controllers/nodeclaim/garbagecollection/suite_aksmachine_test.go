@@ -118,7 +118,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateRunning)
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
-			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{
 					ProviderID: providerID,
 				},
@@ -143,7 +143,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateDeleted)
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
-			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{
 					ProviderID: providerID,
 				},
@@ -169,7 +169,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 		It("should delete a Machine with a deleted VM when its Node is already missing", func() {
 			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateDeleted)
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{ProviderID: providerID},
 			})
 			ExpectApplied(ctx, env.Client, nodeClaim)
@@ -184,7 +184,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 		It("should only delete a Machine with a deleted VM after the VM state list interval", func() {
 			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateRunning)
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{ProviderID: providerID},
 			})
 			node := coretest.Node(coretest.NodeOptions{ProviderID: providerID})
@@ -210,7 +210,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 		DescribeTable("should preserve resources when the expanded Machine list fails", func(statusCode int) {
 			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateDeleted)
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{ProviderID: providerID},
 			})
 			node := coretest.Node(coretest.NodeOptions{ProviderID: providerID})
@@ -248,7 +248,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 		It("should retain the Node and retry when Machine deletion fails", func() {
 			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateDeleted)
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{ProviderID: providerID},
 			})
 			node := coretest.Node(coretest.NodeOptions{ProviderID: providerID})
@@ -284,7 +284,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			aksMachine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateDeleting)
 			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateDeleted)
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{ProviderID: providerID},
 			})
 			node := coretest.Node(coretest.NodeOptions{ProviderID: providerID})
@@ -303,7 +303,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			fakeClock.SetTime(time.Now())
 			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateDeleted)
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				Spec: karpv1.NodeClaimSpec{
 					NodeClassRef: nodePool.Spec.Template.Spec.NodeClassRef,
 				},
@@ -440,7 +440,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			})
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 			vmProviderID := utils.VMResourceIDToProviderID(ctx, lo.FromPtr(vm.ID))
-			vmNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			vmNodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{
 					ProviderID: vmProviderID,
 				},

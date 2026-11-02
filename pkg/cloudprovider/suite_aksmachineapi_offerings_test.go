@@ -363,7 +363,7 @@ var _ = Describe("CloudProvider", func() {
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorTotalRegionalCoresQuota(fake.Region)
 
 				// Create nodeClaim directly and call cloudProvider.Create like VM tests
-				testNodeClaim1 := coretest.NodeClaim(karpv1.NodeClaim{
+				testNodeClaim1 := test.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -462,7 +462,7 @@ var _ = Describe("CloudProvider", func() {
 			// Ported from VM test: "should return error when NodeClass readiness is Unknown"
 			It("should return error when NodeClass readiness is Unknown", func() {
 				nodeClass.StatusConditions().SetUnknown(corestatus.ConditionReady)
-				testNodeClaim2 := coretest.NodeClaim(karpv1.NodeClaim{
+				testNodeClaim2 := test.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -504,7 +504,7 @@ var _ = Describe("CloudProvider", func() {
 				// When the cache is empty, List returns an error.
 				azureEnv.InstanceTypesProvider.Reset()
 
-				testNodeClaim3 := coretest.NodeClaim(karpv1.NodeClaim{
+				testNodeClaim3 := test.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -534,7 +534,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 				// Create a NodeClaim with valid requirements
-				testNodeClaim4 := coretest.NodeClaim(karpv1.NodeClaim{
+				testNodeClaim4 := test.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -567,7 +567,7 @@ var _ = Describe("CloudProvider", func() {
 			It("should surface the specific failure reason on the Launched condition for a classified error", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-				testNodeClaim5 := coretest.NodeClaim(karpv1.NodeClaim{
+				testNodeClaim5 := test.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -606,7 +606,7 @@ var _ = Describe("CloudProvider", func() {
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
-					testNodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+					testNodeClaim = test.NodeClaim(karpv1.NodeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
 								karpv1.NodePoolLabelKey: nodePool.Name,

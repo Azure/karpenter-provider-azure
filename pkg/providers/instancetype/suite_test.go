@@ -159,7 +159,7 @@ var _ = Describe("InstanceType Provider", func() {
 		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
-		nodePool = coretest.NodePool(karpv1.NodePool{
+		nodePool = test.NodePoolWithShortName(karpv1.NodePool{
 			Spec: karpv1.NodePoolSpec{
 				Template: karpv1.NodeClaimTemplate{
 					Spec: karpv1.NodeClaimTemplateSpec{
@@ -198,7 +198,7 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 		It("should not reattempt creation of a vm thats been created before, and also not CSE", func() {
 			// This test is more like a sanity check of the current intended behavior. The design of the behavior can be changed if intended.
-			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{"karpenter.sh/nodepool": nodePool.Name},
 				},
@@ -335,7 +335,7 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 		Context("VM Creation Failures", func() {
 			It("should not reattempt creation of a vm thats been created before", func() {
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{"karpenter.sh/nodepool": nodePool.Name},
 					},
@@ -728,7 +728,7 @@ var _ = Describe("InstanceType Provider", func() {
 				)
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -2686,7 +2686,7 @@ var _ = Describe("InstanceType Provider", func() {
 		Context("CloudProvider Create Error Cases", func() {
 			It("should return error when NodeClass readiness is Unknown", func() {
 				nodeClass.StatusConditions().SetUnknown(corestatus.ConditionReady)
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -2727,7 +2727,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// When the cache is empty, List returns an error.
 				azureEnv.InstanceTypesProvider.Reset()
 
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -2756,7 +2756,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 				// Create a NodeClaim with valid requirements
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,

@@ -18,6 +18,7 @@ package nodeclaim_test
 
 import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -26,13 +27,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	"sigs.k8s.io/karpenter/pkg/test"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
 var _ = Describe("StandaloneNodeClaim", func() {
 	It("should create a standard NodeClaim within the 'D' sku family", func() {
-		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
+		nodeClaim := azkarptest.NodeClaim(karpv1.NodeClaim{
 			Spec: karpv1.NodeClaimSpec{
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 					{Key: v1beta1.LabelSKUFamily,
@@ -56,7 +56,7 @@ var _ = Describe("StandaloneNodeClaim", func() {
 		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 	})
 	It("should create a standard NodeClaim based on resource requests", func() {
-		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
+		nodeClaim := azkarptest.NodeClaim(karpv1.NodeClaim{
 			Spec: karpv1.NodeClaimSpec{
 				Resources: karpv1.ResourceRequirements{
 					Requests: v1.ResourceList{
@@ -78,7 +78,7 @@ var _ = Describe("StandaloneNodeClaim", func() {
 		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 	})
 	It("should create a NodeClaim propagating all the NodeClaim spec details", func() {
-		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
+		nodeClaim := azkarptest.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
 					"custom-annotation": "custom-value",
@@ -127,7 +127,7 @@ var _ = Describe("StandaloneNodeClaim", func() {
 		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 	})
 	It("should remove the cloudProvider NodeClaim when the cluster NodeClaim is deleted", func() {
-		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
+		nodeClaim := azkarptest.NodeClaim(karpv1.NodeClaim{
 			Spec: karpv1.NodeClaimSpec{
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 					{Key: v1beta1.LabelSKUFamily,

@@ -115,7 +115,7 @@ var _ = AfterSuite(func() {
 
 var _ = BeforeEach(func() {
 	nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
-	nodePool = coretest.NodePool(karpv1.NodePool{
+	nodePool = test.NodePoolWithShortName(karpv1.NodePool{
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
 				Spec: karpv1.NodeClaimTemplateSpec{
@@ -129,7 +129,7 @@ var _ = BeforeEach(func() {
 		},
 	})
 
-	nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+	nodeClaim = test.NodeClaim(karpv1.NodeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 		},

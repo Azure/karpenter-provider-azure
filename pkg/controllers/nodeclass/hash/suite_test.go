@@ -80,7 +80,7 @@ var _ = Describe("NodeClass Hash Controller", func() {
 	var nodePool *karpv1.NodePool
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
-		nodePool = coretest.NodePool(karpv1.NodePool{
+		nodePool = test.NodePoolWithShortName(karpv1.NodePool{
 			Spec: karpv1.NodePoolSpec{
 				Template: karpv1.NodeClaimTemplate{
 					Spec: karpv1.NodeClaimTemplateSpec{
@@ -136,7 +136,7 @@ var _ = Describe("NodeClass Hash Controller", func() {
 			v1beta1.AnnotationAKSNodeClassHash:        "abceduefed",
 			v1beta1.AnnotationAKSNodeClassHashVersion: "test",
 		}
-		nodeClaimOne := coretest.NodeClaim(karpv1.NodeClaim{
+		nodeClaimOne := test.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				Annotations: map[string]string{
@@ -152,7 +152,7 @@ var _ = Describe("NodeClass Hash Controller", func() {
 				},
 			},
 		})
-		nodeClaimTwo := coretest.NodeClaim(karpv1.NodeClaim{
+		nodeClaimTwo := test.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				Annotations: map[string]string{
@@ -188,7 +188,7 @@ var _ = Describe("NodeClass Hash Controller", func() {
 			v1beta1.AnnotationAKSNodeClassHash:        "abceduefed",
 			v1beta1.AnnotationAKSNodeClassHashVersion: "test-version",
 		}
-		nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				Annotations: map[string]string{
@@ -224,7 +224,7 @@ var _ = Describe("NodeClass Hash Controller", func() {
 			v1beta1.AnnotationAKSNodeClassHash:        "abceduefed",
 			v1beta1.AnnotationAKSNodeClassHashVersion: "test",
 		}
-		nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				Annotations: map[string]string{

@@ -35,6 +35,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 
 	. "sigs.k8s.io/karpenter/pkg/utils/testing" //nolint:staticcheck
 
@@ -143,7 +144,7 @@ func NewClient(ctx context.Context, config *rest.Config) client.Client {
 }
 
 func (env *Environment) DefaultNodePool(nodeClass *v1beta1.AKSNodeClass) *karpv1.NodePool {
-	nodePool := coretest.NodePool()
+	nodePool := azkarptest.NodePoolWithShortName()
 	nodePool.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{
 		Group: object.GVK(nodeClass).Group,
 		Kind:  object.GVK(nodeClass).Kind,

@@ -528,7 +528,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 	})
 	DescribeTable("should consolidate nodes (delete)", Label(debug.NoWatch), Label(debug.NoEvents),
 		func(spotToSpot bool) {
-			nodePool := coretest.NodePool(karpv1.NodePool{
+			nodePool := test.NodePoolWithShortName(karpv1.NodePool{
 				Spec: karpv1.NodePoolSpec{
 					Disruption: karpv1.Disruption{
 						ConsolidationPolicy: karpv1.ConsolidationPolicyWhenEmptyOrUnderutilized,
@@ -618,7 +618,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 				}
 			}
 
-			nodePool := coretest.NodePool(karpv1.NodePool{
+			nodePool := test.NodePoolWithShortName(karpv1.NodePool{
 				Spec: karpv1.NodePoolSpec{
 					Disruption: karpv1.Disruption{
 						ConsolidationPolicy: karpv1.ConsolidationPolicyWhenEmptyOrUnderutilized,
@@ -788,7 +788,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 		Entry("from regional on-demand nodes with empty CSI topology", false, true),
 	)
 	It("should consolidate on-demand nodes to spot (replace)", func() {
-		nodePool := coretest.NodePool(karpv1.NodePool{
+		nodePool := test.NodePoolWithShortName(karpv1.NodePool{
 			Spec: karpv1.NodePoolSpec{
 				Disruption: karpv1.Disruption{
 					ConsolidationPolicy: karpv1.ConsolidationPolicyWhenEmptyOrUnderutilized,
