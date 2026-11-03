@@ -24,18 +24,18 @@ require (
 	github.com/Azure/go-autorest/autorest v0.11.30
 	github.com/Azure/skewer v0.0.32
 	github.com/Pallinder/go-randomdata v1.2.0
-	github.com/alecthomas/kong v1.16.1
+	github.com/alecthomas/kong v1.17.0
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/awslabs/operatorpkg v0.0.0-20261002163259-5e8ed3699dea
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.4
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-openapi/errors v0.22.9
-	github.com/go-openapi/runtime v0.33.3
+	github.com/go-openapi/runtime v0.33.4
 	github.com/go-openapi/strfmt v0.27.4
 	github.com/go-openapi/swag v0.29.2
 	github.com/go-openapi/validate v1.0.1
-	github.com/go-playground/validator/v10 v10.30.5
+	github.com/go-playground/validator/v10 v10.30.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
@@ -95,13 +95,13 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.16 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v1.0.1 // indirect
 	github.com/go-openapi/jsonpointer v1.0.2 // indirect
 	github.com/go-openapi/jsonreference v1.0.3 // indirect
 	github.com/go-openapi/loads v0.25.3 // indirect
-	github.com/go-openapi/runtime/server-middleware v0.33.3 // indirect
+	github.com/go-openapi/runtime/server-middleware v0.33.4 // indirect
 	github.com/go-openapi/spec v1.0.1 // indirect
 	github.com/go-openapi/swag/cmdutils v0.29.2 // indirect
 	github.com/go-openapi/swag/conv v0.29.2 // indirect
@@ -114,8 +114,8 @@ require (
 	github.com/go-openapi/swag/stringutils v0.29.2 // indirect
 	github.com/go-openapi/swag/typeutils v0.29.2 // indirect
 	github.com/go-openapi/swag/yamlutils v0.29.2 // indirect
-	github.com/go-playground/locales v0.14.1 // indirect
-	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-playground/locales v0.14.2 // indirect
+	github.com/go-playground/universal-translator v0.18.2 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
