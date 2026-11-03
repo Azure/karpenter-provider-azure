@@ -83,7 +83,7 @@ func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location
 
 // Returns the list of available NodeImages for the given AKSNodeClass sorted in priority ordering
 func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
-	return p.listWithCache(ctx, nodeClass)
+	return p.listNodeImages(ctx, nodeClass, true)
 }
 
 // GetLatestVersion returns the latest image version available for the NodeClass.
@@ -96,7 +96,7 @@ func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSN
 		return p.latestImageSuffix, nil
 	}
 
-	nodeImages, err := p.listNodeImages(ctx, nodeClass)
+	nodeImages, err := p.listNodeImages(ctx, nodeClass, false)
 	if err != nil {
 		if !p.latestImageLastUpdate.IsZero() && now.Sub(p.latestImageLastUpdate) < LatestImageGracePeriod {
 			log.FromContext(ctx).Error(err, "failed to refresh latest node image version, using last successfully observed version",
@@ -117,25 +117,7 @@ func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSN
 	return p.latestImageSuffix, nil
 }
 
-func (p *provider) listNodeImages(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
-	useSIG := options.FromContext(ctx).UseSIG
-	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS && !useSIG {
-		return []NodeImage{}, nil
-	}
-
-	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
-	if err != nil {
-		return []NodeImage{}, err
-	}
-	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.Windows2025ImageFamily && !SupportsWindows2025(kubernetesVersion) {
-		return []NodeImage{}, nil
-	}
-
-	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled())
-	return p.listImages(ctx, useSIG, supportedImages)
-}
-
-func (p *provider) listWithCache(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
+func (p *provider) listNodeImages(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, useCache bool) ([]NodeImage, error) {
 	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.
 	useSIG := options.FromContext(ctx).UseSIG
 
@@ -154,20 +136,25 @@ func (p *provider) listWithCache(ctx context.Context, nodeClass *v1beta1.AKSNode
 	}
 
 	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled())
-	key, err := p.cacheKey(supportedImages, kubernetesVersion)
-	if err != nil {
-		return []NodeImage{}, err
-	}
 
-	if nodeImages, ok := p.nodeImagesCache.Get(key); ok {
-		return nodeImages.([]NodeImage), nil
+	var key string
+	if useCache {
+		key, err = p.cacheKey(supportedImages, kubernetesVersion)
+		if err != nil {
+			return []NodeImage{}, err
+		}
+		if nodeImages, ok := p.nodeImagesCache.Get(key); ok {
+			return nodeImages.([]NodeImage), nil
+		}
 	}
 
 	nodeImages, err := p.listImages(ctx, useSIG, supportedImages)
 	if err != nil {
 		return []NodeImage{}, err
 	}
-	p.nodeImagesCache.Set(key, nodeImages, cache.DefaultExpiration)
+	if useCache {
+		p.nodeImagesCache.Set(key, nodeImages, cache.DefaultExpiration)
+	}
 
 	return nodeImages, nil
 }
