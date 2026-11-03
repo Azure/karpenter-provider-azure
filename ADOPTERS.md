@@ -16,6 +16,6 @@ If you are open to others contacting you about your use of Karpenter on Slack, a
 
 ## Adopters (Alphabetical)
 
-| Organization | Subdivision(s) | NAP or self-hosted | Description | Contacts | Link |
-| --- | --- | --- | --- | --- | --- |
-| Microsoft | Various | NAP | NAP is being used by various products and teams within Microsoft. | --- | [Overview of NAP in AKS](https://learn.microsoft.com/en-us/azure/aks/node-auto-provisioning) |
+| Organization | NAP or self-hosted | Description | Contacts | Link |
+| --- | --- | --- | --- | --- |
+| Microsoft | NAP | NAP is being used by various products and teams within Microsoft. | --- | [Overview of NAP in AKS](https://learn.microsoft.com/en-us/azure/aks/node-auto-provisioning) |
