@@ -19,11 +19,10 @@ package instancetype
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/mitchellh/hashstructure/v2"
@@ -32,36 +31,86 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
-	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/patrickmn/go-cache"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/patrickmn/go-cache"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"knative.dev/pkg/logging"
+	skuutil "github.com/Azure/karpenter-provider-azure/pkg/utils/sku"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 
 	"github.com/Azure/skewer"
-	"github.com/alecthomas/units"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
 const (
-	InstanceTypesCacheKey = "types"
-	InstanceTypesCacheTTL = 23 * time.Hour
+	InstanceTypesCacheTTL      = 23 * time.Hour
+	skuRetirementHorizonMonths = 6
 )
+
+// instanceTypeParameters contains the resolved parameters that affect
+// instance-type construction. The instance-type cache key is derived by hashing this
+// struct; adding a new field here automatically incorporates it into the key.
+type instanceTypeParameters struct {
+	ImageFamily              string
+	OSDiskSizeGB             *int32 // nil means auto-sized per SKU
+	OSDiskType               v1beta1.OSDiskType
+	MaxPods                  int32
+	EncryptionAtHost         bool
+	TrustedLaunch            bool
+	GPUMode                  v1beta1.GPUMode
+	ArtifactStreamingEnabled bool
+	FIPSMode                 v1beta1.FIPSMode
+	LocalDNSRequired         bool
+	KubeReserved             map[string]string
+	EvictionHard             map[string]string
+	// These two carry only the static shape of the Capacity Reservation Group: which VM
+	// sizes and zones it can back. Reserved quantities and utilization are
+	// deliberately excluded, because they change on every launch and would invalidate the
+	// whole instance-type cache.
+	CapacityReservationGroupID string
+	CapacityReservations       []capacityReservationPlacement
+	KataEnabled                bool
+}
+
+// capacityReservationPlacement is one {VM size, zone} pair that a member reservation
+// of the configured Capacity Reservation Group can back. Regional reservations use
+// zones.Regional. VMSize is lowercased because ARM is inconsistent about SKU name casing.
+type capacityReservationPlacement struct {
+	VMSize string
+	Zone   string
+}
+
+type instanceTypesSourceDataGeneration struct {
+	unavailableOfferings uint64
+}
+
+type cachedInstanceTypes struct {
+	base        []*cloudprovider.InstanceType
+	quotaSeqNum uint64
+	quota       []*cloudprovider.InstanceType
+}
 
 type Provider interface {
 	LivenessProbe(*http.Request) error
-	List(context.Context, *v1alpha2.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
-	//UpdateInstanceTypes(ctx context.Context) error
-	//UpdateInstanceTypeOfferings(ctx context.Context) error
+	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+
+	// Return Azure Skewer Representation of the instance type
+	Get(context.Context, string) (*skewer.SKU, error)
+
+	// UpdateInstanceTypes fetches instance types from Azure and updates the cache
+	UpdateInstanceTypes(ctx context.Context) error
+
+	// UpdateInstanceTypeOfferings(ctx context.Context) error
 }
 
 // assert that DefaultProvider implements Provider interface
@@ -69,113 +118,313 @@ var _ Provider = (*DefaultProvider)(nil)
 
 type DefaultProvider struct {
 	region               string
-	skuClient            skuclient.SkuClient
+	skuClient            skewer.ResourceClient
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
+	quotaProvider        quota.Provider
 
-	// Has one cache entry for all the instance types (key: InstanceTypesCacheKey)
-	// Values cached *before* considering insufficient capacity errors from the unavailableOfferings cache.
-	// Fully initialized Instance Types are also cached based on the set of all instance types,
-	// unavailableOfferings cache, AWSNodeClass, and kubelet configuration from the NodePool
-	mu                 sync.Mutex
-	instanceTypesCache *cache.Cache
+	// Fully initialized instance types are cached by the parameters that affect their construction.
+	// Changes in the source data generation invalidate the cache as a whole instead of creating unreachable keys.
+	instanceTypesCache           *cache.Cache
+	muInstanceTypesCache         sync.Mutex
+	instanceTypesCacheGeneration instanceTypesSourceDataGeneration
 
 	cm *pretty.ChangeMonitor
-	// instanceTypesSeqNum is a monotonically increasing change counter used to avoid the expensive hashing operation on instance types
-	instanceTypesSeqNum uint64
+
+	muInstanceTypesInfo sync.RWMutex
+	instanceTypesInfo   map[string]*skewer.SKU
 }
 
-func NewDefaultProvider(region string, cache *cache.Cache, skuClient skuclient.SkuClient, pricingProvider *pricing.Provider, offeringsCache *kcache.UnavailableOfferings) *DefaultProvider {
+func NewDefaultProvider(
+	region string,
+	cache *cache.Cache,
+	skuClient skewer.ResourceClient,
+	pricingProvider *pricing.Provider,
+	offeringsCache *kcache.UnavailableOfferings,
+	quotaProvider quota.Provider,
+) *DefaultProvider {
 	return &DefaultProvider{
 		// TODO: skewer api, subnetprovider, pricing provider, unavailable offerings, ...
 		region:               region,
 		skuClient:            skuClient,
 		pricingProvider:      pricingProvider,
 		unavailableOfferings: offeringsCache,
+		quotaProvider:        quotaProvider,
 		instanceTypesCache:   cache,
 		cm:                   pretty.NewChangeMonitor(),
-		instanceTypesSeqNum:  0,
 	}
 }
 
 // Get all instance type options
 func (p *DefaultProvider) List(
-	ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
-	kc := nodeClass.Spec.Kubelet
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+) ([]*cloudprovider.InstanceType, error) {
+	p.muInstanceTypesInfo.RLock()
+	defer p.muInstanceTypesInfo.RUnlock()
 
-	// Get SKUs from Azure
-	skus, err := p.getInstanceTypes(ctx)
-	if err != nil {
-		return nil, err
+	if len(p.instanceTypesInfo) == 0 {
+		return nil, fmt.Errorf("no instance types found")
 	}
 
+	opts := options.FromContext(ctx)
 	// Compute fully initialized instance types hash key
-	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d",
-		p.instanceTypesSeqNum,
-		p.unavailableOfferings.SeqNum,
-		kcHash,
-		to.String(nodeClass.Spec.ImageFamily),
-		to.Int32(nodeClass.Spec.OSDiskSizeGB),
-	)
+	instanceTypeParams := &instanceTypeParameters{
+		ImageFamily:              lo.FromPtr(nodeClass.Spec.ImageFamily),
+		OSDiskSizeGB:             nodeClass.Spec.OSDiskSizeGB,
+		OSDiskType:               lo.FromPtr(nodeClass.Spec.OSDiskType),
+		MaxPods:                  utils.GetMaxPods(nodeClass, opts.NetworkPlugin, opts.NetworkPluginMode),
+		EncryptionAtHost:         nodeClass.GetEncryptionAtHost(),
+		TrustedLaunch:            nodeClass.IsTrustedLaunchEnabled(),
+		GPUMode:                  nodeClass.GetGPUMode(),
+		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
+		// Windows2025 is effectively FIPS-on even when fipsMode is unset, so key off the
+		// effective value rather than the raw spec field.
+		FIPSMode:                   lo.Ternary(nodeClass.IsFIPSEnabled(), v1beta1.FIPSModeFIPS, v1beta1.FIPSModeDisabled),
+		LocalDNSRequired:           nodeClass.IsLocalDNSRequired(),
+		CapacityReservationGroupID: nodeClass.GetCapacityReservationGroupID(),
+		CapacityReservations:       p.capacityReservationPlacements(ctx, nodeClass),
+		KataEnabled:                nodeClass.IsKataEnabled(),
+	}
+	if nodeClass.Spec.Kubelet != nil {
+		// These values do not filter SKUs, but they change scheduling simulation by changing
+		// allocatable resources. Include them so NodeClasses cannot share incompatible cached results.
+		instanceTypeParams.KubeReserved = KubeReservedOverrides(nodeClass.Spec.Kubelet.KubeReserved)
+		instanceTypeParams.EvictionHard = evictionHardOverrides(nodeClass.Spec.Kubelet.EvictionHard)
+	}
+	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
+	key := fmt.Sprintf("%016x", paramsHash)
+
+	p.muInstanceTypesCache.Lock()
+	defer p.muInstanceTypesCache.Unlock()
+	generation := p.currentInstanceTypesSourceDataGeneration()
+	if generation != p.instanceTypesCacheGeneration {
+		p.instanceTypesCache.Flush()
+		p.instanceTypesCacheGeneration = generation
+	}
+	var cached *cachedInstanceTypes
 	if item, ok := p.instanceTypesCache.Get(key); ok {
-		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
-		// so that modifications to the ordering of the data don't affect the original
-		return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
+		cached = item.(*cachedInstanceTypes)
+	} else {
+		cached = &cachedInstanceTypes{base: p.buildInstanceTypes(ctx, instanceTypeParams)}
+		p.instanceTypesCache.SetDefault(key, cached)
+	}
+	// If quota hasn't changed, return the cached data
+	quotaSeqNum := p.quotaProvider.SeqNum()
+	if cached.quota != nil && cached.quotaSeqNum == quotaSeqNum {
+		return slices.Clone(cached.quota), nil
 	}
 
-	// Get Viable offerings
-	/// Azure has zones availability directly from SKU info
+	// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
+	// so that modifications to the ordering of the data don't affect the original
+	result := slices.Clone(cached.base)
+
+	// Add quota overlay before returning
+	result, quotaSeqNum = p.applyQuota(ctx, result, instanceTypeParams.CapacityReservationGroupID)
+	cached.quota = result
+	cached.quotaSeqNum = quotaSeqNum
+	return slices.Clone(result), nil
+}
+
+// KubeReservedOverrides converts typed kube-reserved overrides to kubelet resource quantities.
+func KubeReservedOverrides(config *v1beta1.KubeReserved) map[string]string {
+	if config == nil {
+		return nil
+	}
+	overrides := map[string]string{}
+	if config.CPUMillicores != nil {
+		overrides[string(corev1.ResourceCPU)] = fmt.Sprintf("%dm", *config.CPUMillicores)
+	}
+	if config.MemoryMB != nil {
+		overrides[string(corev1.ResourceMemory)] = fmt.Sprintf("%dMi", *config.MemoryMB)
+	}
+	if len(overrides) == 0 {
+		return nil
+	}
+	return overrides
+}
+
+func evictionHardOverrides(config *v1beta1.EvictionThreshold) map[string]string {
+	if config == nil {
+		return nil
+	}
+	overrides := map[string]string{}
+	if config.MemoryAvailable != nil {
+		overrides[MemoryAvailable] = *config.MemoryAvailable
+	}
+	if config.NodeFsAvailable != nil {
+		overrides[NodeFSAvailable] = *config.NodeFsAvailable
+	}
+	if len(overrides) == 0 {
+		return nil
+	}
+	return overrides
+}
+
+func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instanceTypeParameters) []*cloudprovider.InstanceType {
+	// Azure has zone availability directly in SKU info. A configured reservation
+	// group further restricts each size to placements backed by eligible members.
+	reservedZones := capacityReservationZones(params)
+	capacityReserved := reservedZones != nil
 	var result []*cloudprovider.InstanceType
-	for _, sku := range skus {
+	for _, sku := range p.instanceTypesInfo {
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
-			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *sku.Size, err)
+			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
 			continue
 		}
 		architecture, err := sku.GetCPUArchitectureType()
 		if err != nil {
-			logging.FromContext(ctx).Errorf("parsing SKU architecture %s, %v", *sku.Size, err)
+			log.FromContext(ctx).Error(err, "parsing SKU architecture", "vmSize", *sku.Size)
 			continue
 		}
-		instanceTypeZones := instanceTypeZones(sku, p.region)
-		// !!! Important !!!
-		// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
-		// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
-		// !!! Important !!!
-		instanceType := NewInstanceType(ctx, sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones), nodeClass, architecture)
+		instanceTypeZones := p.instanceTypeZones(sku)
+		if capacityReserved {
+			instanceTypeZones = instanceTypeZones.Intersection(reservedZones[strings.ToLower(sku.GetName())])
+		}
+		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones, params.CapacityReservationGroupID), params, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
-
-		if !p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) {
+		if !p.isInstanceTypeSupportedByFilters(sku, architecture, params) {
 			continue
 		}
 		result = append(result, instanceType)
 	}
+	return result
+}
 
-	p.instanceTypesCache.SetDefault(key, result)
-	return result, nil
+func (p *DefaultProvider) currentInstanceTypesSourceDataGeneration() instanceTypesSourceDataGeneration {
+	return instanceTypesSourceDataGeneration{
+		unavailableOfferings: p.unavailableOfferings.SeqNum(),
+	}
+}
+
+// applyQuota applies current on-demand quota availability to an instance-type slice,
+// deep-copying only instance types whose offerings change.
+// This is not applied as part of the cached offerings because availability changes every time we create/delete a node which would result in a significant
+// amount of addition work to constant regenerate instance types.
+func (p *DefaultProvider) applyQuota(ctx context.Context, instanceTypes []*cloudprovider.InstanceType, capacityReservationGroupID string) ([]*cloudprovider.InstanceType, uint64) {
+	if capacityReservationGroupID != "" {
+		return instanceTypes, p.quotaProvider.SeqNum()
+	}
+	skus := make([]*skewer.SKU, 0, len(instanceTypes))
+	for _, instanceType := range instanceTypes {
+		if sku, ok := p.instanceTypesInfo[instanceType.Name]; ok {
+			skus = append(skus, sku)
+		}
+	}
+	hasQuotaMap, quotaSeqNum := p.quotaProvider.HasQuotaForSKUs(ctx, skus)
+	for i, instanceType := range instanceTypes {
+		available, ok := hasQuotaMap[instanceType.Name]
+		// If the SKU is not found in the quota map, assume it has quota.
+		// If the SKU is available, we don't need to do anything (available = <cached value> && true doesn't change anything)
+		if !ok || available {
+			continue
+		}
+		// We only mutate OnDemand offerings (when there is no quota available for them)
+		if !slices.ContainsFunc(instanceType.Offerings, func(offering *cloudprovider.Offering) bool {
+			return offering.Available && offering.CapacityType() == karpv1.CapacityTypeOnDemand
+		}) {
+			continue
+		}
+		copied := instanceType.DeepCopy()
+		for _, offering := range copied.Offerings {
+			if offering.CapacityType() == karpv1.CapacityTypeOnDemand {
+				offering.Available = false
+			}
+		}
+		instanceTypes[i] = copied
+	}
+	return instanceTypes, quotaSeqNum
 }
 
 func (p *DefaultProvider) LivenessProbe(req *http.Request) error {
 	return p.pricingProvider.LivenessProbe(req)
 }
 
+func (p *DefaultProvider) Get(ctx context.Context, instanceType string) (*skewer.SKU, error) {
+	p.muInstanceTypesInfo.RLock()
+	defer p.muInstanceTypesInfo.RUnlock()
+
+	if len(p.instanceTypesInfo) == 0 {
+		return nil, fmt.Errorf("no instance types found")
+	}
+
+	if sku, ok := p.instanceTypesInfo[instanceType]; ok {
+		return sku, nil
+	}
+	return nil, fmt.Errorf("instance type %s not found", instanceType)
+}
+
 // instanceTypeZones generates the set of all supported zones for a given SKU
 // The strings have to match Zone labels that will be placed on Node
-func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
+func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 	// skewer returns numerical zones, like "1" (as keys in the map);
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
-	// If an offering is non-zonal, the availability zones will be empty.
-	skuZones := lo.Keys(sku.AvailabilityZones(region))
-	if hasZonalSupport(region) && len(skuZones) > 0 {
-		return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
-			return fmt.Sprintf("%s-%s", region, zone)
+	// If an offering is regional (non-zonal), the availability zones will be empty.
+	skuZones := lo.Keys(sku.AvailabilityZones(p.region))
+	if len(skuZones) > 0 {
+		offeringZones := sets.New(lo.Map(skuZones, func(zone string, _ int) string {
+			return zones.MakeAKSLabelZoneFromARMZone(p.region, zone)
 		})...)
+		offeringZones.Insert(zones.Regional)
+		return offeringZones
 	}
-	return sets.New("") // empty string means non-zonal offering
+	// Regional (non-zonal) SKUs use zone "0" to match the label AKS places on regional nodes
+	// (topology.kubernetes.io/zone=0).
+	return sets.New(zones.Regional)
+}
+
+// capacityReservationPlacements projects the Capacity Reservation Group resolved in
+// status into the {VM size, zone} pairs its member reservations can back. A nil
+// result means no group is configured, which leaves offerings unrestricted. An
+// empty result means the configured group has no current resolved placements.
+// Status retains ineligible members for diagnostics; this projection includes only
+// eligible members.
+func (p *DefaultProvider) capacityReservationPlacements(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) []capacityReservationPlacement {
+	if nodeClass.Spec.CapacityReservation == nil {
+		return nil
+	}
+	if nodeClass.Status.CapacityReservationGroup == nil ||
+		!strings.EqualFold(nodeClass.Status.CapacityReservationGroup.ID, nodeClass.GetCapacityReservationGroupID()) {
+		return []capacityReservationPlacement{}
+	}
+	placements := []capacityReservationPlacement{}
+	for _, reservation := range nodeClass.Status.CapacityReservationGroup.CapacityReservations {
+		if !reservation.IsEligible() {
+			continue
+		}
+		// The SDK models zones as a slice, but ARM permits at most one zone per member.
+		// A group spans zones through separate member reservations.
+		zone, err := zones.MakeAKSLabelZoneFromARMZones(p.region, lo.ToSlicePtr(reservation.Zones))
+		if err != nil {
+			log.FromContext(ctx).Error(err, "resolving capacity reservation placement", "capacityReservation", reservation.ID)
+			continue
+		}
+		placements = append(placements, capacityReservationPlacement{VMSize: strings.ToLower(reservation.VMSize), Zone: zone})
+	}
+	// Duplicates would cancel each other out under the cache key's set hashing.
+	return lo.Uniq(placements)
+}
+
+// capacityReservationZones maps each reserved VM size to the zones where an eligible
+// member reservation is available. A nil result means no Capacity Reservation Group is
+// configured; a non-nil but empty result means one is configured that can back nothing,
+// which must yield no offerings at all.
+func capacityReservationZones(params *instanceTypeParameters) map[string]sets.Set[string] {
+	if params.CapacityReservationGroupID == "" {
+		return nil
+	}
+	byVMSize := map[string]sets.Set[string]{}
+	for _, placement := range params.CapacityReservations {
+		if byVMSize[placement.VMSize] == nil {
+			byVMSize[placement.VMSize] = sets.New[string]()
+		}
+		byVMSize[placement.VMSize].Insert(placement.Zone)
+	}
+	return byVMSize
 }
 
 // TODO: review; switch to controller-driven updates
@@ -188,33 +437,88 @@ func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string]) []cloudprovider.Offering {
-	offerings := []cloudprovider.Offering{}
-	for zone := range zones {
-		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
-		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)
-		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, karpv1.CapacityTypeOnDemand)
-		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, karpv1.CapacityTypeSpot)
+func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Set[string], capacityReservationGroupID string) cloudprovider.Offerings {
+	offerings := make([]*cloudprovider.Offering, 0, 2*len(offeringZones))
 
-		onDemandOffering := cloudprovider.Offering{
+	// Availability is tracked separately per group, so a shortage of unreserved capacity
+	// does not suppress the reserved offering that exists to survive exactly that.
+	capacityReserved := capacityReservationGroupID != ""
+	unavailableOfferings := p.unavailableOfferings.ForCapacityReservationGroup(capacityReservationGroupID)
+
+	for zone := range offeringZones {
+		placementScope := zones.PlacementScopeForZone(zone)
+
+		// Get prices for ordering; missing prices return MissingPrice (de-prioritized but not excluded).
+		onDemandPrice, _ := p.pricingProvider.OnDemandPrice(*sku.Name)
+		spotPrice, _ := p.pricingProvider.SpotPrice(*sku.Name)
+
+		// Unknown SKUs (not in known_skus.yaml) are deprioritized to prevent them from
+		// winning scheduling over known-good SKUs. Users can override via NodeOverlay.
+		if !IsKnownSKU(*sku.Name) {
+			onDemandPrice = pricing.MissingPrice
+			spotPrice = pricing.MissingPrice
+		}
+
+		// Determine allocatability from SKU capabilities.
+		// On-demand is always allocatable if the SKU passed UpdateInstanceTypes filters, we just need to check the
+		// unavailableOfferings cache. Quota validation is not encoded in cached offerings and is instead applied after the fact.
+		// Reserved offerings skip the quota preflight: creating the reservation already spent
+		// the family quota, and Azure omits its own quota check for deployments up to the
+		// reserved quantity. Gating on remaining quota here would strand a paid-for reservation.
+		availableOnDemand := !unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)
+
+		// Ultra Disk cannot be attached to a VM that consumes a capacity reservation.
+		ultraSSD := ultraSSDOptions(sku, zone)
+		if capacityReserved {
+			ultraSSD = []string{"false"}
+		}
+
+		onDemandOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular),
+				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
+				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
+				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, ultraSSD...),
 			),
 			Price:     onDemandPrice,
 			Available: availableOnDemand,
 		}
+		offerings = append(offerings, onDemandOffering)
 
-		spotOffering := cloudprovider.Offering{
+		// Spot cannot consume a capacity reservation, so a reserved SKU is Regular only.
+		if capacityReserved {
+			continue
+		}
+
+		// Spot is only allocatable if the SKU reports LowPriorityCapable=True and the offering is not in the unavailableOfferings cache.
+		// NOTE:  Quota check applies to on-demand only. Spot VMs do not consume per-family vCPU quota;
+		// they use a single regional "Total Regional Spot vCPUs" (lowPriorityCores) pool shared
+		// across all families, which is not useful as a size-selection signal.
+		// See: https://learn.microsoft.com/en-us/azure/quotas/spot-quota
+		// IMPORTANT: Spot can be capacity restricted separately from dedicated. Unlike dedicated, spot capacity restrictions are not returned
+		// in the "restrictions" section of the SKU API, instead the LowPriorityCapable capability is set to False. This means that the VM SKU API cannot differentiate
+		// between restricted at a regional level and for all zones, or just restricted for some zones. Both are LowPriorityCapable=False. It would be
+		// nice to have the SKUs API fix this. Until it does, we _could_ try to join with spot price here and use the existence of a spot meter as
+		// supporting signal that actually the VM can be allocated as spot at the regional level. This seems an over-optimization for now though,
+		// so not doing it.
+		availableSpot := sku.IsLowPriorityCapable() && !unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
+
+		spotOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeSpot),
+				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPrioritySpot),
+				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
+				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
+				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, ultraSSD...),
 			),
 			Price:     spotPrice,
 			Available: availableSpot,
 		}
 
-		offerings = append(offerings, onDemandOffering, spotOffering)
+		offerings = append(offerings, spotOffering)
 
 		/*
 			instanceTypeOfferingAvailable.With(prometheus.Labels{
@@ -232,75 +536,224 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 	return offerings
 }
 
+// isInstanceTypeSupportedByFilters consolidates all per-NodeClass instance type
+// filters into a single call to keep the List() method's cyclomatic complexity low.
+func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, architecture string, params *instanceTypeParameters) bool {
+	return isArchitectureSupportedByImageFamily(architecture, params.ImageFamily) &&
+		p.isInstanceTypeSupportedByImageFamily(sku.GetName(), params.ImageFamily) &&
+		p.isInstanceTypeSupportedByEncryptionAtHost(sku, params) &&
+		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
+		p.isInstanceTypeSupportedByGPUDriverMode(sku, params) &&
+		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params) &&
+		p.isInstanceTypeSupportedByTrustedLaunch(sku, params) &&
+		p.isInstanceTypeSupportedByKata(sku, architecture, params)
+}
+
+func isArchitectureSupportedByImageFamily(architecture, imageFamily string) bool {
+	return !v1beta1.IsWindowsImageFamily(imageFamily) || getArchitecture(architecture) == karpv1.ArchitectureAmd64
+}
+
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
-	// Currently only GPU has conditional support by image family
-	if !(utils.IsNvidiaEnabledSKU(skuName) || utils.IsMarinerEnabledGPUSKU(skuName)) {
+	// Non-GPU SKUs are supported by all image families
+	if !utils.IsGPUSKU(skuName) {
 		return true
 	}
-	switch imageFamily {
-	case v1alpha2.Ubuntu2204ImageFamily:
-		return utils.IsNvidiaEnabledSKU(skuName)
-	case v1alpha2.AzureLinuxImageFamily:
-		return utils.IsMarinerEnabledGPUSKU(skuName)
+	switch {
+	case v1beta1.UbuntuFamilies.Has(imageFamily):
+		return utils.IsGPUSKUSupportedOnOS(skuName, "ubuntu")
+	case imageFamily == v1beta1.AzureLinuxImageFamily:
+		return utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux") ||
+			utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux3")
+	case imageFamily == v1beta1.AzureContainerLinuxImageFamily:
+		return utils.IsGPUSKUSupportedOnOS(skuName, "azurecontainerlinux")
 	default:
 		return false
 	}
 }
 
-// getInstanceTypes retrieves all instance types from skewer using some opinionated filters
-func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU, error) {
+func (p *DefaultProvider) isInstanceTypeSupportedByKata(sku *skewer.SKU, architecture string, params *instanceTypeParameters) bool {
+	// If a Kata workload runtime is not requested, all instance types are supported.
+	if !params.KataEnabled {
+		return true
+	}
+	// The only Kata image variants AKS publishes today are amd64 (see imagefamily/azlinux3.go).
+	// Advertising an arm64 SKU as Kata-capable would fail late at image resolution instead of
+	// simply not being offered. Drop this condition when an arm64 Kata image ships.
+	if getArchitecture(architecture) != karpv1.ArchitectureAmd64 {
+		return false
+	}
+	return sku.IsNestedVirtualizationSupported() || sku.IsDirectVirtualizationSupported()
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, params *instanceTypeParameters) bool {
+	// If EncryptionAtHost is not enabled in the nodeclass, all instance types are supported
+	if !params.EncryptionAtHost {
+		return true
+	}
+	// If EncryptionAtHost is enabled, only include instance types that support it
+	return p.supportsEncryptionAtHost(sku)
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByTrustedLaunch(sku *skewer.SKU, params *instanceTypeParameters) bool {
+	if !params.TrustedLaunch {
+		return true
+	}
+
+	supported, err := sku.IsTrustedLaunchEnabled()
+	if err != nil {
+		return false
+	}
+	return supported
+}
+
+// supportsEncryptionAtHost checks if the SKU supports encryption at host
+func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
+	value, err := sku.GetCapabilityString("EncryptionAtHostSupported")
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(value, "True")
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, params *instanceTypeParameters) bool {
+	// Only Mode=Required makes the LocalDNS VM size floor a constraint on
+	// instance type selection. Required means "enforce LocalDNS, and fail if the
+	// prerequisites are not met", so a SKU that cannot run LocalDNS is not a
+	// viable candidate and is filtered out here.
+	//
+	// Under Mode=Preferred the floor is deliberately NOT applied. Preferred means
+	// "enable LocalDNS where the node can support it" (see the "VM SKU capacity"
+	// row of the compatibility checks at aka.ms/aks/localdns): a node below the
+	// floor still provisions, it just runs without LocalDNS. Filtering here would
+	// delete those sizes from the candidate list, so a NodePool pinned to small
+	// SKUs would lose every candidate and its pods would sit Pending. The
+	// per-node decision is made at launch time by
+	// localdns.IsSupportedForInstanceType.
+	if !params.LocalDNSRequired {
+		return true
+	}
+	cpu, err := sku.VCPU()
+	if err != nil {
+		return false
+	}
+	return localdns.SKUMeetsFloor(cpu, memoryMiB(sku))
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU, params *instanceTypeParameters) bool {
+	// Only "Driver" mode filters out GPU SKUs without driver installation support.
+	// "None" mode allows all GPU SKUs.
+	if params.GPUMode != v1beta1.GPUModeDriver {
+		return true
+	}
+	name := sku.GetName()
+	// Non-GPU SKUs are always allowed
+	if !utils.IsGPUSKU(name) {
+		return true
+	}
+	// In "Driver" mode, only allow GPU SKUs with driver installation support
+	return utils.IsDriverInstallSupported(name)
+}
+
+// isInstanceTypeSupportedByArtifactStreaming filters out ARM64 instance types when artifact streaming
+// is explicitly enabled, since ARM64 does not support artifact streaming.
+// When artifact streaming is not set (nil/default) or explicitly disabled, all architectures are allowed.
+func (p *DefaultProvider) isInstanceTypeSupportedByArtifactStreaming(architecture string, params *instanceTypeParameters) bool {
+	// Only filter when the user explicitly requested artifact streaming enabled
+	if !params.ArtifactStreamingEnabled {
+		return true
+	}
+	// Artifact streaming is explicitly enabled; exclude ARM64 since it doesn't support it
+	kubeArch := getArchitecture(architecture)
+	return kubeArch != karpv1.ArchitectureArm64
+}
+
+// UpdateInstanceTypes fetches all instance types from Azure (using skewer) and updates the cache.
+// This is called periodically by the instance type controller.
+func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	// DO NOT REMOVE THIS LOCK ----------------------------------------------------------------------------
-	// We lock here so that multiple callers to GetInstanceTypes do not result in cache misses and multiple
+	// We lock here so that multiple callers to UpdateInstanceTypes do not result in multiple
 	// calls to Resource API when we could have just made one call. This lock is here because multiple callers result
 	// in A LOT of extra memory generated from the response for simultaneous callers.
-	// (This can be made more efficient by holding a Read lock and only obtaining the Write if not in cache)
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.muInstanceTypesInfo.Lock()
+	defer p.muInstanceTypesInfo.Unlock()
 
-	if cached, ok := p.instanceTypesCache.Get(InstanceTypesCacheKey); ok {
-		return cached.(map[string]*skewer.SKU), nil
-	}
 	instanceTypes := map[string]*skewer.SKU{}
 
-	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient.GetInstance()))
+	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient))
 	if err != nil {
-		return nil, fmt.Errorf("fetching SKUs using skewer, %w", err)
+		return fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
 
-	skus := cache.List(ctx, skewer.ResourceTypeFilter(skewer.VirtualMachines))
-	logging.FromContext(ctx).Debugf("Discovered %d SKUs", len(skus))
+	skus := cache.List(ctx, skewer.ResourceTypeFilter("virtualMachines"))
+	log.FromContext(ctx).V(1).Info("discovered SKUs", "skuCount", len(skus))
+	now := time.Now().UTC()
+	retirementCutoff := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, skuRetirementHorizonMonths, 0)
 	for i := range skus {
-		vmsize, err := skus[i].GetVMSize()
-		if err != nil {
-			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *skus[i].Size, err)
+		if IsRestrictedSKU(skus[i].GetName()) {
 			continue
 		}
-		useSIG := options.FromContext(ctx).UseSIG
-		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize, useSIG) {
+		if isRetired(ctx, &skus[i], retirementCutoff) {
+			continue
+		}
+		vmsize, err := skus[i].GetVMSize()
+		if err != nil {
+			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *skus[i].Size)
+			continue
+		}
+		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
 
-	if p.cm.HasChanged("instance-types", instanceTypes) {
-		// Only update instanceTypesSeqNun with the instance types have been changed
-		// This is to not create new keys with duplicate instance types option
-		atomic.AddUint64(&p.instanceTypesSeqNum, 1)
-		logging.FromContext(ctx).With(
-			"count", len(instanceTypes)).Debugf("discovered instance types")
+	if len(instanceTypes) == 0 {
+		return fmt.Errorf("no instance types found")
 	}
-	p.instanceTypesCache.SetDefault(InstanceTypesCacheKey, instanceTypes)
-	return instanceTypes, nil
+
+	logUnknownSKUFamilies(ctx, instanceTypes)
+
+	if p.cm.HasChanged("instance-types", instanceTypes) {
+		p.muInstanceTypesCache.Lock()
+		p.instanceTypesCache.Flush()
+		p.muInstanceTypesCache.Unlock()
+		log.FromContext(ctx).V(1).Info("discovered instance types", "instanceTypeCount", len(instanceTypes))
+	}
+	p.instanceTypesInfo = instanceTypes
+	return nil
+}
+
+// isRetired returns true if the specified SKU has a retirement date that is before the retirement cutoff.
+func isRetired(ctx context.Context, sku *skewer.SKU, retirementCutoff time.Time) bool {
+	retirementDate, err := sku.GetRetirementDate()
+	if err != nil {
+		log.FromContext(ctx).Error(err, "parsing SKU retirement date", "vmSize", sku.GetSize())
+		// We don't understand the format of the retirement entry, so assume it is not retired and don't filter it for safety
+		return false
+	}
+	return retirementDate != nil && retirementDate.Before(retirementCutoff)
+}
+
+// logUnknownSKUFamilies logs VM SKU families that were discovered from the Azure API
+// but are not present in the embedded known_skus.yaml.
+func logUnknownSKUFamilies(ctx context.Context, instanceTypes map[string]*skewer.SKU) {
+	unknownFamilies := sets.New[string]()
+	for name, sku := range instanceTypes {
+		if !IsKnownSKU(name) {
+			unknownFamilies.Insert(sku.GetFamilyName())
+		}
+	}
+	if unknownFamilies.Len() > 0 {
+		log.FromContext(ctx).Info("discovered VM SKU families not in known_skus.yaml (deprioritized with MissingPrice)", "families", unknownFamilies.UnsortedList())
+	}
 }
 
 // isSupported indicates SKU is supported by AKS, based on SKU properties
-func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType, useSIG bool) bool {
+func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType) bool {
 	return p.hasMinimumCPU(sku) &&
 		p.hasMinimumMemory(sku) &&
 		!p.isUnsupportedByAKS(sku) &&
 		!p.isUnsupportedGPU(sku) &&
 		!p.hasConstrainedCPUs(vmsize) &&
-		!p.isConfidential(sku) &&
-		isCompatibleImageAvailable(sku, useSIG)
+		!p.isConfidential(sku)
 }
 
 // at least 2 cpus
@@ -317,17 +770,17 @@ func (p *DefaultProvider) hasMinimumMemory(sku *skewer.SKU) bool {
 
 // instances AKS does not support
 func (p *DefaultProvider) isUnsupportedByAKS(sku *skewer.SKU) bool {
-	return RestrictedVMSizes.Has(sku.GetName())
+	return AKSRestrictedVMSizes.Has(sku.GetName())
 }
 
-// GPU SKUs AKS does not support
+// GPU SKUs not in the supported GPU registry
 func (p *DefaultProvider) isUnsupportedGPU(sku *skewer.SKU) bool {
 	name := lo.FromPtr(sku.Name)
 	gpu, err := sku.GPU()
 	if err != nil || gpu <= 0 {
 		return false
 	}
-	return !utils.IsMarinerEnabledGPUSKU(name) && !utils.IsNvidiaEnabledSKU(name)
+	return !utils.IsGPUSKU(name)
 }
 
 // SKU with constrained CPUs
@@ -338,86 +791,29 @@ func (p *DefaultProvider) hasConstrainedCPUs(vmsize *skewer.VMSizeType) bool {
 // confidential VMs (DC, EC) are not yet supported by this Karpenter provider
 func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
 	size := sku.GetSize()
-	return strings.HasPrefix(size, "DC") || strings.HasPrefix(size, "EC")
+	return skuutil.IsConfidential(size)
 }
 
-// MaxEphemeralOSDiskSizeGB returns the maximum ephemeral OS disk size for a given SKU.
-// Ephemeral OS disk size is determined by the larger of the two values:
-// 1. MaxResourceVolumeMB (Temp Disk Space)
-// 2. MaxCachedDiskBytes (Cached Disk Space)
-// For Ephemeral disk creation, CRP will use the larger of the two values to ensure we have enough space for the ephemeral disk.
-// Note that generally only older SKUs use the Temp Disk space for ephemeral disks, and newer SKUs use the Cached Disk in most cases.
-// The ephemeral OS disk is created with the free space of the larger of the two values in that place.
-func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
-	if sku == nil {
-		return 0
-	}
-	maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
-	maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
-
-	maxResourceVolumeBytes := maxResourceVolumeMB * int64(units.Mebibyte)
-	maxDiskBytes := math.Max(float64(maxCachedDiskBytes), float64(maxResourceVolumeBytes))
-	if maxDiskBytes == 0 {
-		return 0
-	}
-	// convert bytes to GB
-	return maxDiskBytes / float64(units.Gigabyte)
+func (p *DefaultProvider) Reset() {
+	p.muInstanceTypesInfo.Lock()
+	defer p.muInstanceTypesInfo.Unlock()
+	p.instanceTypesInfo = map[string]*skewer.SKU{}
+	p.muInstanceTypesCache.Lock()
+	p.instanceTypesCache.Flush()
+	p.muInstanceTypesCache.Unlock()
 }
 
-var (
-	// https://learn.microsoft.com/en-us/azure/reliability/availability-zones-service-support#azure-regions-with-availability-zone-support
-	// (could also be obtained programmatically)
-	zonalRegions = sets.New(
-		// Americas
-		"brazilsouth",
-		"canadacentral",
-		"centralus",
-		"eastus",
-		"eastus2",
-		"southcentralus",
-		"usgovvirginia",
-		"westus2",
-		"westus3",
-		// Europe
-		"francecentral",
-		"italynorth",
-		"germanywestcentral",
-		"norwayeast",
-		"northeurope",
-		"uksouth",
-		"westeurope",
-		"swedencentral",
-		"switzerlandnorth",
-		"polandcentral",
-		// Middle East
-		"qatarcentral",
-		"uaenorth",
-		"israelcentral",
-		// Africa
-		"southafricanorth",
-		// Asia Pacific
-		"australiaeast",
-		"centralindia",
-		"japaneast",
-		"koreacentral",
-		"southeastasia",
-		"eastasia",
-		"chinanorth3",
-	)
-)
-
-func hasZonalSupport(region string) bool {
-	return zonalRegions.Has(region)
-}
-
-func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
-	hasSCSISupport := func(sku *skewer.SKU) bool { // TODO: move capability determination to skewer
-		const diskControllerTypeCapability = "DiskControllerTypes"
-		declaresSCSI := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.SCSI))
-		declaresNVMe := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.NVMe))
-		declaresNothing := !(declaresSCSI || declaresNVMe)
-		return declaresSCSI || declaresNothing // if nothing is declared, assume SCSI is supported
+func ultraSSDOptions(sku *skewer.SKU, zone string) []string {
+	z := zones.MakeARMZonesFromAKSLabelZone(zone)
+	switch len(z) {
+	case 0:
+		if sku.IsUltraSSDAvailableWithoutAvailabilityZone() {
+			return []string{"true", "false"}
+		}
+	case 1:
+		if sku.IsUltraSSDAvailableInAvailabilityZone(*z[0]) {
+			return []string{"true", "false"}
+		}
 	}
-
-	return useSIG || hasSCSISupport(sku) // CIG images are not currently tagged for NVMe
+	return []string{"false"}
 }

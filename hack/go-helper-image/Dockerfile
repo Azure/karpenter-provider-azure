@@ -1,17 +1,17 @@
-ARG GOVERSION=1.21
+ARG GOVERSION=1.24
 FROM --platform=$BUILDPLATFORM golang:${GOVERSION} as delve
 ARG BUILDPLATFORM
 ARG TARGETOS
 ARG TARGETARCH
 
-ARG DELVE_VERSION=1.21.0
+ARG DELVE_VERSION=1.24.1
 
 # Patch delve to make defaults for --check-go-version and --only-same-user
 # to be set at build time.  We must install patch(1) to apply the patch.
 #
 # We default --check-go-version to false to support binaries compiled
 # with unsupported versions of Go.  Delve issues a prominent warning.
-# 
+#
 # We default --only-same-user to false as `kubectl port-forward`
 # to dlv port is refused otherwise.
 RUN apt-get update && apt-get install -y --no-install-recommends \

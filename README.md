@@ -9,6 +9,7 @@
 Table of contents:
 - [Features Overview](#features-overview)
 - [Node Auto Provisioning (NAP) vs. Self-hosted](#node-auto-provisioning-nap-vs-self-hosted)
+- [Node memory reservations](#node-memory-reservations)
 - [Known limitations](#known-limitations)
 - [Installation (self-hosted)](#installation-self-hosted)
   - [Install utilities](#install-utilities)
@@ -19,6 +20,7 @@ Table of contents:
   - [Create NodePool](#create-nodepool)
   - [Scale up deployment](#scale-up-deployment)
   - [Scale down deployment](#scale-down-deployment)
+  - [Maintain spare capacity](#maintain-spare-capacity)
   - [Delete Karpenter nodes manually](#delete-karpenter-nodes-manually)
 - [Cleanup (self-hosted)](#cleanup-self-hosted)
   - [Delete the cluster](#delete-the-cluster)
@@ -37,25 +39,59 @@ Karpenter improves the efficiency and cost of running workloads on Kubernetes cl
 * **Consolidating** existing nodes onto cheaper nodes with higher utilization per node
 
 
-## Node Auto Provisioning (NAP) vs. Self-hosted
+## Node Auto Provisioning (NAP) vs. Self-hosted Karpenter
 
 Karpenter provider for AKS can be used in two modes:
-* **[Node Auto Provisioning (NAP)](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli) mode** (preview): Karpenter is run by AKS as a managed addon similar to managed Cluster Autoscaler. This is the recommended mode for most users. Follow the instructions in Node Auto Provisioning [documentation](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli) to use Karpenter in that mode.
-* **Self-hosted mode**: Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment. The rest of this page describes how to use Karpenter in self-hosted mode.
+* **[Node Auto Provisioning (NAP)](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) mode**: Karpenter is run by AKS as a managed addon similar to managed Cluster Autoscaler. This is the recommended mode for most users as it has more test coverage, improved scale-up speed, automatic maintenance window integration, support for some additional SKUs, and various other improvements over self-hosted Karpenter. NAP also leverages Node Provisioning Service for optimized performance and scalability. Follow the instructions in Node Auto Provisioning [documentation](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) to use Karpenter in that mode. NAP manages:
+  * Token rotation
+  * Helm charts
+  * Karpenter version updates
+  * VM OS disk updates
+  * node image upgrades (Linux)
+* **Self-hosted mode**: Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment, use custom Helm charts, or integrate non-standard workflows. Self-hosted mode requires users to directly manage upgrades, token rotation, and helm charts.
+
+## Node memory reservations
+
+All provisioning modes (`aksscriptless`, `bootstrappingclient`, `aksmachineapi`,
+and `aksmachineapiheaderbatch`) use the same memory reservation policy for
+non-hardened nodes: `min(20 * maxPods + 50, totalMemoryMiB / 4)` MiB of
+kube-reserved memory and a 100 MiB hard-eviction threshold. `totalMemoryMiB`
+is the nominal SKU memory in MiB. This policy applies without a Kubernetes
+version gate and follows the
+[AKS node resource reservations documentation](https://learn.microsoft.com/azure/aks/node-resource-reservations).
+
+Scriptless provisioning uses these values both for scheduling estimates and for
+the generated kubelet configuration on newly created nodes. Other provisioning
+modes retain their AKS-owned bootstrap defaults; the provider's estimates align
+with those defaults. Existing nodes are not reconfigured by this change.
+
+Node-hardening reservations, CPU and system reservations, storage thresholds,
+and the separate `VM_MEMORY_OVERHEAD_PERCENT` safety margin remain unchanged.
 
 ## Known limitations
 
-* Only AKS clusters with Azure CNI Overlay + Cilium networking are supported.
-* Only Linux nodes are supported.
+The following AKS features are not supported:
+* Windows nodes require the AKS Machine API provision mode. This mode is used by Node Auto Provisioning and can also be used with self-hosted Karpenter; the scriptless and bootstrapping-client provision modes do not support Windows. Windows2025 requires Kubernetes 1.32 or newer and AKS Windows2025 availability for the subscription and region.
+* Kubenet and Calico.
+* IPv6 clusters.
+* [Service Principal](https://learn.microsoft.com/azure/aks/kubernetes-service-principal) based clusters. A system-assigned or user-assigned managed identity must be used.
+* Clusters running Karpenter should not be [stopped](https://learn.microsoft.com/azure/aks/start-stop-cluster).
+* All cluster egress [outbound types](https://learn.microsoft.com/azure/aks/egress-outboundtype) are supported, however the type can't be changed after the cluster is created.
 
-## Installation (self-hosted)
+## Installation (NAP)
+
+Follow the instructions in the Node Auto Provisioning [documentation](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli).
+
+## Installation (self-hosted Karpenter)
+
+**⚠️ Warning ⚠️** We strongly recommend using [Node Auto Provisioning](#installation-nap) (aka managed Karpenter) instead of self-hosted. Official support via Microsoft support channels is limited to NAP. Self-hosted Karpenter is supported primarily via GitHub issues, and subject to best-effort response time.
 
 This guide shows how to get started with Karpenter by creating an AKS cluster and installing Karpenter.
 
 ### Install utilities
 
 Install these tools before proceeding:
-* [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
+* [Azure CLI](https://docs.microsoft.com/cli/azure/install-azure-cli)
 * [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
 * [Helm](https://helm.sh/docs/intro/install/)
 * [jq](https://stedolan.github.io/jq/) - used by some of the scripts below
@@ -92,7 +128,7 @@ az group create --name ${RG} --location ${LOCATION}
 Create the workload MSI that backs the karpenter pod auth:
 
 ```bash
-KMSI_JSON=$(az identity create --name karpentermsi --resource-group "${RG}" --location "${LOCATION}")
+KMSI_JSON=$(az identity create --name karpentermsi --resource-group "${RG}" --location "${LOCATION}" --output json)
 ```
 
 Create the AKS cluster compatible with Karpenter, with workload identity enabled:
@@ -103,7 +139,8 @@ AKS_JSON=$(az aks create \
   --node-count 3 --generate-ssh-keys \
   --network-plugin azure --network-plugin-mode overlay --network-dataplane cilium \
   --enable-managed-identity \
-  --enable-oidc-issuer --enable-workload-identity)
+  --enable-oidc-issuer --enable-workload-identity \
+  --output json)
 az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overwrite-existing
 ```
 
@@ -121,7 +158,7 @@ Create role assignments to let Karpenter manage VMs and Network resources:
 ```bash
 KARPENTER_USER_ASSIGNED_CLIENT_ID=$(jq -r '.principalId' <<< "$KMSI_JSON")
 RG_MC=$(jq -r ".nodeResourceGroup" <<< "$AKS_JSON")
-RG_MC_RES=$(az group show --name "${RG_MC}" --query "id" -otsv)
+RG_MC_RES=$(az group show --name "${RG_MC}" --query "id" --output tsv)
 for role in "Virtual Machine Contributor" "Network Contributor" "Managed Identity Operator"; do
   az role assignment create --assignee "${KARPENTER_USER_ASSIGNED_CLIENT_ID}" --scope "${RG_MC_RES}" --role "$role"
 done
@@ -137,10 +174,10 @@ The Karpenter Helm chart requires specific configuration values to work with an 
 
 ```bash
 # Select version to install
-export KARPENTER_VERSION=0.7.0
+export KARPENTER_VERSION=1.10.2
 
-# Download the specific's version template
-curl -sO https://raw.githubusercontent.com/Azure/karpenter/v${KARPENTER_VERSION}/karpenter-values-template.yaml
+# Download the template for the selected version
+curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/v${KARPENTER_VERSION}/karpenter-values-template.yaml
 
 # use configure-values.sh to generate karpenter-values.yaml
 # (in repo you can just do ./hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG})
@@ -199,22 +236,35 @@ helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpe
 
 A single Karpenter NodePool is capable of handling many different pod shapes. Karpenter makes scheduling and provisioning decisions based on pod attributes such as labels and affinity. In other words, Karpenter eliminates the need to manage many different node groups.
 
-Create a default NodePool using the command below. (Additional examples available in the repository under [`examples/v1beta1`](/examples/v1beta1).) The `consolidationPolicy` set to `WhenUnderutilized` in the `disruption` block configures Karpenter to reduce cluster cost by removing and replacing nodes. As a result, consolidation will terminate any empty nodes on the cluster. This behavior can be disabled by setting consolidateAfter to `Never`, telling Karpenter that it should never consolidate nodes.
+Create a default NodePool using the command below. (Additional examples available in the repository under [`examples/v1`](/examples/v1).) The `consolidationPolicy` set to `WhenUnderutilized` in the `disruption` block configures Karpenter to reduce cluster cost by removing and replacing nodes. As a result, consolidation will terminate any empty nodes on the cluster. This behavior can be disabled by setting consolidateAfter to `Never`, telling Karpenter that it should never consolidate nodes.
 
 Note: This NodePool will create capacity as long as the sum of all created capacity is less than the specified limit.
 
 ```bash
 cat <<EOF | kubectl apply -f -
 ---
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: general-purpose
   annotations:
-    kubernetes.io/description: "General purpose NodePool for generic workloads"
+    kubernetes.io/description: "General purpose NodePool"
 spec:
   template:
+    metadata:
+      labels:
+        # required for Karpenter to predict overhead from cilium DaemonSet
+        kubernetes.azure.com/ebpf-dataplane: cilium
     spec:
+      nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: default
+      startupTaints:
+        # https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
+        - key: node.cilium.io/agent-not-ready
+          effect: NoExecute
+          value: "true"
       requirements:
         - key: kubernetes.io/arch
           operator: In
@@ -228,25 +278,31 @@ spec:
         - key: karpenter.azure.com/sku-family
           operator: In
           values: [D]
-      nodeClassRef:
-        name: default
+        # Optional: constrain Azure placement to zonal capacity.
+        # Use "regional" instead to request non-zonal capacity, labeled with topology.kubernetes.io/zone=0.
+        # - key: karpenter.azure.com/placement-scope
+        #   operator: In
+        #   values: ["zonal"]
+      expireAfter: Never
   limits:
     cpu: 100
   disruption:
-    consolidationPolicy: WhenUnderutilized
-    expireAfter: Never
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 0s
 ---
-apiVersion: karpenter.azure.com/v1alpha2
+apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
   name: default
   annotations:
-    kubernetes.io/description: "General purpose AKSNodeClass for running Ubuntu2204 nodes"
+    kubernetes.io/description: "General purpose AKSNodeClass for running Ubuntu nodes"
 spec:
-  imageFamily: Ubuntu2204
+  imageFamily: Ubuntu
 EOF
 ```
 Karpenter is now active and ready to begin provisioning nodes.
+
+By default, Azure NodePools can use both zonal and regional VM placement when the selected SKU supports it. Add a `karpenter.azure.com/placement-scope` requirement with `zonal` or `regional` to choose one explicitly; regional nodes are represented with `topology.kubernetes.io/zone=0`.
 
 ### Scale up deployment
 
@@ -290,6 +346,10 @@ kubectl delete deployment inflate
 kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
+### Maintain spare capacity
+
+The alpha CapacityBuffer feature can maintain schedulable headroom for workload spikes. It is disabled by default for self-hosted installations and has explicit cost, ownership, and workload-shape limits. See the [CapacityBuffer guide](docs/capacity-buffer.md) and [bounded example](examples/v1/capacity-buffer.yaml).
+
 ### Delete Karpenter nodes manually
 
 If you delete a node with kubectl, Karpenter will gracefully cordon, drain, and shutdown the corresponding instance. Under the hood, Karpenter adds a finalizer to the node object, which blocks deletion until all pods are drained and the instance is terminated. Keep in mind, this only works for nodes provisioned by Karpenter.
@@ -331,3 +391,5 @@ Come discuss Karpenter in the [#karpenter](https://kubernetes.slack.com/archives
 Check out the [Docs](https://karpenter.sh/) to learn more.
 
 Check out our [contributing guide](https://github.com/Azure/karpenter-provider-azure/blob/main/CONTRIBUTING.md).
+
+This open-source project is subject to best-effort support by project maintainers and not covered by Microsoft support channels. [File an issue](https://github.com/Azure/karpenter-provider-azure/issues) in this project for any questions, feature requests, or issues.

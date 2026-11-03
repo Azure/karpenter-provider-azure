@@ -19,11 +19,16 @@ package fake
 import (
 	"context"
 	"fmt"
+	"maps"
+	"net/http"
 
+	"github.com/samber/lo"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	fakesync "github.com/Azure/karpenter-provider-azure/pkg/fake/sync"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 )
 
 type VirtualMachineExtensionCreateOrUpdateInput struct {
@@ -34,25 +39,43 @@ type VirtualMachineExtensionCreateOrUpdateInput struct {
 	Options                     *armcompute.VirtualMachineExtensionsClientBeginCreateOrUpdateOptions
 }
 
+type VirtualMachineExtensionUpdateInput struct {
+	ResourceGroupName             string
+	VirtualMachineName            string
+	VirtualMachineExtensionName   string
+	VirtualMachineExtensionUpdate armcompute.VirtualMachineExtensionUpdate
+	Options                       *armcompute.VirtualMachineExtensionsClientBeginUpdateOptions
+}
+
 type VirtualMachineExtensionsBehavior struct {
 	VirtualMachineExtensionsCreateOrUpdateBehavior MockedLRO[VirtualMachineExtensionCreateOrUpdateInput, armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse]
-	// not keeping track of extensions
+	VirtualMachineExtensionsUpdateBehavior         MockedLRO[VirtualMachineExtensionUpdateInput, armcompute.VirtualMachineExtensionsClientUpdateResponse]
+	Extensions                                     fakesync.Map[string, armcompute.VirtualMachineExtension]
 }
 
 // assert that ComputeAPI implements ARMComputeAPI
-var _ instance.VirtualMachineExtensionsAPI = &VirtualMachineExtensionsAPI{}
+var _ azapi.VirtualMachineExtensionsAPI = &VirtualMachineExtensionsAPI{}
 
 type VirtualMachineExtensionsAPI struct {
-	// instance.VirtualMachineExtensionsAPI
+	// azapi.VirtualMachineExtensionsAPI
 	VirtualMachineExtensionsBehavior
 }
 
 // Reset must be called between tests otherwise tests will pollute each other.
 func (c *VirtualMachineExtensionsAPI) Reset() {
 	c.VirtualMachineExtensionsCreateOrUpdateBehavior.Reset()
+	c.VirtualMachineExtensionsUpdateBehavior.Reset()
+	c.Extensions.Clear()
 }
 
-func (c *VirtualMachineExtensionsAPI) BeginCreateOrUpdate(_ context.Context, resourceGroupName, vmName, extensionName string, extension armcompute.VirtualMachineExtension, options *armcompute.VirtualMachineExtensionsClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse], error) {
+func (c *VirtualMachineExtensionsAPI) BeginCreateOrUpdate(
+	_ context.Context,
+	resourceGroupName,
+	vmName,
+	extensionName string,
+	extension armcompute.VirtualMachineExtension,
+	options *armcompute.VirtualMachineExtensionsClientBeginCreateOrUpdateOptions,
+) (*runtime.Poller[armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse], error) {
 	input := &VirtualMachineExtensionCreateOrUpdateInput{
 		ResourceGroupName:           resourceGroupName,
 		VirtualMachineName:          vmName,
@@ -63,14 +86,52 @@ func (c *VirtualMachineExtensionsAPI) BeginCreateOrUpdate(_ context.Context, res
 
 	return c.VirtualMachineExtensionsCreateOrUpdateBehavior.Invoke(input, func(input *VirtualMachineExtensionCreateOrUpdateInput) (*armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse, error) {
 		result := input.VirtualMachineExtension
-		result.ID = to.StringPtr(mkVMExtensionID(input.ResourceGroupName, input.VirtualMachineName, input.VirtualMachineExtensionName))
+		result.ID = lo.ToPtr(MakeVMExtensionID(input.ResourceGroupName, input.VirtualMachineName, input.VirtualMachineExtensionName))
+		c.Extensions.Store(input.VirtualMachineExtensionName, result) // only store latest, but could be improved
 		return &armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse{
 			VirtualMachineExtension: result,
 		}, nil
 	})
 }
 
-func mkVMExtensionID(resourceGroupName, vmName, extensionName string) string {
+func (c *VirtualMachineExtensionsAPI) BeginUpdate(
+	_ context.Context,
+	resourceGroupName string,
+	vmName string,
+	extensionName string,
+	updates armcompute.VirtualMachineExtensionUpdate,
+	options *armcompute.VirtualMachineExtensionsClientBeginUpdateOptions,
+) (*runtime.Poller[armcompute.VirtualMachineExtensionsClientUpdateResponse], error) {
+	input := &VirtualMachineExtensionUpdateInput{
+		ResourceGroupName:             resourceGroupName,
+		VirtualMachineName:            vmName,
+		VirtualMachineExtensionName:   extensionName,
+		VirtualMachineExtensionUpdate: updates,
+		Options:                       options,
+	}
+
+	return c.VirtualMachineExtensionsUpdateBehavior.Invoke(input, func(input *VirtualMachineExtensionUpdateInput) (*armcompute.VirtualMachineExtensionsClientUpdateResponse, error) {
+		id := MakeVMExtensionID(input.ResourceGroupName, input.VirtualMachineName, input.VirtualMachineExtensionName)
+
+		instance, ok := c.Extensions.Load(id)
+		if !ok {
+			return nil, &azcore.ResponseError{StatusCode: http.StatusNotFound}
+		}
+		ext := instance
+
+		if updates.Tags != nil {
+			// VM tags are full-replace if they're specified
+			ext.Tags = maps.Clone(updates.Tags)
+		}
+
+		c.Extensions.Store(input.VirtualMachineExtensionName, ext)
+		return &armcompute.VirtualMachineExtensionsClientUpdateResponse{
+			VirtualMachineExtension: ext,
+		}, nil
+	})
+}
+
+func MakeVMExtensionID(resourceGroupName, vmName, extensionName string) string {
 	const idFormat = "/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s/extensions/%s"
 	return fmt.Sprintf(idFormat, resourceGroupName, vmName, extensionName)
 }

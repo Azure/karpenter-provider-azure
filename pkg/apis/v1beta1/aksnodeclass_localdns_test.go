@@ -1,0 +1,69 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package v1beta1_test
+
+import (
+	"github.com/samber/lo"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+// The instance-type-aware half of the LocalDNS decision lives in
+// pkg/providers/localdns and is tested there; what's left here is the part that
+// is a pure read of the AKSNodeClass.
+
+var _ = Describe("IsLocalDNSRequired", func() {
+	var nodeClass *v1beta1.AKSNodeClass
+
+	BeforeEach(func() {
+		nodeClass = test.AKSNodeClass()
+	})
+
+	DescribeTable("reads from Spec.LocalDNS.Mode",
+		func(localDNS *v1beta1.LocalDNS, expected bool) {
+			nodeClass.Spec.LocalDNS = localDNS
+			Expect(nodeClass.IsLocalDNSRequired()).To(Equal(expected))
+		},
+		Entry("nil spec", (*v1beta1.LocalDNS)(nil), false),
+		Entry("Required", &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}, true),
+		Entry("Preferred", &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}, false),
+		Entry("Disabled", &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}, false),
+		Entry("empty mode", &v1beta1.LocalDNS{}, false),
+	)
+})
+
+var _ = Describe("IsLocalDNSEnabled", func() {
+	var nodeClass *v1beta1.AKSNodeClass
+
+	BeforeEach(func() {
+		nodeClass = test.AKSNodeClass()
+	})
+
+	DescribeTable("reads from Status.LocalDNSState",
+		func(state *v1beta1.LocalDNSState, expected bool) {
+			nodeClass.Status.LocalDNSState = state
+			Expect(nodeClass.IsLocalDNSEnabled()).To(Equal(expected))
+		},
+		Entry("nil state", (*v1beta1.LocalDNSState)(nil), false),
+		Entry("Enabled state", lo.ToPtr(v1beta1.LocalDNSStateEnabled), true),
+		Entry("Disabled state", lo.ToPtr(v1beta1.LocalDNSStateDisabled), false),
+	)
+})

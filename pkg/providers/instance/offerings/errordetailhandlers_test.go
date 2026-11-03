@@ -1,0 +1,397 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package offerings
+
+import (
+	"context"
+	"fmt"
+	"testing"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	"github.com/Azure/skewer"
+	"github.com/samber/lo"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+)
+
+type errorDetailTestCaseBuilder struct {
+	tc errorDetailTestCase
+}
+
+func newErrorDetailTestCase(name string) *errorDetailTestCaseBuilder {
+	return &errorDetailTestCaseBuilder{
+		tc: errorDetailTestCase{
+			testName:                                name,
+			originalRequestSKU:                      createDefaultTestSKU(),
+			expectedUnavailableOfferingsInformation: []offeringToCheck{},
+			expectedAvailableOfferingsInformation:   []offeringToCheck{},
+		},
+	}
+}
+
+func (b *errorDetailTestCaseBuilder) withInstanceType(offerings ...offering) *errorDetailTestCaseBuilder {
+	b.tc.instanceType = createInstanceType(offerings...)
+	return b
+}
+
+func (b *errorDetailTestCaseBuilder) withEmptyInstanceType() *errorDetailTestCaseBuilder {
+	b.tc.instanceType = &corecloudprovider.InstanceType{}
+	return b
+}
+
+func (b *errorDetailTestCaseBuilder) withZoneAndCapacity(zone, capacityType string) *errorDetailTestCaseBuilder {
+	b.tc.zone = zone
+	b.tc.capacityType = capacityType
+	return b
+}
+
+func (b *errorDetailTestCaseBuilder) withCapacityReservationGroup(id string) *errorDetailTestCaseBuilder {
+	b.tc.capacityReservationGroupID = id
+	return b
+}
+
+func (b *errorDetailTestCaseBuilder) withErrorDetail(errorCode, errorMessage string) *errorDetailTestCaseBuilder {
+	b.tc.cloudErr = createErrorDetail(errorCode, errorMessage)
+	return b
+}
+
+func (b *errorDetailTestCaseBuilder) expectError(err error) *errorDetailTestCaseBuilder {
+	b.tc.expectedErr = err
+	return b
+}
+
+func (b *errorDetailTestCaseBuilder) expectReason(reason string) *errorDetailTestCaseBuilder {
+	b.tc.expectedReason = reason
+	return b
+}
+
+func (b *errorDetailTestCaseBuilder) expectSharedAcrossGroups() *errorDetailTestCaseBuilder {
+	b.tc.expectedSharedAcrossGroups = true
+	return b
+}
+
+func (b *errorDetailTestCaseBuilder) expectUnavailable(offerings ...offeringToCheck) *errorDetailTestCaseBuilder {
+	b.tc.expectedUnavailableOfferingsInformation = offerings
+	return b
+}
+
+func (b *errorDetailTestCaseBuilder) expectAvailable(offerings ...offeringToCheck) *errorDetailTestCaseBuilder {
+	b.tc.expectedAvailableOfferingsInformation = offerings
+	return b
+}
+
+func (b *errorDetailTestCaseBuilder) build() errorDetailTestCase {
+	return b.tc
+}
+
+type errorDetailTestCase struct {
+	testName                                string
+	instanceType                            *corecloudprovider.InstanceType
+	originalRequestSKU                      *skewer.SKU
+	zone                                    string
+	capacityType                            string
+	capacityReservationGroupID              string
+	cloudErr                                armcontainerservice.ErrorDetail
+	expectedErr                             error
+	expectedReason                          string
+	expectedSharedAcrossGroups              bool
+	expectedUnavailableOfferingsInformation []offeringToCheck
+	expectedAvailableOfferingsInformation   []offeringToCheck
+}
+
+func createErrorDetail(code, message string) armcontainerservice.ErrorDetail {
+	return armcontainerservice.ErrorDetail{
+		Code:    lo.ToPtr(code),
+		Message: lo.ToPtr(message),
+	}
+}
+
+// newTestErrorDetailHandling creates a test provider with default configuration
+func newTestErrorDetailHandling() *ErrorDetailHandler {
+	return NewErrorDetailHandler(cache.NewUnavailableOfferings())
+}
+
+func setupErrorDetailTestCases() []errorDetailTestCase {
+	return []errorDetailTestCase{
+		newErrorDetailTestCase("Frontend code is not treated as an asynchronous Compute error").
+			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+			withErrorDetail("AvailabilityZoneNotSupported", "The requested availability zone is not supported.").
+			expectAvailable(allDefaultTestOfferingInfo()...).
+			build(),
+		newErrorDetailTestCase("Generic VM creation failure mentioning a zone error is not classified").
+			withInstanceType(zone2OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("FailedToCreateOrUpdateVirtualMachine", "InvalidAvailabilityZone: the requested zone is not supported.").
+			expectAvailable(allDefaultTestOfferingInfo()...).
+			build(),
+		newErrorDetailTestCase("Invalid availability zone for spot").
+			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+			withErrorDetail("InvalidAvailabilityZone", "The requested zone is not supported.").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectSharedAcrossGroups().
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+			).
+			expectAvailable(
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeSpot),
+			).
+			build(),
+		newErrorDetailTestCase("Invalid availability zone for reserved capacity").
+			withInstanceType(zone2OnDemand, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withCapacityReservationGroup(testCapacityReservationGroupID).
+			withErrorDetail("InvalidAvailabilityZone", "The requested zone is not supported.").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectSharedAcrossGroups().
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+			).
+			expectAvailable(
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+			).
+			build(),
+		newErrorDetailTestCase("Cloud error is empty").
+			withEmptyInstanceType().
+			withZoneAndCapacity("", karpv1.CapacityTypeOnDemand).
+			withErrorDetail("", "").
+			expectError(nil).
+			build(),
+
+		newErrorDetailTestCase("Low priority quota has been reached").
+			withEmptyInstanceType().
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+			withErrorDetail("OperationNotAllowed", fmt.Sprintf("Operation could not be completed as it results in exceeding approved LowPriorityCores quota. Additional details - Deployment Model: Resource Manager, Location: %s, Current Limit: 3, Current Usage: 0, Additional Required: 6", testZone2)).
+			expectError(fmt.Errorf("%s", errMsgLowPriorityQuota)).
+			expectReason(SubscriptionQuotaReachedReason).
+			expectUnavailable(defaultTestOfferingInfo("", karpv1.CapacityTypeSpot)).
+			build(),
+
+		newErrorDetailTestCase("SKU family quota has been reached").
+			withInstanceType(zone2OnDemand, zone3OnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("OperationNotAllowed", fmt.Sprintf("Operation could not be completed as it results in exceeding approved %s Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: %s, Current Limit: 24, Current Usage: 24, Additional Required: 8", testInstanceName, testZone2)).
+			expectError(fmt.Errorf(errMsgSKUFamilyQuotaFmt, karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectReason(SubscriptionQuotaReachedReason).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+			).
+			build(),
+
+		newErrorDetailTestCase("SKU family quota for a capacity reservation group").
+			withInstanceType(zone2OnDemand, zone3OnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withCapacityReservationGroup(testCapacityReservationGroupID).
+			withErrorDetail("OperationNotAllowed", fmt.Sprintf(
+				"Operation could not be completed as it results in exceeding approved %s Family Cores quota. Current Limit: 24",
+				testInstanceName,
+			)).
+			expectError(fmt.Errorf(errMsgSKUFamilyQuotaFmt, karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectReason(SubscriptionQuotaReachedReason).
+			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand)).
+			build(),
+
+		newErrorDetailTestCase("SKU family quota 0 CPUs").
+			withInstanceType(zone2OnDemand, zone3OnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("OperationNotAllowed", fmt.Sprintf("Operation could not be completed as it results in exceeding approved %s Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: %s, Current Limit: 0, Current Usage: 0, Additional Required: 8", testInstanceName, testZone2)).
+			expectError(fmt.Errorf(errMsgSKUFamilyQuotaFmt, karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectReason(SubscriptionQuotaReachedReason).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+			).
+			build(),
+
+		newErrorDetailTestCase("SKU not available for spot").
+			withInstanceType(zone2OnDemand, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+			withErrorDetail("SkuNotAvailable", fmt.Sprintf("The requested VM size for resource 'Following SKUs have failed for Capacity Restrictions: %s' is currently not available in location '%s'. Please try another size or deploy to a different location or different zone. See https://aka.ms/azureskunotavailable for details.", testInstanceName, testZone2)).
+			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, testInstanceName, testZone2, karpv1.CapacityTypeSpot)).
+			expectReason(SKUNotAvailableReason).
+			expectUnavailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
+			expectAvailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			build(),
+
+		newErrorDetailTestCase("SKU not available for on-demand").
+			withInstanceType(zone2OnDemand, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("SkuNotAvailable", fmt.Sprintf("The requested VM size for resource 'Following SKUs have failed for Capacity Restrictions: %s' is currently not available in location '%s'. Please try another size or deploy to a different location or different zone. See https://aka.ms/azureskunotavailable for details.", testInstanceName, testZone2)).
+			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, testInstanceName, testZone2, karpv1.CapacityTypeOnDemand)).
+			expectReason(SKUNotAvailableReason).
+			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
+			build(),
+
+		newErrorDetailTestCase("Zonal allocation failure").
+			withInstanceType(zone2OnDemand, zone2Spot, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("ZonalAllocationFailed", fmt.Sprintf("Allocation failed. We do not have sufficient capacity for the requested VM size %s in zone %s. Read more about improving likelihood of allocation success at http://aka.ms/allocation-guidance", testInstanceName, testZone2)).
+			expectError(fmt.Errorf(errMsgZonalAllocationFailureFmt, testZone2)).
+			expectReason(ZonalAllocationFailureReason).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+			).
+			expectAvailable(
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				offeringInformation(testZone3, karpv1.CapacityTypeOnDemand, "Standard_D2s_v4", "D2s_v4", "standardDsv4Family", "2"),
+			).
+			build(),
+
+		newErrorDetailTestCase("Allocation failure").
+			withInstanceType(zone1Spot, zone2OnDemand, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("AllocationFailed", "Allocation failed. If you are trying to add a new VM to an Availability Set or update/resize an existing VM in an Availability Set, please note that such Availability Set allocation is scoped to a single cluster, and it is possible that the cluster is out of capacity. Please read more about improving likelihood of allocation success at http://aka.ms/allocation-guidance.").
+			expectError(fmt.Errorf(errMsgAllocationFailureFmt, testInstanceName)).
+			expectReason(AllocationFailureReason).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone1, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone1, karpv1.CapacityTypeSpot),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
+			).
+			build(),
+
+		newErrorDetailTestCase("Overconstrained zonal allocation failure").
+			withInstanceType(zone2OnDemand, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("OverconstrainedZonalAllocationRequest", fmt.Sprintf("Allocation failed. VM(s) with the following constraints cannot be allocated in zone %s, because the condition is too restrictive. Please remove some constraints and try again. Constraints applied are:\n  - Availability Zone (%s)\n  - Capacity Type (%s)\n  - VM Size (%s)\n  - Networking Constraints (such as Accelerated Networking or IPv6)", testZone2, testZone2, karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectError(fmt.Errorf(errMsgOverconstrainedZonalFmt, testZone2, karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectReason(OverconstrainedZonalAllocationFailureReason).
+			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
+			build(),
+
+		newErrorDetailTestCase("Overconstrained allocation failure").
+			withInstanceType(zone1OnDemand, zone2OnDemand, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("OverconstrainedAllocationRequest", fmt.Sprintf("Allocation failed. VM(s) with the following constraints cannot be allocated across all zones, because the condition is too restrictive. Please remove some constraints and try again. Constraints applied are:\n  - Capacity Type (%s)\n  - VM Size (%s)\n  - Networking Constraints (such as Accelerated Networking or IPv6)\n  - Subscription Pinning", karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectError(fmt.Errorf(errMsgOverconstrainedAllocationFmt, karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectReason(OverconstrainedAllocationFailureReason).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone1, karpv1.CapacityTypeOnDemand),
+			).
+			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
+			build(),
+
+		newErrorDetailTestCase("Regional quota exceeded").
+			withInstanceType(zone2OnDemand, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("OperationNotAllowed", fmt.Sprintf("Operation could not be completed as it results in exceeding approved Total Regional Cores quota. Additional details - Deployment Model: Resource Manager, Location: %s, Current Limit: 10, Current Usage: 8, Additional Required: 8", testZone2)).
+			expectError(corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("%s", errMsgRegionalQuotaExceeded))).
+			build(),
+
+		newErrorDetailTestCase("Unknown error code - no handler matches").
+			withInstanceType(zone2OnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("UnknownErrorCode", "Some unknown error message").
+			expectError(nil).
+			build(),
+
+		newErrorDetailTestCase("Generic Azure error - no handler matches").
+			withInstanceType(zone1Spot, zone2OnDemand).
+			withZoneAndCapacity(testZone1, karpv1.CapacityTypeSpot).
+			withErrorDetail("InternalServerError", "Azure service temporarily unavailable").
+			expectError(nil).
+			build(),
+
+		newErrorDetailTestCase("Non-Azure error - no handler matches").
+			withInstanceType(zone1OnDemand).
+			withZoneAndCapacity(testZone1, karpv1.CapacityTypeOnDemand).
+			withErrorDetail("NetworkError", "Network connection timeout").
+			expectError(nil).
+			build(),
+
+		// The handler receives the first entry of the Machine's provisioning error details, or the
+		// provisioning error itself when there are none. A failed node public IP is a configuration
+		// error, not a capacity error, whichever Azure Network error AKS wraps.
+		nodePublicIPErrorDetailTestCase("public IP prefix out of addresses, without a code",
+			"", "No more IPs available in IpPrefix prefixID."),
+		nodePublicIPErrorDetailTestCase("LinkedAuthorizationFailed in details",
+			"LinkedAuthorizationFailed", "The client 'clientID' with object id 'objectID' has permission to perform action 'Microsoft.Compute/virtualMachines/write' on scope 'vmID'; however, it does not have permission to perform action(s) 'Microsoft.Network/publicIPPrefixes/join/action' on the linked scope(s) 'prefixID' (respectively) or the linked scope(s) are invalid."),
+		nodePublicIPErrorDetailTestCase("zonal public IP with routing preference, without a code",
+			"", "A zonal PublicIPAddress publicIPAddressID cannot support for routing preference feature"),
+	}
+}
+
+// nodePublicIPErrorDetailTestCase builds a case for a Machine provisioning failure caused by the
+// node public IP. It must stay unhandled, so AKS's code and message reach the NodeClaim, and must not
+// mark any offering unavailable.
+func nodePublicIPErrorDetailTestCase(name, code, message string) errorDetailTestCase {
+	return newErrorDetailTestCase(name+" - node public IP - not handled").
+		withInstanceType(zone1OnDemand, zone2Spot, zone3OnDemand, regionalSpot).
+		withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+		withErrorDetail(code, message).
+		expectError(nil).
+		expectAvailable(allDefaultTestOfferingInfo()...).
+		build()
+}
+
+func TestHandleErrorDetails(t *testing.T) {
+	testCases := setupErrorDetailTestCases()
+
+	for _, tc := range testCases {
+		t.Run(tc.testName, func(t *testing.T) {
+			provider := newTestErrorDetailHandling()
+
+			err := provider.Handle(
+				context.Background(),
+				tc.originalRequestSKU,
+				tc.instanceType,
+				tc.zone,
+				tc.capacityType,
+				tc.capacityReservationGroupID,
+				tc.cloudErr,
+			)
+
+			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
+			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, tc.expectedSharedAcrossGroups, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+		})
+	}
+}
+
+func TestHandleErrorDetailWithoutCode(t *testing.T) {
+	provider := newTestErrorDetailHandling()
+	err := provider.Handle(t.Context(), createDefaultTestSKU(), createInstanceType(zone2OnDemand),
+		testZone2, karpv1.CapacityTypeOnDemand, "", armcontainerservice.ErrorDetail{
+			Message: lo.ToPtr("The requested zone is not supported. The supported zones for location 'westus' are '3,1'"),
+		})
+
+	assertHandledError(t, err, nil, "")
+	assertOfferingsState(t, provider.UnavailableOfferings, "", false, nil, allDefaultTestOfferingInfo())
+}

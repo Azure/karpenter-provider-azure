@@ -34,7 +34,7 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/termination"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -47,7 +47,7 @@ import (
 
 var ctx context.Context
 var env *coretest.Environment
-var awsEnv *test.Environment
+var azureEnv *test.Environment
 var terminationController *termination.Controller
 
 func TestAPIs(t *testing.T) {
@@ -60,7 +60,7 @@ var _ = BeforeSuite(func() {
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...), coretest.WithFieldIndexers(test.AKSNodeClassFieldIndexer(ctx)))
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = options.ToContext(ctx, test.Options())
-	awsEnv = test.NewEnvironment(ctx, env)
+	azureEnv = test.NewEnvironment(ctx, env)
 
 	terminationController = termination.NewController(env.Client, events.NewRecorder(&record.FakeRecorder{}))
 })
@@ -71,7 +71,7 @@ var _ = AfterSuite(func() {
 
 var _ = BeforeEach(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	awsEnv.Reset()
+	azureEnv.Reset(ctx)
 })
 
 var _ = AfterEach(func() {
@@ -79,7 +79,7 @@ var _ = AfterEach(func() {
 })
 
 var _ = Describe("NodeClass Termination", func() {
-	var nodeClass *v1alpha2.AKSNodeClass
+	var nodeClass *v1beta1.AKSNodeClass
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
 	})
@@ -99,7 +99,7 @@ var _ = Describe("NodeClass Termination", func() {
 			ExpectApplied(ctx, env.Client, nc)
 			nodeClaims = append(nodeClaims, nc)
 		}
-		controllerutil.AddFinalizer(nodeClass, v1alpha2.TerminationFinalizer)
+		controllerutil.AddFinalizer(nodeClass, v1beta1.TerminationFinalizer)
 		ExpectApplied(ctx, env.Client, nodeClass)
 		ExpectObjectReconciled(ctx, env.Client, terminationController, nodeClass)
 

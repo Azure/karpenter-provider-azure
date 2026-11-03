@@ -22,16 +22,27 @@ import (
 
 	"github.com/awslabs/operatorpkg/object"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-
-	"sigs.k8s.io/karpenter/pkg/apis"
 )
 
 //go:generate controller-gen crd object:headerFile="../../hack/boilerplate.go.txt" paths="./..." output:crd:artifacts:config=crds
 var (
 	Group = "karpenter.azure.com"
 	//CompatibilityGroup = "compatibility." + Group
+	//go:embed crds/autoscaling.x-k8s.io_capacitybuffers.yaml
+	CapacityBufferCRD []byte
 	//go:embed crds/karpenter.azure.com_aksnodeclasses.yaml
 	AKSNodeClassCRD []byte
-	CRDs            = append(apis.CRDs,
-		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](AKSNodeClassCRD))
+	//go:embed crds/karpenter.sh_nodepools.yaml
+	NodePoolCRD []byte
+	//go:embed crds/karpenter.sh_nodeclaims.yaml
+	NodeClaimCRD []byte
+	//go:embed crds/karpenter.sh_nodeoverlays.yaml
+	NodeOverlayCRD []byte
+	CRDs           = []*apiextensionsv1.CustomResourceDefinition{
+		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](CapacityBufferCRD),
+		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](AKSNodeClassCRD),
+		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodePoolCRD),
+		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodeClaimCRD),
+		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodeOverlayCRD),
+	}
 )

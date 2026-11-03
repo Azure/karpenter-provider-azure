@@ -1,18 +1,9 @@
 name: Cleanup
 description: 'Runs all the cleanup tasks to cleanup resources deployed during E2E'
 inputs:
-  client-id:
-    description: "Client ID"
-    required: true
-  tenant-id:
-    description: "Tenant ID"
-    required: true
-  subscription-id:
+  subscription_id:
     description: "Subscription ID"
     required: true
-  # region:
-  #   description: "Region to create aks cluster"
-  #   required: true
   resource_group:
     description: "Name of the resource group to create the cluster within"
     required: true
@@ -28,24 +19,23 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         ref: ${{ inputs.git_ref }}
-    - name: az login
-      uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
-      with:
-        client-id: ${{ inputs.client-id }}
-        tenant-id: ${{ inputs.tenant-id }}
-        subscription-id: ${{ inputs.subscription-id }}
-    - name: az set sub
+    - name: delete cluster
       shell: bash
-      run: az account set --subscription ${{ inputs.subscription-id }}
-    - name: delete cluster ${{ inputs.cluster_name }}
+      env:
+        CLUSTER_NAME: ${{ inputs.cluster_name }}
+        RESOURCE_GROUP: ${{ inputs.resource_group }}
+      run: az aks delete --name "$CLUSTER_NAME" --resource-group "$RESOURCE_GROUP" --yes --no-wait
+    - name: delete acr
       shell: bash
-      run: az aks delete --name ${{ inputs.cluster_name }} --resource-group ${{ inputs.resource_group }} --yes --no-wait
-    - name: delete acr ${{ inputs.acr_name }}
+      env:
+        ACR_NAME: ${{ inputs.acr_name }}
+        RESOURCE_GROUP: ${{ inputs.resource_group }}
+      run: az acr delete --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --yes
+    - name: delete rg
       shell: bash
-      run: az acr delete --name ${{ inputs.acr_name }} --resource-group ${{ inputs.resource_group }} --yes
-    - name: delete rg ${{ inputs.resource_group }}
-      shell: bash
-      run: az group delete --name ${{ inputs.resource_group }} --yes --no-wait
+      env:
+        RESOURCE_GROUP: ${{ inputs.resource_group }}
+      run: az group delete --name "$RESOURCE_GROUP" --yes --no-wait

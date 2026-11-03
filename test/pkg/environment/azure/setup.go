@@ -17,31 +17,42 @@ limitations under the License.
 package azure
 
 import (
-	//nolint:revive,stylecheck
 	"fmt"
+
+	. "github.com/onsi/gomega"
 
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 )
 
 var persistedSettings []v1.EnvVar
 
 var (
 	CleanableObjects = []client.Object{
-		&v1alpha2.AKSNodeClass{},
+		&v1beta1.AKSNodeClass{},
 	}
 )
 
 func (env *Environment) BeforeEach() {
-	persistedSettings = env.ExpectSettings()
+	if env.InClusterController {
+		persistedSettings = env.ExpectSettings()
+	}
 	env.Environment.BeforeEach()
 }
 
 func (env *Environment) Cleanup() {
 	env.Environment.Cleanup()
-	env.Environment.CleanupObjects(CleanableObjects...)
+	env.CleanupObjects(CleanableObjects...)
+	if env.IsAKSMachineAPIMode() {
+		// > Note: under current usage no machines should exist here,
+		// > as scaledown should ensure the machines are deleted
+		env.ExpectNoMachines()
+	}
+
+	err := env.tracker.Cleanup()
+	Expect(err).ToNot(HaveOccurred(), "Failed to clean up Azure resources")
 }
 
 func (env *Environment) AfterEach() {
@@ -49,5 +60,7 @@ func (env *Environment) AfterEach() {
 	defer fmt.Println("##[endgroup]")
 	env.Environment.AfterEach()
 	// Ensure we reset settings after collecting the controller logs
-	env.ExpectSettingsReplaced(persistedSettings...)
+	if env.InClusterController {
+		env.ExpectSettingsReplaced(persistedSettings...)
+	}
 }

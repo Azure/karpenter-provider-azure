@@ -1,0 +1,290 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package v1beta1
+
+import (
+	"strings"
+
+	"k8s.io/apimachinery/pkg/util/sets"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+)
+
+func init() {
+	karpv1.RestrictedLabelDomains = karpv1.RestrictedLabelDomains.Insert(RestrictedLabelDomains...)
+	// TODO: Uncomment this after Sept 30, see: https://github.com/Azure/karpenter-provider-azure/issues/1707
+	// karpv1.RestrictedLabels = karpv1.RestrictedLabels.Union(RestrictedLabels)
+	// Note that adding to WellKnownLabels here requires a corresponding update to
+	// computeRequirements in pkg/providers/instancetype/instancetype.go, because (as far as I can tell)
+	// Karpenter core expects that WellKnownLabels are mapped to requirements.
+	karpv1.WellKnownLabels = karpv1.WellKnownLabels.Union(AzureWellKnownLabels)
+	// Register exact, stable Azure-supported value domains for Karpenter core runtime requirement validation.
+	karpv1.WellKnownValuesForRequirements[karpv1.CapacityTypeLabelKey] = sets.New(karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot)
+	karpv1.WellKnownValuesForRequirements[LabelSKUAcceleratedNetworking] = sets.New("true", "false")
+	karpv1.WellKnownValuesForRequirements[LabelSKUStoragePremiumCapable] = sets.New("true", "false")
+	karpv1.WellKnownValuesForRequirements[LabelUltraSSD] = sets.New("true", "false")
+	karpv1.WellKnownValuesForRequirements[LabelSKUGPUManufacturer] = sets.New(ManufacturerNvidia, ManufacturerAMD)
+	karpv1.WellKnownValuesForRequirements[LabelPlacementScope] = sets.New(PlacementScopeZonal, PlacementScopeRegional)
+	karpv1.WellKnownValuesForRequirements[AKSLabelMode] = sets.New(ModeSystem, ModeUser)
+	karpv1.WellKnownValuesForRequirements[AKSLabelScaleSetPriority] = sets.New(ScaleSetPriorityRegular, ScaleSetPrioritySpot)
+	karpv1.WellKnownValuesForRequirements[AKSLabelPriority] = sets.New(PriorityRegular, PrioritySpot)
+	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux, OSSKUWindows2022, OSSKUWindows2025, OSSKUAzureContainerLinux)
+	karpv1.WellKnownValuesForRequirements[AKSLabelFIPSEnabled] = sets.New("true")
+	karpv1.WellKnownValuesForRequirements[AKSLabelKataVMIsolation] = sets.New("true")
+}
+
+var (
+	TerminationFinalizer     = apis.Group + "/termination"
+	AzureToKubeArchitectures = map[string]string{
+		// TODO: consider using constants like compute.ArchitectureArm64
+		"x64":   karpv1.ArchitectureAmd64,
+		"Arm64": karpv1.ArchitectureArm64,
+	}
+
+	// We don't include kubernetes.azure.com here because there are labels in that domain that we allow users to set, but which are not
+	// WellKnownLabels (like kubernetes.azure.com/ebpf-dataplane).
+	RestrictedLabelDomains = []string{
+		Group,
+	}
+
+	RestrictedLabels = sets.New(
+		LabelSKUHyperVGeneration,
+
+		// TODO: Uncomment these label restrictions after Sept 30, see: https://github.com/Azure/karpenter-provider-azure/issues/1707
+		// Legacy labels
+		// AKSLabelLegacyAgentPool,
+		// AKSLabelLegacyStorageProfile,
+		// AKSLabelLegacyStorageTier,
+		// AKSLabelLegacyAccelerator,
+
+		// Labels we observed were set. Note that we cannot add the whole kubernetes.azure.com domain to RestrictedLabelDomains
+		// see above comment for why
+		// "kubernetes.azure.com/accelerator",
+		// "kubernetes.azure.com/agentpool",
+		// "kubernetes.azure.com/agentpool-family",
+		// "kubernetes.azure.com/availability-zone",
+		// //"kubernetes.azure.com/network-policy", // Allowing this for now
+		// "kubernetes.azure.com/storageprofile",
+		// "kubernetes.azure.com/storagetier",
+	)
+
+	AzureWellKnownLabels = sets.New(
+		LabelSKUName,
+		LabelSKUFamily,
+		LabelSKUSeries,
+		LabelSKUVersion,
+
+		LabelSKUCPU,
+		LabelSKUMemory,
+		AKSLabelCPU,
+		AKSLabelMemory,
+
+		LabelSKUAcceleratedNetworking,
+
+		LabelSKUStoragePremiumCapable,
+		LabelSKUStorageEphemeralOSMaxSize,
+		LabelUltraSSD,
+
+		LabelSKUGPUName,
+		LabelSKUGPUManufacturer,
+		LabelSKUGPUCount,
+		LabelPlacementScope,
+
+		AKSLabelCluster,
+		AKSLabelMode,
+		AKSLabelScaleSetPriority,
+		AKSLabelPriority,
+		AKSLabelOSSKU,
+		AKSLabelFIPSEnabled,
+		AKSLabelKataVMIsolation,
+	)
+
+	AllowUndefinedWellKnownAndRestrictedLabels = func(options *scheduling.CompatibilityOptions) {
+		options.AllowUndefined = karpv1.WellKnownLabels.Union(RestrictedLabels)
+	}
+
+	HyperVGenerationV1     = "1"
+	HyperVGenerationV2     = "2"
+	ManufacturerNvidia     = "nvidia"
+	ManufacturerAMD        = "amd"
+	PlacementScopeZonal    = "zonal"
+	PlacementScopeRegional = "regional"
+
+	LabelSKUName    = Group + "/sku-name"    // Standard_D4pls_v6
+	LabelSKUFamily  = Group + "/sku-family"  // D
+	LabelSKUSeries  = Group + "/sku-series"  // Dpls_v6
+	LabelSKUVersion = Group + "/sku-version" // numerical (without v), with 1 backfilled
+
+	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
+	LabelSKUMemory = Group + "/sku-memory" // sku memory in MiB
+	// AKS domain.
+	AKSLabelCPU    = AKSLabelDomain + "/sku-cpu"    // Same value as sku-cpu.
+	AKSLabelMemory = AKSLabelDomain + "/sku-memory" // Same value as sku-memory.
+
+	// selected capabilities (from additive features in VM size name, or from SKU capabilities)
+	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
+
+	LabelSKUStoragePremiumCapable     = Group + "/sku-storage-premium-capable"     // sku.IsPremiumIO
+	LabelSKUStorageEphemeralOSMaxSize = Group + "/sku-storage-ephemeralos-maxsize" // maximum eligible ephemeral OS disk capacity in integer decimal GB
+	LabelUltraSSD                     = Group + "/sku-storage-ultra-ssd"           // sku.IsUltraSSD
+
+	// GPU labels
+	LabelSKUGPUName         = Group + "/sku-gpu-name"         // ie GPU Accelerator type we parse from vmSize
+	LabelSKUGPUManufacturer = Group + "/sku-gpu-manufacturer" // ie NVIDIA, AMD, etc
+	LabelSKUGPUCount        = Group + "/sku-gpu-count"        // ie 16, 32, etc
+
+	LabelPlacementScope = Group + "/placement-scope"
+
+	// Internal/restricted labels
+	LabelSKUHyperVGeneration = Group + "/sku-hyperv-generation" // sku.HyperVGenerations
+
+	// AKS labels
+	AKSLabelDomain = "kubernetes.azure.com"
+
+	AKSLabelCluster                 = AKSLabelDomain + "/cluster"
+	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
+	AKSLabelMode                    = AKSLabelDomain + "/mode"              // "system" or "user"
+	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority"  // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
+	AKSLabelPriority                = AKSLabelDomain + "/priority"          // "spot" or "regular".
+	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"            // "Ubuntu" or "AzureLinux"
+	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"      // "true" or not specified
+	AKSLabelKataVMIsolation         = AKSLabelDomain + "/kata-vm-isolation" // "true" or not specified
+
+	AKSLabelOSSKUEffective = AKSLabelDomain + "/os-sku-effective" // "Ubuntu2204", "Ubuntu2404", "AzureLinux2", "AzureLinux3"
+	AKSLabelOSSKURequested = AKSLabelDomain + "/os-sku-requested" // "Ubuntu", "Ubuntu2204", or "AzureLinux" (We don't currently allow users to explicitly request AzureLinux3 but if we did that would show up here too)
+
+	// Legacy labels
+	AKSLabelLegacyAgentPool      = "agentpool"
+	AKSLabelLegacyStorageProfile = "storageprofile"
+	AKSLabelLegacyStorageTier    = "storagetier"
+	AKSLabelLegacyAccelerator    = "accelerator"
+
+	// aksLegacyLabels is the set of well-known AKS labels that are not members of the kubernetes.azure.com label namespace.
+	aksLegacyLabels = sets.NewString(
+		AKSLabelLegacyAgentPool,
+		AKSLabelLegacyStorageProfile,
+		AKSLabelLegacyStorageTier,
+		AKSLabelLegacyAccelerator,
+	)
+
+	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
+	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
+	AnnotationAKSMachineResourceID    = apis.Group + "/aks-machine-resource-id" // resource ID of the associated AKS machine
+)
+
+const (
+	ModeUser   = "user"
+	ModeSystem = "system"
+)
+
+const (
+	UbuntuImageFamily              = "Ubuntu"
+	Ubuntu2204ImageFamily          = "Ubuntu2204"
+	Ubuntu2404ImageFamily          = "Ubuntu2404"
+	AzureLinuxImageFamily          = "AzureLinux"
+	AzureContainerLinuxImageFamily = "AzureContainerLinux"
+
+	Windows2022ImageFamily = "Windows2022"
+	Windows2025ImageFamily = "Windows2025"
+)
+
+const (
+	OSSKUUbuntu              = "Ubuntu"
+	OSSKUAzureLinux          = "AzureLinux"
+	OSSKUAzureContainerLinux = "AzureContainerLinux"
+
+	OSSKUWindows2022 = "Windows2022"
+	OSSKUWindows2025 = "Windows2025"
+)
+
+const (
+	OSLinux   = "linux"
+	OSWindows = "windows"
+)
+
+const (
+	ScaleSetPriorityRegular = "regular"
+	ScaleSetPrioritySpot    = "spot"
+)
+
+const (
+	PriorityRegular = "regular"
+	PrioritySpot    = "spot"
+)
+
+var UbuntuFamilies = sets.New(
+	UbuntuImageFamily,
+	Ubuntu2204ImageFamily,
+	Ubuntu2404ImageFamily,
+)
+
+// WindowsFamilies is the set of imageFamily spec values that provision Windows nodes.
+var WindowsFamilies = sets.New(
+	Windows2022ImageFamily,
+	Windows2025ImageFamily,
+)
+
+// imageFamilyToOSSKU maps imageFamily spec values to os-sku label values.
+// These values match what AKS writes for kubernetes.azure.com/os-sku.
+var imageFamilyToOSSKU = map[string]string{
+	UbuntuImageFamily:              OSSKUUbuntu,
+	Ubuntu2204ImageFamily:          OSSKUUbuntu,
+	Ubuntu2404ImageFamily:          OSSKUUbuntu,
+	AzureLinuxImageFamily:          OSSKUAzureLinux,
+	Windows2022ImageFamily:         OSSKUWindows2022,
+	Windows2025ImageFamily:         OSSKUWindows2025,
+	AzureContainerLinuxImageFamily: OSSKUAzureContainerLinux,
+}
+
+// GetOSSKUFromImageFamily returns the kuberentes.azure.com/os-sku label value for the given imageFamily.
+// If imageFamily is empty, it defaults to Ubuntu.
+// If the imageFamily is not recognized, it returns the imageFamily as-is.
+func GetOSSKUFromImageFamily(imageFamily string) string {
+	if imageFamily == "" {
+		imageFamily = UbuntuImageFamily
+	}
+	if osSKU, ok := imageFamilyToOSSKU[imageFamily]; ok {
+		return osSKU
+	}
+	return imageFamily // fallback for unknown image families
+}
+
+func IsAKSLabel(label string) bool {
+	return strings.HasPrefix(label, AKSLabelDomain+"/") || aksLegacyLabels.Has(label)
+}
+
+// IsWindowsImageFamily reports whether the given imageFamily provisions Windows nodes.
+// The comparison is case-insensitive for robustness; canonical values (enforced by the
+// AKSNodeClass imageFamily CEL enum) are the Windows*ImageFamily constants.
+func IsWindowsImageFamily(imageFamily string) bool {
+	for family := range WindowsFamilies {
+		if strings.EqualFold(imageFamily, family) {
+			return true
+		}
+	}
+	return false
+}
+
+// GetOSForImageFamily returns the kubernetes.io/os value for the given imageFamily.
+func GetOSForImageFamily(imageFamily string) string {
+	if IsWindowsImageFamily(imageFamily) {
+		return OSWindows
+	}
+	return OSLinux
+}

@@ -1,32 +1,39 @@
 diff --git cmd/dlv/cmds/commands.go cmd/dlv/cmds/commands.go
-index 15df5f6..f145330 100644
+index 374b5451..ad1c6b69 100644
 --- cmd/dlv/cmds/commands.go
 +++ cmd/dlv/cmds/commands.go
-@@ -46,6 +46,10 @@ var (
- 	apiVersion int
- 	// acceptMulti allows multiple clients to connect to the same server
- 	acceptMulti bool
-+	// checkGoVersionDefault sets default for --check-go-version
-+	checkGoVersionDefault = "true"
+@@ -61,6 +61,8 @@ var (
+ 	// checkLocalConnUser is true if the debugger should check that local
+ 	// connections come from the same user that started the headless server
+ 	checkLocalConnUser bool
 +	// checkLocalConnUserDefault sets default for --only-same-user
 +	checkLocalConnUserDefault = "true"
- 	// addr is the debugging server listen address.
- 	addr string
- 	// initFile is the path to initialization file.
-@@ -139,8 +143,8 @@ func New(docCall bool) *cobra.Command {
- 	rootCommand.PersistentFlags().StringVar(&initFile, "init", "", "Init file, executed by the terminal client.")
- 	rootCommand.PersistentFlags().StringVar(&buildFlags, "build-flags", buildFlagsDefault, "Build flags, to be passed to the compiler. For example: --build-flags=\"-tags=integration -mod=vendor -cover -v\"")
+ 	// tty is used to provide an alternate TTY for the program you wish to debug.
+ 	tty string
+ 	// disableASLR is used to disable ASLR
+@@ -78,6 +80,8 @@ var (
+ 	// used to compile the executable and refuse to work on incompatible
+ 	// versions.
+ 	checkGoVersion bool
++	// checkGoVersionDefault sets default for --check-go-version
++	checkGoVersionDefault = "true"
+ 
+ 	// rootCommand is the root of the command tree.
+ 	rootCommand *cobra.Command
+@@ -158,8 +162,8 @@ func New(docCall bool) *cobra.Command {
+ 	must(rootCommand.RegisterFlagCompletionFunc("build-flags", cobra.NoFileCompletions))
  	rootCommand.PersistentFlags().StringVar(&workingDir, "wd", "", "Working directory for running the program.")
+ 	must(rootCommand.MarkPersistentFlagDirname("wd"))
 -	rootCommand.PersistentFlags().BoolVarP(&checkGoVersion, "check-go-version", "", true, "Exits if the version of Go in use is not compatible (too old or too new) with the version of Delve.")
 -	rootCommand.PersistentFlags().BoolVarP(&checkLocalConnUser, "only-same-user", "", true, "Only connections from the same user that started this instance of Delve are allowed to connect.")
 +	rootCommand.PersistentFlags().BoolVarP(&checkGoVersion, "check-go-version", "", parseBool(checkGoVersionDefault), "Exits if the version of Go in use is not compatible (too old or too new) with the version of Delve.")
 +	rootCommand.PersistentFlags().BoolVarP(&checkLocalConnUser, "only-same-user", "", parseBool(checkLocalConnUserDefault), "Only connections from the same user that started this instance of Delve are allowed to connect.")
  	rootCommand.PersistentFlags().StringVar(&backend, "backend", "default", `Backend selection (see 'dlv help backend').`)
+ 	must(rootCommand.RegisterFlagCompletionFunc("backend", cobra.FixedCompletions([]string{"default", "native", "lldb", "rr"}, cobra.ShellCompDirectiveNoFileComp)))
  	rootCommand.PersistentFlags().StringArrayVarP(&redirects, "redirect", "r", []string{}, "Specifies redirect rules for target process (see 'dlv help redirect')")
- 	rootCommand.PersistentFlags().BoolVar(&allowNonTerminalInteractive, "allow-non-terminal-interactive", false, "Allows interactive sessions of Delve that don't have a terminal as stdin, stdout and stderr")
-@@ -1020,3 +1024,14 @@ func parseRedirects(redirects []string) ([3]string, error) {
+@@ -1249,3 +1253,14 @@ func must(err error) {
+ 		log.Fatal(err)
  	}
- 	return r, nil
  }
 +
 +// parseBool parses a boolean value represented by a string, and panics if there is an error.

@@ -18,7 +18,6 @@ package acr
 
 import (
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -26,16 +25,16 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/labels"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
 
 var env *azure.Environment
-var nodeClass *v1alpha2.AKSNodeClass
+var nodeClass *v1beta1.AKSNodeClass
 var nodePool *karpv1.NodePool
 var pauseImage string
 
@@ -43,16 +42,14 @@ func TestAcr(t *testing.T) {
 	RegisterFailHandler(Fail)
 	BeforeSuite(func() {
 		env = azure.NewEnvironment(t)
-		acrName := os.Getenv("AZURE_ACR_NAME")
-		Expect(acrName).NotTo(BeEmpty(), "AZURE_ACR_NAME must be set for the acr test suite")
-		pauseImage = fmt.Sprintf("%s.azurecr.io/pause:3.6", acrName)
+		pauseImage = fmt.Sprintf("%s.azurecr.io/pause:3.6", env.ACRName)
 	})
 	RunSpecs(t, "Acr")
 }
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()
-	nodeClass = env.DefaultAKSNodeClass()
+	nodeClass = azkarptest.AKSNodeClass()
 	nodePool = env.DefaultNodePool(nodeClass)
 })
 var _ = AfterEach(func() { env.Cleanup() })
@@ -60,7 +57,7 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Acr", func() {
 	Describe("Image Pull", func() {
-		It("should allow karpenter user pool nodes to pull images from the clusters attached acr", func() {
+		It("should allow karpenter user pool nodes to pull images from the clusters attached acr", Label("runner"), func() {
 			deployment := test.Deployment(test.DeploymentOptions{
 				Replicas: 1,
 				PodOptions: test.PodOptions{
@@ -74,7 +71,7 @@ var _ = Describe("Acr", func() {
 			})
 
 			env.ExpectCreated(nodePool, nodeClass, deployment)
-			env.EventuallyExpectHealthyPodCountWithTimeout(time.Minute*15, labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeploymentWithTimeout(time.Minute*15, deployment)
 		})
 	})
 })

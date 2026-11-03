@@ -10,6 +10,7 @@ server:
       effect: NoSchedule
 
 alertmanager:
+  enabled: false
   persistentVolume:
     enabled: false
   nodeSelector:
@@ -20,11 +21,13 @@ alertmanager:
       effect: NoSchedule
 
 kube-state-metrics:
-  enabled: false
+  enabled: true
 prometheus-pushgateway:
   enabled: false
 prometheus-node-exporter:
-  enabled: false
+  enabled: true
+  nodeSelector:
+    kubernetes.azure.com/mode: system
 
 extraScrapeConfigs: |
     - job_name: karpenter

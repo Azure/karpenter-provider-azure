@@ -21,16 +21,22 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"reflect"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/go-cmp/cmp/cmpopts"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	. "knative.dev/pkg/logging/testing"
+	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 )
 
 var ctx context.Context
@@ -47,14 +53,36 @@ var _ = Describe("Options", func() {
 		"CLUSTER_NAME",
 		"CLUSTER_ENDPOINT",
 		"VM_MEMORY_OVERHEAD_PERCENT",
+		"ENABLE_NODE_HARDENING",
 		"CLUSTER_ID",
 		"KUBELET_BOOTSTRAP_TOKEN",
 		"SSH_PUBLIC_KEY",
 		"NETWORK_PLUGIN",
 		"NETWORK_POLICY",
+		"DNS_SERVICE_IP",
 		"NODE_IDENTITIES",
 		"PROVISION_MODE",
 		"NODEBOOTSTRAPPING_SERVER_URL",
+		"VNET_GUID",
+		"USE_SIG",
+		"SIG_ACCESS_TOKEN_SERVER_URL",
+		"SIG_ACCESS_TOKEN_SCOPE",
+		"SIG_SUBSCRIPTION_ID",
+		"AZURE_NODE_RESOURCE_GROUP",
+		"KUBELET_IDENTITY_CLIENT_ID",
+		"LINUX_ADMIN_USERNAME",
+		"ADDITIONAL_TAGS",
+		"ENABLE_AZURE_SDK_LOGGING",
+		"ENABLE_FIPS",
+		"AKS_MACHINES_POOL_NAME",
+		"MANAGE_EXISTING_AKS_MACHINES",
+		"PROVIDER_BATCH_IDLE_DURATION",
+		"PROVIDER_BATCH_MAX_DURATION",
+		"PROVIDER_BATCH_MAX_SIZE",
+		"COMPUTE_RECOMMENDATION_MODE",
+		"SYSTEM_NAMESPACE",
+		"LEGACY_NODE_REPAIR",
+		"FEATURE_GATES",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -85,43 +113,236 @@ var _ = Describe("Options", func() {
 		}
 	})
 
+	Context("Core repair defaults", func() {
+		It("should register Azure's core option defaults for both entry points", func() {
+			Expect(coreoptions.Injectables).To(ContainElement(BeAssignableToTypeOf(&options.CoreOptions{})))
+		})
+
+		It("should preserve core option values and unrelated injectables when overriding defaults", func() {
+			before := &options.Options{ClusterName: "before"}
+			after := &options.Options{ClusterName: "after"}
+			coreOpts := &coreoptions.Options{IgnoreDRARequests: true, LegacyNodeRepair: true}
+			injectables := []coreoptions.Injectable{before, coreOpts, after}
+
+			options.OverrideCoreOptions(injectables)
+
+			Expect(injectables).To(HaveLen(3))
+			Expect(injectables[0]).To(BeIdenticalTo(before))
+			Expect(injectables[1]).To(Equal(&options.CoreOptions{Options: *coreOpts}))
+			Expect(injectables[2]).To(BeIdenticalTo(after))
+		})
+
+		DescribeTable("should panic when upstream core options are missing", func(injectables []coreoptions.Injectable) {
+			Expect(func() {
+				options.OverrideCoreOptions(injectables)
+			}).To(PanicWith("cannot apply Azure legacy repair defaults: *coreoptions.Options not found in coreoptions.Injectables"))
+		},
+			Entry("empty registry", []coreoptions.Injectable{}),
+			Entry("different registered type", []coreoptions.Injectable{&options.Options{}}),
+		)
+
+		It("should leave NodeRepair disabled by default", func() {
+			coreOpts := &options.CoreOptions{}
+			coreOpts.AddFlags(fs)
+			Expect(coreOpts.Parse(fs)).To(Succeed())
+			Expect(coreOpts.FeatureGates.NodeRepair).To(BeFalse())
+			Expect(coreOpts.LegacyNodeRepair).To(BeTrue())
+		})
+
+		DescribeTable("should select legacy repair unless explicitly disabled", func(envValue string, args []string, expected bool) {
+			if envValue != "" {
+				Expect(os.Setenv("LEGACY_NODE_REPAIR", envValue)).To(Succeed())
+			}
+			coreOpts := &options.CoreOptions{}
+			coreOpts.AddFlags(fs)
+			Expect(coreOpts.Parse(fs, args...)).To(Succeed())
+			Expect(coreoptions.FromContext(coreOpts.ToContext(ctx)).LegacyNodeRepair).To(Equal(expected))
+		},
+			Entry("unset", "", nil, true),
+			Entry("NodeRepair enabled without changing the repair controller", "", []string{"--feature-gates=NodeRepair=true"}, true),
+			Entry("environment enables legacy repair", "true", nil, true),
+			Entry("environment opts into budget-aware repair", "false", nil, false),
+			Entry("flag enables legacy repair", "", []string{"--legacy-node-repair=true"}, true),
+			Entry("flag opts into budget-aware repair", "", []string{"--legacy-node-repair=false"}, false),
+			Entry("false flag overrides true environment", "true", []string{"--legacy-node-repair=false"}, false),
+			Entry("true flag overrides false environment", "false", []string{"--legacy-node-repair=true"}, true),
+		)
+
+		It("should reject an invalid repair flag value", func() {
+			coreOpts := &options.CoreOptions{}
+			coreOpts.AddFlags(fs)
+			Expect(coreOpts.Parse(fs, "--legacy-node-repair=invalid")).ToNot(Succeed())
+		})
+	})
+
 	Context("Env Vars", func() {
 		It("should correctly fallback to env vars when CLI flags aren't set", func() {
 			os.Setenv("CLUSTER_NAME", "env-cluster")
 			os.Setenv("CLUSTER_ENDPOINT", "https://environment-cluster-id-value-for-testing")
 			os.Setenv("VM_MEMORY_OVERHEAD_PERCENT", "0.3")
+			os.Setenv("ENABLE_NODE_HARDENING", "true")
 			os.Setenv("KUBELET_BOOTSTRAP_TOKEN", "env-bootstrap-token")
 			os.Setenv("SSH_PUBLIC_KEY", "env-ssh-public-key")
 			os.Setenv("NETWORK_PLUGIN", "none") // Testing with none to make sure the default isn't overriding or something like that with "azure"
 			os.Setenv("NETWORK_PLUGIN_MODE", "")
 			os.Setenv("NETWORK_POLICY", "env-network-policy")
+			os.Setenv("DNS_SERVICE_IP", "10.244.0.1")
 			os.Setenv("NODE_IDENTITIES", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1,/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2")
 			os.Setenv("VNET_SUBNET_ID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
 			os.Setenv("PROVISION_MODE", "bootstrappingclient")
 			os.Setenv("NODEBOOTSTRAPPING_SERVER_URL", "https://nodebootstrapping-server-url")
+			os.Setenv("USE_SIG", "true")
+			os.Setenv("SIG_ACCESS_TOKEN_SERVER_URL", "http://valid-server.com")
+			os.Setenv("SIG_SUBSCRIPTION_ID", "my-subscription-id")
+			os.Setenv("VNET_GUID", "a519e60a-cac0-40b2-b883-084477fe6f5c")
+			os.Setenv("AZURE_NODE_RESOURCE_GROUP", "my-node-rg")
+			os.Setenv("KUBELET_IDENTITY_CLIENT_ID", "12345678-1234-1234-1234-123456789012")
+			os.Setenv("LINUX_ADMIN_USERNAME", "customadminusername")
+			os.Setenv("ADDITIONAL_TAGS", "test-tag=test-value")
+			os.Setenv("ENABLE_FIPS", "true")
+			os.Setenv("AKS_MACHINES_POOL_NAME", "mpool")
+			os.Setenv("MANAGE_EXISTING_AKS_MACHINES", "true")
+			os.Setenv("PROVIDER_BATCH_IDLE_DURATION", "1500ms")
+			os.Setenv("PROVIDER_BATCH_MAX_DURATION", "6s")
+			os.Setenv("PROVIDER_BATCH_MAX_SIZE", "42")
+			os.Setenv("SYSTEM_NAMESPACE", " kube-system ")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
 			opts.AddFlags(fs)
 			err := opts.Parse(fs)
 			Expect(err).ToNot(HaveOccurred())
-			expectOptionsEqual(opts, test.Options(test.OptionsFields{
+			expectedOpts := test.Options(test.OptionsFields{
 				ClusterName:                    lo.ToPtr("env-cluster"),
 				ClusterEndpoint:                lo.ToPtr("https://environment-cluster-id-value-for-testing"),
 				VMMemoryOverheadPercent:        lo.ToPtr(0.3),
-				ClusterID:                      lo.ToPtr("46593302"),
+				EnableNodeHardening:            lo.ToPtr(true),
 				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
+				LinuxAdminUsername:             lo.ToPtr("customadminusername"),
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
 				NetworkPlugin:                  lo.ToPtr("none"),
+				NetworkPluginMode:              lo.ToPtr(""),
 				NetworkPolicy:                  lo.ToPtr("env-network-policy"),
 				SubnetID:                       lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
 				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2"},
 				ProvisionMode:                  lo.ToPtr("bootstrappingclient"),
 				NodeBootstrappingServerURL:     lo.ToPtr("https://nodebootstrapping-server-url"),
-			}))
+				VnetGUID:                       lo.ToPtr("a519e60a-cac0-40b2-b883-084477fe6f5c"),
+				UseSIG:                         lo.ToPtr(true),
+				SIGAccessTokenServerURL:        lo.ToPtr("http://valid-server.com"),
+				SIGSubscriptionID:              lo.ToPtr("my-subscription-id"),
+				NodeResourceGroup:              lo.ToPtr("my-node-rg"),
+				KubeletIdentityClientID:        lo.ToPtr("12345678-1234-1234-1234-123456789012"),
+				AdditionalTags:                 map[string]string{"test-tag": "test-value"},
+				EnableFIPS:                     lo.ToPtr(true),
+				ClusterDNSServiceIP:            lo.ToPtr("10.244.0.1"),
+				ManageExistingAKSMachines:      lo.ToPtr(true),
+				AKSMachinesPoolName:            lo.ToPtr("mpool"),
+				ProviderBatchIdleDuration:      lo.ToPtr(1500 * time.Millisecond),
+				ProviderBatchMaxDuration:       lo.ToPtr(6 * time.Second),
+				ProviderBatchMaxSize:           lo.ToPtr(42),
+				SystemNamespace:                lo.ToPtr("kube-system"),
+			})
+			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
+			Expect(fs.Lookup("system-namespace")).To(BeNil())
 		})
 	})
 	Context("Validation", func() {
+		It("should validate provider batch duration flags", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapiheaderbatch",
+				"--aks-machines-pool-name", "mpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+				"--provider-batch-idle-duration", "6s",
+				"--provider-batch-max-duration", "3s",
+			)
+
+			Expect(err).To(MatchError(ContainSubstring("provider-batch-max-duration (3s) must be >= provider-batch-idle-duration (6s)")))
+		})
+
+		It("should validate provider batch max size flag", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapiheaderbatch",
+				"--aks-machines-pool-name", "mpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+				"--provider-batch-max-size", "0",
+			)
+
+			Expect(err).To(MatchError(ContainSubstring("provider-batch-max-size must be between 1 and 50, got 0")))
+		})
+
+		It("should fail when kubelet-identity-client-id is not a uuid", func() {
+			errMsg := "kubelet-identity-client-id not-a-uuid is malformed"
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--kubelet-identity-client-id", "not-a-uuid",
+			)
+			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
+		It("should fail when compute-recommendation-mode is invalid", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--compute-recommendation-mode", "invalid-mode",
+			)
+			Expect(err).To(MatchError(ContainSubstring("compute-recommendation-mode \"invalid-mode\" is invalid")))
+		})
+		It("should accept valid compute-recommendation-mode values", func() {
+			for _, mode := range []string{"disabled"} { // TODO: Add other modes in the future, "log-only", "enabled"
+				err := opts.Parse(
+					fs,
+					"--cluster-name", "my-name",
+					"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+					"--kubelet-bootstrap-token", "flag-bootstrap-token",
+					"--ssh-public-key", "flag-ssh-public-key",
+					"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+					"--node-resource-group", "my-node-rg",
+					"--compute-recommendation-mode", mode,
+				)
+				Expect(err).ToNot(HaveOccurred(), "mode %q should be valid", mode)
+			}
+		})
+		It("should fail when vnet guid is not a uuid", func() {
+			errMsg := "vnet-guid null is malformed"
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vm-memory-overhead-percent", "-0.01",
+				"--network-plugin", "azure",
+				"--network-plugin-mode", "overlay",
+				"--vnet-guid", "null", // sometimes output of jq can produce null or some other data, we should enforce that the vnet guid passed in at least looks like a uuid
+			)
+			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
+
 		It("should fail when network-plugin-mode is invalid", func() {
 			typo := "overlaay"
 			errMsg := fmt.Sprintf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay' or ''", typo)
@@ -146,6 +367,16 @@ var _ = Describe("Options", func() {
 				"--network-dataplane", "ciluum",
 			)
 			Expect(err).To(MatchError(ContainSubstring("network dataplane ciluum is not a valid network dataplane, valid dataplanes are ('azure', 'cilium')")))
+		})
+		It("should fail validation when cluster DNS IP is not valid", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--dns-service-ip", "999.1.2.3",
+			)
+			Expect(err).To(MatchError(ContainSubstring("dns-service-ip is invalid")))
 		})
 		It("should fail validation when clusterName not included", func() {
 			err := opts.Parse(
@@ -193,6 +424,17 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "",
 			)
 			Expect(err).To(MatchError(ContainSubstring("missing field, vnet-subnet-id")))
+		})
+		It("should fail validation when nodeResourceGroup not included", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+			)
+			Expect(err).To(MatchError(ContainSubstring("missing field, node-resource-group")))
 		})
 		It("should fail validation when VNet SubnetID is invalid (not absolute)", func() {
 			err := opts.Parse(
@@ -263,6 +505,8 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin", "azure",
+				"--network-plugin-mode", "",
+				"--node-resource-group", "my-node-rg",
 			)
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -276,8 +520,25 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin", "none",
 				"--network-plugin-mode", "",
+				"--node-resource-group", "my-node-rg",
 			)
 			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should succeed when azure-cni with overlay is configured with the right options", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin", "azure",
+				"--network-plugin-mode", "overlay",
+				"--vnet-guid", "a519e60a-cac0-40b2-b883-084477fe6f5c",
+				"--node-resource-group", "my-node-rg",
+			)
+			Expect(err).ToNot(HaveOccurred())
+
 		})
 		It("should fail validation when ProvisionMode is not valid", func() {
 			err := opts.Parse(
@@ -288,7 +549,7 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--provision-mode", "ekeselfexposed",
 			)
-			Expect(err).To(MatchError(ContainSubstring("provision-mode")))
+			Expect(err).To(MatchError(ContainSubstring("invalid")))
 		})
 		It("should fail validation when ProvisionMode is bootstrappingclient but NodebootstrappingServerURL is not provided", func() {
 			err := opts.Parse(
@@ -301,18 +562,572 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("nodebootstrapping-server-url")))
 		})
+		It("should fail if use-sig is enabled, but sig-access-token-server-url is not set", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--sig-subscription-id", "my-subscription-id",
+				"--use-sig",
+			)
+			Expect(err).To(MatchError(ContainSubstring("sig-access-token-server-url")))
+		})
+		It("should fail if use-sig is enabled, but sig-subscription-id is not set", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--sig-access-token-server-url", "http://valid-server.com",
+				"--use-sig",
+			)
+			Expect(err).To(MatchError(ContainSubstring("sig-subscription-id")))
+		})
+		It("should fail if use-sig is enabled, but sig-access-token-server-url is invalid URL", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--sig-access-token-server-url", "fake url",
+				"--sig-subscription-id", "my-subscription-id",
+				"--use-sig",
+			)
+			Expect(err).To(MatchError(ContainSubstring("sig-access-token-server-url")))
+		})
+		It("should fail if use-sig is enabled, but sig-access-token-scope is invalid URL", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--sig-access-token-server-url", "http://valid-server.com",
+				"--sig-access-token-scope", "hfake url",
+				"--sig-subscription-id", "my-subscription-id",
+				"--use-sig",
+			)
+			Expect(err).To(MatchError(ContainSubstring("sig-access-token-scope")))
+		})
+
+		It("should default manage-existing-aks-machines to false", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.ManageExistingAKSMachines).To(BeFalse())
+		})
+
+		It("should succeed with manage-existing-aks-machines set", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--manage-existing-aks-machines",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.ManageExistingAKSMachines).To(BeTrue())
+		})
+	})
+
+	Context("Admin Username Validation", func() {
+		It("should fail when linux-admin-username is too long", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--linux-admin-username", "thisusernameiswaytoolongtobevalid1234567890",
+			)
+			Expect(err).To(MatchError(ContainSubstring("linux-admin-username cannot be longer than 32 characters")))
+		})
+
+		It("should fail when linux-admin-username doesn't start with a letter", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--linux-admin-username", "1user",
+			)
+			Expect(err).To(MatchError(ContainSubstring("linux-admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")))
+		})
+
+		It("should fail when linux-admin-username contains invalid characters", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--linux-admin-username", "user@name",
+			)
+			Expect(err).To(MatchError(ContainSubstring("linux-admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")))
+		})
+
+		It("should succeed with valid linux-admin-username", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--linux-admin-username", "valid-user-123",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("DiskEncryptionSet Validation", func() {
+		It("should succeed when disk-encryption-set-id is empty", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should succeed with valid disk-encryption-set-id", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg/providers/Microsoft.Compute/diskEncryptionSets/my-des",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.ParsedDiskEncryptionSetID).ToNot(BeNil())
+			Expect(opts.ParsedDiskEncryptionSetID.SubscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+			Expect(opts.ParsedDiskEncryptionSetID.ResourceGroupName).To(Equal("my-rg"))
+			Expect(opts.ParsedDiskEncryptionSetID.Name).To(Equal("my-des"))
+			Expect(opts.ParsedDiskEncryptionSetID.ResourceType.String()).To(Equal("Microsoft.Compute/diskEncryptionSets"))
+		})
+
+		It("should fail when disk-encryption-set-id has incorrect number of segments", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg",
+			)
+			Expect(err).To(MatchError(ContainSubstring("expected resource type 'Microsoft.Compute/diskEncryptionSets'")))
+		})
+
+		It("should fail when disk-encryption-set-id doesn't start with /subscriptions/", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-osdisk-diskencryptionset-id", "subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg/providers/Microsoft.Compute/diskEncryptionSets/my-des",
+			)
+			Expect(err).To(MatchError(ContainSubstring("invalid DiskEncryptionSet ID")))
+		})
+
+		It("should fail when disk-encryption-set-id has wrong provider", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg/providers/Microsoft.Network/diskEncryptionSets/my-des",
+			)
+			Expect(err).To(MatchError(ContainSubstring("expected resource type 'Microsoft.Compute/diskEncryptionSets'")))
+		})
+
+		It("should fail when disk-encryption-set-id has wrong resource type", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg/providers/Microsoft.Compute/disks/my-disk",
+			)
+			Expect(err).To(MatchError(ContainSubstring("expected resource type 'Microsoft.Compute/diskEncryptionSets'")))
+		})
+
+		It("should fail when disk-encryption-set-id has empty subscription ID", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-osdisk-diskencryptionset-id", "/subscriptions//resourceGroups/my-rg/providers/Microsoft.Compute/diskEncryptionSets/my-des",
+			)
+			Expect(err).To(MatchError(ContainSubstring("expected resource type")))
+		})
+
+		It("should fail when disk-encryption-set-id has empty resource group name", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups//providers/Microsoft.Compute/diskEncryptionSets/my-des",
+			)
+			// arm.ParseResourceID parses this but with wrong resource type
+			Expect(err).To(MatchError(ContainSubstring("expected resource type")))
+		})
+
+		It("should fail when disk-encryption-set-id has empty DES name", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg/providers/Microsoft.Compute/diskEncryptionSets/",
+			)
+			// This will fail during ParseResourceID
+			Expect(err).To(MatchError(ContainSubstring("invalid DiskEncryptionSet ID")))
+		})
+
+		It("should succeed with case-insensitive provider names and verify parsed fields", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/my-rg/PROVIDERS/MICROSOFT.COMPUTE/DISKENCRYPTIONSETS/my-des",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			// Verify parsed resource ID is populated and fields are correct
+			Expect(opts.ParsedDiskEncryptionSetID).ToNot(BeNil())
+			Expect(opts.ParsedDiskEncryptionSetID.SubscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+			Expect(opts.ParsedDiskEncryptionSetID.ResourceGroupName).To(Equal("my-rg"))
+			Expect(opts.ParsedDiskEncryptionSetID.Name).To(Equal("my-des"))
+		})
+	})
+
+	Context("String verification", func() {
+		It("should have a JSON tag for each expected field", func() {
+			// Use reflection to get the type information of the Options struct
+			optionsType := reflect.TypeOf(*opts)
+
+			// Iterate through all fields in the struct
+			for i := 0; i < optionsType.NumField(); i++ {
+				field := optionsType.Field(i)
+				fieldName := field.Name
+
+				// Skip unexported fields (those starting with lowercase)
+				if !field.IsExported() {
+					continue
+				}
+
+				// Get the JSON tag
+				jsonTag, hasJSONTag := field.Tag.Lookup("json")
+
+				// Handle fields that should be excluded from JSON (tagged with "-")
+				if jsonTag == "-" {
+					// These fields are intentionally excluded from JSON serialization
+					// Examples: KubeletClientTLSBootstrapToken, LinuxAdminUsername, SSHPublicKey, etc.
+					continue
+				}
+
+				// For fields that should have JSON tags, verify they exist and match
+				Expect(hasJSONTag).To(BeTrue(), "Field %s should have a JSON tag", fieldName)
+
+				// Parse the JSON tag (it might have options like "omitempty")
+				jsonFieldName := strings.Split(jsonTag, ",")[0]
+
+				// Verify the JSON tag matches the field name (case-insensitive)
+				Expect(strings.ToLower(jsonFieldName)).To(Equal(strings.ToLower(fieldName)),
+					"Field %s JSON tag '%s' should match field name (case-insensitive)", fieldName, jsonFieldName)
+			}
+		})
+	})
+	Context("AKS Machine API", func() {
+		It("should succeed with provision-mode aksmachineapi", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapi",
+				"--aks-machines-pool-name", "mpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should succeed with provision-mode other than aksmachineapi", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksscriptless",
+				"--aks-machines-pool-name", "unusedpool",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should default manage-existing-aks-machines to false", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.ManageExistingAKSMachines).To(BeFalse())
+		})
+
+		It("should succeed with manage-existing-aks-machines set", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--manage-existing-aks-machines",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.ManageExistingAKSMachines).To(BeTrue())
+		})
+
+		It("should allow manage-existing-aks-machines with provision mode aksmachineapi", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--manage-existing-aks-machines",
+				"--provision-mode", "aksmachineapi",
+				"--aks-machines-pool-name", "mpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.ManageExistingAKSMachines).To(BeTrue())
+		})
+
+		It("should succeed with provision-mode aksmachineapiheaderbatch", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapiheaderbatch",
+				"--aks-machines-pool-name", "mpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("Additional Tags Validation", func() {
+		It("should succeed with valid additional tags", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--additional-tags", "env=prod,team=platform,version=1.0",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should fail if additional-tags key exceeds 512 characters", func() {
+			longKey := strings.Repeat("a", 513)
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--additional-tags", fmt.Sprintf("%s=value", longKey),
+			)
+			Expect(err).To(MatchError(ContainSubstring("exceeds maximum length of 512 characters")))
+		})
+
+		It("should fail if additional-tags value exceeds 256 characters", func() {
+			longValue := strings.Repeat("b", 257)
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--additional-tags", fmt.Sprintf("key=%s", longValue),
+			)
+			Expect(err).To(MatchError(ContainSubstring("exceeds maximum length of 256 characters")))
+		})
+
+		It("should fail if additional-tags contains invalid characters in key", func() {
+			invalidChars := []string{"<", ">", "%", "&", "\\", "?", "/"}
+			for _, char := range invalidChars {
+				err := opts.Parse(
+					fs,
+					"--cluster-name", "my-name",
+					"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+					"--kubelet-bootstrap-token", "flag-bootstrap-token",
+					"--ssh-public-key", "flag-ssh-public-key",
+					"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+					"--node-resource-group", "my-node-rg",
+					"--additional-tags", fmt.Sprintf("key%sname=value", char),
+				)
+				Expect(err).To(MatchError(ContainSubstring("contains invalid characters")))
+			}
+		})
+
+		It("should succeed with maximum allowed key and value lengths", func() {
+			maxKey := strings.Repeat("a", 512)
+			maxValue := strings.Repeat("b", 256)
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--additional-tags", fmt.Sprintf("%s=%s", maxKey, maxValue),
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should fail if additional-tags is malformed", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin", "azure",
+				"--network-plugin-mode", "overlay",
+				"--vnet-guid", "a519e60a-cac0-40b2-b883-084477fe6f5c",
+				"--node-resource-group", "my-node-rg",
+				"--additional-tags", "key1/value2",
+			)
+			Expect(err).To(MatchError(ContainSubstring("invalid value \"key1/value2\" for flag -additional-tags: malformed pair, expect string=string")))
+		})
+
+		It("should fail if additional-tags has duplicate keys", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin", "azure",
+				"--network-plugin-mode", "overlay",
+				"--vnet-guid", "a519e60a-cac0-40b2-b883-084477fe6f5c",
+				"--node-resource-group", "my-node-rg",
+				"--additional-tags", "key1=value1,key2=value2,KEY1=value3",
+			)
+			Expect(err).To(MatchError(ContainSubstring("is not unique (case-insensitive). Duplicate key found")))
+		})
 	})
 })
 
-func expectOptionsEqual(optsA *options.Options, optsB *options.Options) {
-	GinkgoHelper()
-	Expect(optsA.ClusterName).To(Equal(optsB.ClusterName))
-	Expect(optsA.ClusterEndpoint).To(Equal(optsB.ClusterEndpoint))
-	Expect(optsA.VMMemoryOverheadPercent).To(Equal(optsB.VMMemoryOverheadPercent))
-	Expect(optsA.ClusterID).To(Equal(optsB.ClusterID))
-	Expect(optsA.KubeletClientTLSBootstrapToken).To(Equal(optsB.KubeletClientTLSBootstrapToken))
-	Expect(optsA.SSHPublicKey).To(Equal(optsB.SSHPublicKey))
-	Expect(optsA.NetworkPlugin).To(Equal(optsB.NetworkPlugin))
-	Expect(optsA.NetworkPolicy).To(Equal(optsB.NetworkPolicy))
-	Expect(optsA.NodeIdentities).To(Equal(optsB.NodeIdentities))
+func TestShouldUseNodeHardening(t *testing.T) {
+	tests := []struct {
+		name          string
+		enabled       bool
+		provisionMode string
+		want          bool
+	}{
+		{name: "disabled for scriptless", provisionMode: consts.ProvisionModeAKSScriptless},
+		{name: "enabled for scriptless", enabled: true, provisionMode: consts.ProvisionModeAKSScriptless, want: true},
+		{name: "skipped for bootstrapping client", enabled: true, provisionMode: consts.ProvisionModeBootstrappingClient},
+		{name: "enabled for machine API", enabled: true, provisionMode: consts.ProvisionModeAKSMachineAPI, want: true},
+		{name: "enabled for machine API header batch", enabled: true, provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, want: true},
+		{name: "skipped for unknown mode", enabled: true, provisionMode: "unknown"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			opts := &options.Options{
+				EnableNodeHardening: test.enabled,
+				ProvisionMode:       test.provisionMode,
+			}
+			g.Expect(opts.ShouldUseNodeHardening()).To(Equal(test.want))
+		})
+	}
 }

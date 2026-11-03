@@ -1,0 +1,1322 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package instance
+
+import (
+	"strings"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/samber/lo"
+	v1 "k8s.io/api/core/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+var _ = Describe("AKSMachineInstance Helper Functions", func() {
+	var nodeClass *v1beta1.AKSNodeClass
+	var nodeClaim *karpv1.NodeClaim
+	var instanceType *corecloudprovider.InstanceType
+
+	BeforeEach(func() {
+		nodeClass = &v1beta1.AKSNodeClass{
+			Spec: v1beta1.AKSNodeClassSpec{
+				ImageFamily: lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
+			},
+		}
+		nodeClaim = &karpv1.NodeClaim{
+			Spec: karpv1.NodeClaimSpec{
+				Taints: []v1.Taint{
+					{Key: "test-taint", Value: "test-value", Effect: v1.TaintEffectNoSchedule},
+				},
+				StartupTaints: []v1.Taint{
+					{Key: "startup-taint", Value: "startup-value", Effect: v1.TaintEffectNoExecute},
+				},
+			},
+		}
+		instanceType = &corecloudprovider.InstanceType{
+			Name: "Standard_D2_v2",
+			Requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+			),
+		}
+	})
+
+	Context("configureCapacityReservation", func() {
+		It("should omit the profile when no group is configured", func() {
+			Expect(configureCapacityReservation(nodeClass)).To(BeNil())
+		})
+
+		It("should omit the profile when the group ID is empty", func() {
+			nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{}
+
+			Expect(configureCapacityReservation(nodeClass)).To(BeNil())
+		})
+
+		It("should configure the capacity reservation group", func() {
+			groupID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"
+			nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{
+				GroupID: lo.ToPtr(groupID),
+			}
+
+			profile := configureCapacityReservation(nodeClass)
+
+			Expect(profile).ToNot(BeNil())
+			Expect(profile.CapacityReservationGroup).ToNot(BeNil())
+			Expect(lo.FromPtr(profile.CapacityReservationGroup.ID)).To(Equal(groupID))
+		})
+	})
+
+	DescribeTable("validateExistingAKSMachineCapacityReservation",
+		func(actualGroupID, desiredGroupID string, wantError bool) {
+			machine := &armcontainerservice.Machine{
+				Properties: &armcontainerservice.MachineProperties{},
+			}
+			if actualGroupID != "" {
+				machine.Properties.CapacityReservation = &armcontainerservice.CapacityReservation{
+					CapacityReservationGroup: &armcontainerservice.CapacityReservationGroup{
+						ID: lo.ToPtr(actualGroupID),
+					},
+				}
+			}
+			nodeClass.Spec.CapacityReservation = nil
+			if desiredGroupID != "" {
+				nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{
+					GroupID: lo.ToPtr(desiredGroupID),
+				}
+			}
+
+			err := validateExistingAKSMachineCapacityReservation(machine, nodeClass)
+
+			if wantError {
+				Expect(err).To(HaveOccurred())
+			} else {
+				Expect(err).ToNot(HaveOccurred())
+			}
+		},
+		Entry("when neither is reserved", "", "", false),
+		Entry("when the groups match", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", false),
+		Entry("when ARM changes resource ID casing", "/SUBSCRIPTIONS/SUB/RESOURCEGROUPS/RG/PROVIDERS/MICROSOFT.COMPUTE/CAPACITYRESERVATIONGROUPS/RESERVED", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", false),
+		Entry("when the NodeClass changes groups", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/old", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/new", true),
+		Entry("when the NodeClass adds a group", "", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", true),
+		Entry("when the NodeClass drops its group after the Machine was created", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", "", true),
+	)
+
+	DescribeTable("validateExistingAKSMachineNodePublicIP",
+		func(network *armcontainerservice.MachineNetworkProperties, nodePublicIP *v1beta1.NodePublicIP, wantError bool) {
+			machine := &armcontainerservice.Machine{
+				Properties: &armcontainerservice.MachineProperties{Network: network},
+			}
+			nodeClass.Spec.NodePublicIP = nodePublicIP
+
+			err := validateExistingAKSMachineNodePublicIP(machine, nodeClass)
+
+			if wantError {
+				Expect(err).To(HaveOccurred())
+			} else {
+				Expect(err).ToNot(HaveOccurred())
+			}
+		},
+		Entry("when neither enables node public IP", &armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(false)}, nil, false),
+		Entry("when the Machine has no network settings and the NodeClass disables node public IP", nil, &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}, false),
+		Entry("when the Machine doesn't report enablement and the NodeClass omits node public IP", &armcontainerservice.MachineNetworkProperties{}, nil, false),
+		Entry("when both enable node public IP without a prefix", &armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true)}, &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}, false),
+		Entry("when the prefixes match",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPPrefixID: lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix")},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"}},
+			false),
+		Entry("when ARM changes prefix ID casing",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPPrefixID: lo.ToPtr("/SUBSCRIPTIONS/SUB/RESOURCEGROUPS/RG/PROVIDERS/MICROSOFT.NETWORK/PUBLICIPPREFIXES/PREFIX")},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"}},
+			false),
+		Entry("when the NodeClass enables node public IP after the Machine was created", &armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(false)}, &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}, true),
+		Entry("when the NodeClass enables node public IP and the Machine has no network settings", nil, &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}, true),
+		Entry("when the NodeClass disables node public IP after the Machine was created", &armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true)}, &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}, true),
+		Entry("when the NodeClass adds a prefix",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true)},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"}},
+			true),
+		Entry("when the NodeClass drops its prefix",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPPrefixID: lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix")},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)},
+			true),
+		Entry("when the NodeClass changes prefixes",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPPrefixID: lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/old")},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/new"}},
+			true),
+		Entry("when the IP tags match in a different order",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPTags: []*armcontainerservice.IPTag{
+				{IPTagType: lo.ToPtr("FirstPartyUsage"), Tag: lo.ToPtr("/Unprivileged")},
+				{IPTagType: lo.ToPtr("RoutingPreference"), Tag: lo.ToPtr("Internet")},
+			}},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "Internet"}, {IPTagType: "FirstPartyUsage", Tag: "/Unprivileged"}}},
+			false),
+		Entry("when the Machine reports an empty IP tag list and the NodeClass has none",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPTags: []*armcontainerservice.IPTag{}},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)},
+			false),
+		Entry("when the NodeClass adds an IP tag",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true)},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "Internet"}}},
+			true),
+		Entry("when the NodeClass changes an IP tag value",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPTags: []*armcontainerservice.IPTag{{IPTagType: lo.ToPtr("RoutingPreference"), Tag: lo.ToPtr("Internet")}}},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "MicrosoftNetwork"}}},
+			true),
+		Entry("when the IP tag casing differs",
+			&armcontainerservice.MachineNetworkProperties{EnableNodePublicIP: lo.ToPtr(true), NodePublicIPTags: []*armcontainerservice.IPTag{{IPTagType: lo.ToPtr("RoutingPreference"), Tag: lo.ToPtr("Internet")}}},
+			&v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "internet"}}},
+			true),
+	)
+
+	Context("configureNetwork", func() {
+		const prefixID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"
+
+		DescribeTable("should leave the public IP fields unset when node public IP is disabled",
+			func(nodePublicIP *v1beta1.NodePublicIP) {
+				nodeClass.Spec.NodePublicIP = nodePublicIP
+
+				network := configureNetwork(nodeClass)
+
+				Expect(network).ToNot(BeNil())
+				Expect(network.EnableNodePublicIP).To(BeNil())
+				Expect(network.NodePublicIPPrefixID).To(BeNil())
+				Expect(network.NodePublicIPTags).To(BeNil())
+			},
+			Entry("when omitted", nil),
+			Entry("when empty", &v1beta1.NodePublicIP{}),
+			Entry("when explicitly disabled", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}),
+		)
+
+		It("should keep the subnet", func() {
+			subnetID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"
+			nodeClass.Spec.VNETSubnetID = lo.ToPtr(subnetID)
+
+			Expect(lo.FromPtr(configureNetwork(nodeClass).VnetSubnetID)).To(Equal(subnetID))
+		})
+
+		It("should enable node public IP without a prefix", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+
+			network := configureNetwork(nodeClass)
+
+			Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+			Expect(network.NodePublicIPPrefixID).To(BeNil())
+			Expect(network.NodePublicIPTags).To(BeNil())
+		})
+
+		It("should enable node public IP from a prefix", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}}
+
+			network := configureNetwork(nodeClass)
+
+			Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+			Expect(lo.FromPtr(network.NodePublicIPPrefixID)).To(Equal(prefixID))
+			Expect(network.NodePublicIPTags).To(BeNil())
+		})
+
+		It("should set IP tags in spec order", func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{
+				{IPTagType: "RoutingPreference", Tag: "Internet"},
+				{IPTagType: "FirstPartyUsage", Tag: "/Unprivileged"},
+			}}
+
+			network := configureNetwork(nodeClass)
+
+			Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+			Expect(network.NodePublicIPPrefixID).To(BeNil())
+			Expect(network.NodePublicIPTags).To(Equal([]*armcontainerservice.IPTag{
+				{IPTagType: lo.ToPtr("RoutingPreference"), Tag: lo.ToPtr("Internet")},
+				{IPTagType: lo.ToPtr("FirstPartyUsage"), Tag: lo.ToPtr("/Unprivileged")},
+			}))
+		})
+	})
+
+	Context("configureOSSKUAndFIPs", func() {
+		Context("Ubuntu2204 Image Family", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			})
+
+			It("should configure Ubuntu2204", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu2204))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeFalse())
+			})
+
+			It("should configure Ubuntu2204 with different Kubernetes version", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.29.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu2204))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeFalse())
+			})
+		})
+
+		Context("AzureLinux Image Family", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+			})
+
+			It("should configure AzureLinux for older Kubernetes version", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureLinux))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeFalse())
+			})
+
+			It("should configure AzureLinux for newer Kubernetes version", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.32.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureLinux))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeFalse())
+			})
+		})
+
+		Context("AzureContainerLinux Image Family", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+			})
+
+			It("should configure AzureContainerLinux", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.34.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureContainerLinux))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeFalse())
+			})
+		})
+
+		Context("AzureLinux Image Family with FIPS Mode", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+			})
+
+			It("should configure AzureLinux with FIPS mode enabled", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureLinux))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeTrue())
+			})
+		})
+
+		Context("Generic Ubuntu Image Family with FIPS Mode", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+				nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+			})
+
+			It("should configure Ubuntu with FIPS mode enabled", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeTrue())
+			})
+		})
+
+		Context("Generic Ubuntu Image Family without FIPS Mode", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+			})
+
+			It("should configure Ubuntu without FIPS mode", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu2204))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeFalse())
+			})
+
+			It("should configure Ubuntu2404 for newer Kubernetes version", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.34.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu2404))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeFalse())
+			})
+		})
+
+		Context("Windows Image Families", func() {
+			It("should configure Windows2022", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.30.0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2022))
+				Expect(*enableFIPs).To(BeFalse())
+			})
+
+			It("should configure Windows2025", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.32.0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2025))
+				Expect(*enableFIPs).To(BeTrue())
+			})
+
+			It("should default EnableFIPS true for Windows2025 when fipsMode is omitted", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+				nodeClass.Spec.FIPSMode = nil
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.32.0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2025))
+				Expect(*enableFIPs).To(BeTrue())
+			})
+		})
+
+		Context("Error Cases", func() {
+			It("should return error when ImageFamily is nil", func() {
+				nodeClass.Spec.ImageFamily = nil
+
+				_, _, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("ImageFamily is not set"))
+			})
+
+			It("should handle empty Kubernetes version gracefully", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureLinux))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeFalse())
+			})
+		})
+
+	})
+
+	Context("configureOSType", func() {
+		It("should return Linux for Linux image families", func() {
+			for _, fam := range []string{
+				v1beta1.UbuntuImageFamily,
+				v1beta1.Ubuntu2204ImageFamily,
+				v1beta1.Ubuntu2404ImageFamily,
+				v1beta1.AzureLinuxImageFamily,
+			} {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(fam)
+				Expect(*configureOSType(nodeClass)).To(Equal(armcontainerservice.OSTypeLinux), "family %s", fam)
+			}
+		})
+
+		It("should return Windows for Windows image families", func() {
+			for _, fam := range []string{
+				v1beta1.Windows2022ImageFamily,
+				v1beta1.Windows2025ImageFamily,
+			} {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(fam)
+				Expect(*configureOSType(nodeClass)).To(Equal(armcontainerservice.OSTypeWindows), "family %s", fam)
+			}
+		})
+	})
+
+	// Currently, we will use "nodeInitializationTaints" field for all taints, as "taints" field are subjected to server-side reconciliation and extra validation
+	// Server-side reconciliation is not necessarily a bad thing, but needs to resolve validation conflicts at least. E.g., system node cannot have hard taints other than CriticalAddonsOnly, per AKS Machine API.
+	Context("configureTaints", func() {
+		Context("Basic Functionality", func() {
+			It("should configure taints correctly with startup and regular taints", func() {
+				initTaints, nodeTaints := configureTaints(nodeClaim)
+
+				Expect(initTaints).To(HaveLen(3)) // startup-taint + test-taint + UnregisteredNoExecuteTaint
+				Expect(nodeTaints).To(HaveLen(0)) // NodeTaints should now be empty
+
+				// Check that UnregisteredNoExecuteTaint is automatically added
+				found := false
+				for _, taint := range initTaints {
+					if *taint == karpv1.UnregisteredNoExecuteTaint.ToString() {
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue())
+
+				// Check that startup taint is included in NodeInitializationTaints
+				startupTaintFound := false
+				for _, taint := range initTaints {
+					if *taint == "startup-taint=startup-value:NoExecute" {
+						startupTaintFound = true
+						break
+					}
+				}
+				Expect(startupTaintFound).To(BeTrue())
+
+				// Check that regular taint is now also included in NodeInitializationTaints
+				regularTaintFound := false
+				for _, taint := range initTaints {
+					if *taint == "test-taint=test-value:NoSchedule" {
+						regularTaintFound = true
+						break
+					}
+				}
+				Expect(regularTaintFound).To(BeTrue())
+			})
+
+			It("should not duplicate UnregisteredNoExecuteTaint if already present in startup taints", func() {
+				// Add UnregisteredNoExecuteTaint to startup taints
+				nodeClaim.Spec.StartupTaints = append(nodeClaim.Spec.StartupTaints, karpv1.UnregisteredNoExecuteTaint)
+
+				initTaints, nodeTaints := configureTaints(nodeClaim)
+
+				// Should be 3 (startup-taint + test-taint + UnregisteredNoExecuteTaint, no duplicate)
+				Expect(initTaints).To(HaveLen(3))
+				Expect(nodeTaints).To(HaveLen(0))
+
+				// Count occurrences of UnregisteredNoExecuteTaint
+				count := 0
+				for _, taint := range initTaints {
+					if *taint == karpv1.UnregisteredNoExecuteTaint.ToString() {
+						count++
+					}
+				}
+				Expect(count).To(Equal(1))
+			})
+
+			It("should not duplicate UnregisteredNoExecuteTaint if already present in regular taints", func() {
+				// Add UnregisteredNoExecuteTaint to regular taints
+				nodeClaim.Spec.Taints = append(nodeClaim.Spec.Taints, karpv1.UnregisteredNoExecuteTaint)
+
+				initTaints, nodeTaints := configureTaints(nodeClaim)
+
+				// Should be 3 in init taints (startup-taint + test-taint + UnregisteredNoExecuteTaint, no duplicate)
+				Expect(initTaints).To(HaveLen(3))
+				// Should be 0 in node taints (all taints go to init taints now)
+				Expect(nodeTaints).To(HaveLen(0))
+
+				// Count total occurrences in init taints
+				totalCount := 0
+				for _, taint := range initTaints {
+					if *taint == karpv1.UnregisteredNoExecuteTaint.ToString() {
+						totalCount++
+					}
+				}
+				// Should appear only once total
+				Expect(totalCount).To(Equal(1))
+			})
+		})
+
+		Context("Edge Cases", func() {
+			It("should handle empty taints and only add UnregisteredNoExecuteTaint", func() {
+				nodeClaim.Spec.Taints = nil
+				nodeClaim.Spec.StartupTaints = nil
+
+				initTaints, nodeTaints := configureTaints(nodeClaim)
+
+				Expect(initTaints).To(HaveLen(1)) // Only UnregisteredNoExecuteTaint
+				Expect(nodeTaints).To(HaveLen(0))
+				Expect(*initTaints[0]).To(Equal(karpv1.UnregisteredNoExecuteTaint.ToString()))
+			})
+
+			It("should handle empty startup taints but regular taints present", func() {
+				nodeClaim.Spec.StartupTaints = nil
+
+				initTaints, nodeTaints := configureTaints(nodeClaim)
+
+				Expect(initTaints).To(HaveLen(2)) // test-taint + UnregisteredNoExecuteTaint
+				Expect(nodeTaints).To(HaveLen(0)) // NodeTaints should now be empty
+			})
+
+			It("should handle empty regular taints but startup taints present", func() {
+				nodeClaim.Spec.Taints = nil
+
+				initTaints, nodeTaints := configureTaints(nodeClaim)
+
+				Expect(initTaints).To(HaveLen(2)) // startup-taint + UnregisteredNoExecuteTaint
+				Expect(nodeTaints).To(HaveLen(0))
+			})
+
+			It("should handle multiple startup taints", func() {
+				nodeClaim.Spec.StartupTaints = append(nodeClaim.Spec.StartupTaints,
+					v1.Taint{Key: "another-startup", Value: "value", Effect: v1.TaintEffectNoExecute})
+
+				initTaints, nodeTaints := configureTaints(nodeClaim)
+
+				Expect(initTaints).To(HaveLen(4)) // 2 startup taints + test-taint + UnregisteredNoExecuteTaint
+				Expect(nodeTaints).To(HaveLen(0)) // NodeTaints should now be empty
+			})
+
+			It("should handle multiple regular taints", func() {
+				nodeClaim.Spec.Taints = append(nodeClaim.Spec.Taints,
+					v1.Taint{Key: "another-regular", Value: "value", Effect: v1.TaintEffectNoSchedule})
+
+				initTaints, nodeTaints := configureTaints(nodeClaim)
+
+				Expect(initTaints).To(HaveLen(4)) // startup-taint + 2 regular taints + UnregisteredNoExecuteTaint
+				Expect(nodeTaints).To(HaveLen(0)) // NodeTaints should now be empty
+			})
+
+			It("should handle taints with different effects", func() {
+				nodeClaim.Spec.Taints = []v1.Taint{
+					{Key: "taint1", Value: "value1", Effect: v1.TaintEffectNoSchedule},
+					{Key: "taint2", Value: "value2", Effect: v1.TaintEffectNoExecute},
+					{Key: "taint3", Value: "value3", Effect: v1.TaintEffectPreferNoSchedule},
+				}
+
+				initTaints, nodeTaints := configureTaints(nodeClaim)
+
+				Expect(initTaints).To(HaveLen(5)) // startup-taint + 3 regular taints + UnregisteredNoExecuteTaint
+				Expect(nodeTaints).To(HaveLen(0)) // NodeTaints should now be empty
+
+				// Verify all taint effects are preserved in NodeInitializationTaints
+				taintStrings := make([]string, len(initTaints))
+				for i, taint := range initTaints {
+					taintStrings[i] = *taint
+				}
+				Expect(taintStrings).To(ContainElement("taint1=value1:NoSchedule"))
+				Expect(taintStrings).To(ContainElement("taint2=value2:NoExecute"))
+				Expect(taintStrings).To(ContainElement("taint3=value3:PreferNoSchedule"))
+			})
+
+			It("should handle taints with empty values", func() {
+				nodeClaim.Spec.Taints = []v1.Taint{
+					{Key: "empty-value-taint", Value: "", Effect: v1.TaintEffectNoSchedule},
+				}
+				nodeClaim.Spec.StartupTaints = []v1.Taint{
+					{Key: "empty-startup-taint", Value: "", Effect: v1.TaintEffectNoExecute},
+				}
+
+				initTaints, nodeTaints := configureTaints(nodeClaim)
+
+				Expect(initTaints).To(HaveLen(3)) // empty-startup-taint + empty-value-taint + UnregisteredNoExecuteTaint
+				Expect(nodeTaints).To(HaveLen(0)) // NodeTaints should now be empty
+
+				// Check that empty values are handled correctly in NodeInitializationTaints
+				taintStrings := make([]string, len(initTaints))
+				for i, taint := range initTaints {
+					taintStrings[i] = *taint
+				}
+				Expect(taintStrings).To(ContainElement("empty-value-taint:NoSchedule"))
+				Expect(taintStrings).To(ContainElement("empty-startup-taint:NoExecute"))
+			})
+		})
+	})
+
+	Context("configureLabelsAndMode", func() {
+		BeforeEach(func() {
+			nodeClaim.Labels = map[string]string{
+				"test-label": "test-value",
+			}
+		})
+
+		Context("Agent Pool Mode Configuration", func() {
+			It("should configure user mode by default", func() {
+				labels, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				Expect(labels).ToNot(BeNil())
+				Expect(mode).ToNot(BeNil())
+				Expect(*mode).To(Equal(armcontainerservice.AgentPoolModeUser))
+
+				// Check that capacity type label is added
+				Expect(labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
+				Expect(*labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+			})
+
+			It("should configure system mode when explicitly specified", func() {
+				nodeClaim.Labels["kubernetes.azure.com/mode"] = "system"
+
+				labels, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeSpot, v1beta1.PlacementScopeZonal, false)
+
+				Expect(mode).ToNot(BeNil())
+				Expect(*mode).To(Equal(armcontainerservice.AgentPoolModeSystem))
+
+				// Check that capacity type label is added
+				Expect(labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
+				Expect(*labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeSpot))
+			})
+
+			It("should configure user mode when mode label is user", func() {
+				nodeClaim.Labels["kubernetes.azure.com/mode"] = "user"
+
+				_, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				Expect(mode).ToNot(BeNil())
+				Expect(*mode).To(Equal(armcontainerservice.AgentPoolModeUser))
+			})
+
+			It("should configure user mode when mode label is empty", func() {
+				nodeClaim.Labels["kubernetes.azure.com/mode"] = ""
+
+				_, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				Expect(mode).ToNot(BeNil())
+				Expect(*mode).To(Equal(armcontainerservice.AgentPoolModeUser))
+			})
+
+			It("should configure user mode when mode label has invalid value", func() {
+				nodeClaim.Labels["kubernetes.azure.com/mode"] = "invalid-mode"
+
+				_, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				Expect(mode).ToNot(BeNil())
+				Expect(*mode).To(Equal(armcontainerservice.AgentPoolModeUser))
+			})
+		})
+
+		Context("Capacity Type Configuration", func() {
+			It("should handle on-demand capacity type", func() {
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				Expect(labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
+				Expect(*labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+			})
+
+			It("should handle spot capacity type", func() {
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeSpot, v1beta1.PlacementScopeZonal, false)
+
+				Expect(labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
+				Expect(*labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeSpot))
+			})
+
+			It("should include selected placement scope when provided", func() {
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeRegional, false)
+
+				Expect(labels).To(HaveKey(v1beta1.LabelPlacementScope))
+				Expect(*labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeRegional))
+			})
+
+			It("should include UltraSSD label when enabled", func() {
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, true)
+
+				Expect(labels).To(HaveKey(v1beta1.LabelUltraSSD))
+				Expect(*labels[v1beta1.LabelUltraSSD]).To(Equal("true"))
+			})
+
+			It("should include UltraSSD label when disabled", func() {
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				Expect(labels).To(HaveKey(v1beta1.LabelUltraSSD))
+				Expect(*labels[v1beta1.LabelUltraSSD]).To(Equal("false"))
+			})
+		})
+
+		Context("Label Merging and Management", func() {
+			It("should include original nodeclaim labels", func() {
+				nodeClaim.Labels = map[string]string{
+					"custom-label":  "custom-value",
+					"another-label": "another-value",
+					"environment":   "test",
+				}
+
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				// Should include original labels
+				Expect(labels).To(HaveKey("custom-label"))
+				Expect(*labels["custom-label"]).To(Equal("custom-value"))
+				Expect(labels).To(HaveKey("another-label"))
+				Expect(*labels["another-label"]).To(Equal("another-value"))
+				Expect(labels).To(HaveKey("environment"))
+				Expect(*labels["environment"]).To(Equal("test"))
+			})
+
+			// Note that non-Karpenter system labels population is not being tested here, as it is API's responsibility to do so. Consider adding E2E if we want to validate those.
+			// XPMT: TODO(charliedmcb): maybe add unit tests for "sanitization" here, if needed(?)
+
+			It("should handle empty nodeclaim labels", func() {
+				nodeClaim.Labels = nil
+
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				// Should still have capacity type and placement scope
+				Expect(labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
+				Expect(*labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+				Expect(labels).To(HaveKey(v1beta1.LabelPlacementScope))
+				Expect(*labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeZonal))
+			})
+
+			It("should handle empty instance type requirements", func() {
+				instanceType.Requirements = scheduling.NewRequirements()
+
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				// Should include original labels plus capacity type and placement scope
+				Expect(labels).To(HaveKey("test-label"))
+				Expect(*labels["test-label"]).To(Equal("test-value"))
+				Expect(labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
+				Expect(*labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+				Expect(labels).To(HaveKey(v1beta1.LabelPlacementScope))
+				Expect(*labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeZonal))
+			})
+
+			It("should handle complex instance type requirements", func() {
+				instanceType.Requirements = scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1.LabelInstanceTypeStable, v1.NodeSelectorOpIn, "Standard_D2_v2"),
+					scheduling.NewRequirement(v1.LabelTopologyZone, v1.NodeSelectorOpIn, "eastus-1"),
+					scheduling.NewRequirement("custom-requirement", v1.NodeSelectorOpIn, "custom-value"),
+				)
+
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				Expect(labels).To(HaveKey("custom-requirement"))
+				Expect(*labels["custom-requirement"]).To(Equal("custom-value"))
+			})
+		})
+
+		Context("Edge Cases", func() {
+			It("should handle nil nodeClaim labels map", func() {
+				nodeClaim.Labels = nil
+
+				labels, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				Expect(labels).ToNot(BeNil())
+				Expect(mode).ToNot(BeNil())
+				Expect(*mode).To(Equal(armcontainerservice.AgentPoolModeUser))
+				Expect(labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
+			})
+
+			It("should handle very long label values", func() {
+				longValue := strings.Repeat("a", 1000)
+				nodeClaim.Labels = map[string]string{
+					"long-label": longValue,
+				}
+
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				Expect(labels).To(HaveKey("long-label"))
+				Expect(*labels["long-label"]).To(Equal(longValue))
+			})
+
+			It("should preserve label ordering consistency", func() {
+				nodeClaim.Labels = map[string]string{
+					"z-label": "z-value",
+					"a-label": "a-value",
+					"m-label": "m-value",
+				}
+
+				labels1, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+				labels2, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				// Both calls should produce same labels
+				Expect(len(labels1)).To(Equal(len(labels2)))
+				for key := range labels1 {
+					Expect(labels2).To(HaveKey(key))
+					Expect(*labels1[key]).To(Equal(*labels2[key]))
+				}
+			})
+		})
+
+		// Previously reserved labels (kubernetes.io/k8s.io domains) were restricted by Karpenter core before 1.9.x.
+		// Now allowed on NodeClaims, they should be filtered out of NodeLabels (sent to kubelet via the AKS RP)
+		// unless they are in a kubelet-allowed namespace (e.g. kubelet.kubernetes.io).
+		DescribeTable("should filter previously reserved labels from nodeClaim.Labels",
+			func(label string, expectedInNodeLabels bool) {
+				nodeClaim.Labels = map[string]string{
+					label: "custom-value",
+				}
+
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				if expectedInNodeLabels {
+					Expect(labels).To(HaveKey(label))
+					Expect(*labels[label]).To(Equal("custom-value"))
+				} else {
+					Expect(labels).ToNot(HaveKey(label))
+				}
+			},
+			Entry("kubernetes.io (previously reserved)", "kubernetes.io/custom-label", false),
+			Entry("k8s.io (previously reserved)", "k8s.io/custom-label", false),
+			Entry("kubelet.kubernetes.io (kubelet-allowed)", "kubelet.kubernetes.io/custom-label", true),
+		)
+	})
+
+	Context("configureKubeletConfig", func() {
+		It("should return nil when nodeClass is nil", func() {
+			config := configureKubeletConfig(nil)
+
+			Expect(config).To(BeNil())
+		})
+
+		It("should return nil when kubelet spec is nil", func() {
+			nodeClass.Spec.Kubelet = nil
+			config := configureKubeletConfig(nodeClass)
+
+			Expect(config).To(BeNil())
+		})
+
+		It("should configure all kubelet settings correctly", func() {
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				CPUManagerPolicy:            lo.ToPtr("static"),
+				CPUCFSQuota:                 lo.ToPtr(true),
+				TopologyManagerPolicy:       lo.ToPtr("single-numa-node"),
+				ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
+				ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
+				AllowedUnsafeSysctls:        []string{"kernel.shm_rmid_forced", "net.core.somaxconn"},
+				ContainerLogMaxSize:         lo.ToPtr("100Mi"),
+				ContainerLogMaxFiles:        lo.ToPtr(int32(5)),
+				PodPidsLimit:                lo.ToPtr(int64(2048)),
+			}
+
+			config := configureKubeletConfig(nodeClass)
+
+			Expect(config).ToNot(BeNil())
+			Expect(*config.CPUManagerPolicy).To(Equal("static"))
+			Expect(*config.CPUCfsQuota).To(BeTrue())
+			Expect(*config.TopologyManagerPolicy).To(Equal("single-numa-node"))
+			Expect(*config.ImageGcHighThreshold).To(Equal(int32(85)))
+			Expect(*config.ImageGcLowThreshold).To(Equal(int32(80)))
+			Expect(config.AllowedUnsafeSysctls).To(HaveLen(2))
+			Expect(*config.AllowedUnsafeSysctls[0]).To(Equal("kernel.shm_rmid_forced"))
+			Expect(config.ContainerLogMaxSizeMB).ToNot(BeNil())
+			Expect(*config.ContainerLogMaxFiles).To(Equal(int32(5)))
+			Expect(config.PodMaxPids).ToNot(BeNil())
+		})
+
+		It("should handle empty/nil values correctly", func() {
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				CPUManagerPolicy:     lo.ToPtr(""),    // Empty string should be nil
+				CPUCFSQuota:          lo.ToPtr(false), // False should be preserved
+				AllowedUnsafeSysctls: []string{},      // Empty slice should be nil
+				ContainerLogMaxSize:  nil,             // nil should stay nil
+				ContainerLogMaxFiles: nil,             // Nil should stay nil
+				PodPidsLimit:         nil,             // Nil should stay nil
+			}
+
+			config := configureKubeletConfig(nodeClass)
+
+			Expect(config.CPUManagerPolicy).To(BeNil())
+			Expect(*config.CPUCfsQuota).To(BeFalse())
+			Expect(config.AllowedUnsafeSysctls).To(BeNil())
+			Expect(config.ContainerLogMaxSizeMB).To(BeNil())
+			Expect(config.ContainerLogMaxFiles).To(BeNil())
+			Expect(config.PodMaxPids).To(BeNil())
+		})
+
+		It("should configure supported reservation and eviction overrides", func() {
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
+				EvictionHard: &v1beta1.EvictionThreshold{
+					MemoryAvailable:  lo.ToPtr("333Mi"),
+					NodeFsAvailable:  lo.ToPtr("12%"),
+					NodeFsInodesFree: lo.ToPtr("7%"),
+				},
+				EvictionSoft: &v1beta1.EvictionThreshold{
+					MemoryAvailable:  lo.ToPtr("500Mi"),
+					NodeFsAvailable:  lo.ToPtr("15%"),
+					NodeFsInodesFree: lo.ToPtr("10%"),
+				},
+				EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{
+					MemoryAvailable:  lo.ToPtr(karpv1.MustParseNillableDuration("90s")),
+					NodeFsAvailable:  lo.ToPtr(karpv1.MustParseNillableDuration("2m")),
+					NodeFsInodesFree: lo.ToPtr(karpv1.MustParseNillableDuration("120s")),
+				},
+				EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
+			}
+
+			config := configureKubeletConfig(nodeClass)
+
+			Expect(*config.KubeReserved.CPUMillicores).To(Equal(int32(250)))
+			Expect(*config.KubeReserved.MemoryMB).To(Equal(int32(1024)))
+			Expect(*config.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
+			Expect(*config.HardEvictionThreshold.NodeFsAvailable).To(Equal("12%"))
+			Expect(*config.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))
+			Expect(*config.SoftEvictionThreshold.MemoryAvailable).To(Equal("500Mi"))
+			Expect(*config.SoftEvictionThreshold.NodeFsAvailable).To(Equal("15%"))
+			Expect(*config.SoftEvictionThreshold.NodeFsInodesFree).To(Equal("10%"))
+			Expect(*config.SoftEvictionGracePeriod.MemoryAvailable).To(Equal("90s"))
+			Expect(*config.SoftEvictionGracePeriod.NodeFsAvailable).To(Equal("2m"))
+			Expect(*config.SoftEvictionGracePeriod.NodeFsInodesFree).To(Equal("120s"))
+			Expect(*config.EvictionMaxPodGracePeriodInSeconds).To(Equal(int32(120)))
+		})
+
+	})
+
+	Context("parseVMImageID", func() {
+		Context("Valid Image IDs", func() {
+			It("should parse a complete VM image ID correctly", func() {
+				vmImageID := "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(subscriptionID).To(Equal("10945678-1234-1234-1234-123456789012"))
+				Expect(resourceGroup).To(Equal("AKS-Ubuntu"))
+				Expect(gallery).To(Equal("AKSUbuntu"))
+				Expect(imageName).To(Equal("2204gen2containerd"))
+				Expect(version).To(Equal("2022.10.03"))
+			})
+
+			It("should parse VM image ID with different values", func() {
+				vmImageID := "/subscriptions/abcdef12-3456-7890-abcd-ef1234567890/resourceGroups/MyResourceGroup/providers/Microsoft.Compute/galleries/MyGallery/images/ubuntu20-04/versions/1.0.0"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(subscriptionID).To(Equal("abcdef12-3456-7890-abcd-ef1234567890"))
+				Expect(resourceGroup).To(Equal("MyResourceGroup"))
+				Expect(gallery).To(Equal("MyGallery"))
+				Expect(imageName).To(Equal("ubuntu20-04"))
+				Expect(version).To(Equal("1.0.0"))
+			})
+
+			It("should handle image ID with hyphens and underscores in names", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg_name/providers/Microsoft.Compute/galleries/test_gallery-name/images/test-image_name/versions/2023.01.15"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(subscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+				Expect(resourceGroup).To(Equal("test-rg_name"))
+				Expect(gallery).To(Equal("test_gallery-name"))
+				Expect(imageName).To(Equal("test-image_name"))
+				Expect(version).To(Equal("2023.01.15"))
+			})
+		})
+
+		Context("Invalid Image IDs", func() {
+			It("should return error for empty string", func() {
+				_, _, _, _, _, err := parseVMImageID("")
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("vmImageID is empty"))
+			})
+
+			It("should return error for too few path components", func() {
+				vmImageID := "/subscriptions/12345/resourceGroups/test"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
+			})
+
+			It("should return error for incorrect path structure - wrong subscriptions", func() {
+				vmImageID := "/subscription/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("invalid vmImageID format"))
+			})
+
+			It("should return error for incorrect path structure - wrong resourceGroups", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroup/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				// arm.ParseResourceID is lenient with resourceGroup vs resourceGroups, resulting in empty ResourceGroupName
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("missing resource group"))
+			})
+
+			It("should return error for incorrect path structure - wrong providers", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/provider/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
+			})
+
+			It("should return error for incorrect path structure - wrong Microsoft.Compute", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Storage/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
+			})
+
+			It("should return error for incorrect path structure - wrong galleries", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/gallery/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
+			})
+
+			It("should return error for incorrect path structure - wrong images", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/image/2204gen2containerd/versions/2022.10.03"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
+			})
+
+			It("should return error for incorrect path structure - wrong versions", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/version/2022.10.03"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
+			})
+
+			It("should return error for missing version value", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("missing version"))
+			})
+
+			It("should handle path with trailing slash gracefully", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03/"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(subscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+				Expect(resourceGroup).To(Equal("AKS-Ubuntu"))
+				Expect(gallery).To(Equal("AKSUbuntu"))
+				Expect(imageName).To(Equal("2204gen2containerd"))
+				Expect(version).To(Equal("2022.10.03"))
+			})
+		})
+
+		Context("Edge Cases", func() {
+			It("should handle exactly minimum required path length", func() {
+				vmImageID := "/subscriptions/a/resourceGroups/b/providers/Microsoft.Compute/galleries/c/images/d/versions/e"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(subscriptionID).To(Equal("a"))
+				Expect(resourceGroup).To(Equal("b"))
+				Expect(gallery).To(Equal("c"))
+				Expect(imageName).To(Equal("d"))
+				Expect(version).To(Equal("e"))
+			})
+
+			It("should return error for path with extra trailing components", func() {
+				// Extra components result in a different resource type, which is correctly rejected
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03/extra/components"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
+			})
+
+			It("should accept uppercase SUBSCRIPTIONS (case-insensitive path keywords)", func() {
+				// Azure resource IDs are case-insensitive for path keywords like subscriptions/resourceGroups
+				vmImageID := "/SUBSCRIPTIONS/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(subscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+				Expect(resourceGroup).To(Equal("AKS-Ubuntu"))
+				Expect(gallery).To(Equal("AKSUbuntu"))
+				Expect(imageName).To(Equal("2204gen2containerd"))
+				Expect(version).To(Equal("2022.10.03"))
+			})
+
+			It("should accept uppercase RESOURCEGROUPS (case-insensitive path keywords)", func() {
+				// Azure resource IDs are case-insensitive for path keywords like subscriptions/resourceGroups
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(subscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+				Expect(resourceGroup).To(Equal("AKS-Ubuntu"))
+				Expect(gallery).To(Equal("AKSUbuntu"))
+				Expect(imageName).To(Equal("2204gen2containerd"))
+				Expect(version).To(Equal("2022.10.03"))
+			})
+
+			It("should reject single extra trailing component", func() {
+				// Even a single extra component should be rejected for strict validation
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03/extra"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
+			})
+
+			It("should accept uppercase MICROSOFT.COMPUTE (case-insensitive resource type)", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/MICROSOFT.COMPUTE/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(subscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+				Expect(resourceGroup).To(Equal("AKS-Ubuntu"))
+				Expect(gallery).To(Equal("AKSUbuntu"))
+				Expect(imageName).To(Equal("2204gen2containerd"))
+				Expect(version).To(Equal("2022.10.03"))
+			})
+
+			It("should accept uppercase GaLlErIeS (case-insensitive resource type)", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/GaLlErIeS/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(subscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+				Expect(resourceGroup).To(Equal("AKS-Ubuntu"))
+				Expect(gallery).To(Equal("AKSUbuntu"))
+				Expect(imageName).To(Equal("2204gen2containerd"))
+				Expect(version).To(Equal("2022.10.03"))
+			})
+
+			It("should accept fully uppercase path (case-insensitive throughout)", func() {
+				vmImageID := "/SUBSCRIPTIONS/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/AKS-Ubuntu/PROVIDERS/MICROSOFT.COMPUTE/GALLERIES/AKSUbuntu/IMAGES/2204gen2containerd/VERSIONS/2022.10.03"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(subscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+				Expect(resourceGroup).To(Equal("AKS-Ubuntu"))
+				Expect(gallery).To(Equal("AKSUbuntu"))
+				Expect(imageName).To(Equal("2204gen2containerd"))
+				Expect(version).To(Equal("2022.10.03"))
+			})
+		})
+	})
+
+	Context("configureGPUProfile", func() {
+		It("should return GPUDriverInstall for NVIDIA SKU with default (Install) mode", func() {
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverInstall))
+		})
+
+		It("should return GPUDriverInstall for NVIDIA SKU with Driver mode", func() {
+			driverMode := v1beta1.GPUModeDriver
+			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: &driverMode}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverInstall))
+		})
+
+		It("should return GPUDriverNone for NVIDIA SKU with None mode", func() {
+			noneMode := v1beta1.GPUModeNone
+			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: &noneMode}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverNone))
+		})
+
+		It("should return nil for non-GPU SKU", func() {
+			instanceType.Name = "Standard_D2_v2"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).To(BeNil())
+		})
+
+		It("should return GPUDriverNone for AMD GPU SKU with None mode", func() {
+			noneMode := v1beta1.GPUModeNone
+			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: &noneMode}
+			instanceType.Name = "Standard_NV4ads_V710_v5"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverNone))
+		})
+
+		It("should not set Nvidia when managementMode is unset (unmanaged default)", func() {
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(profile.Nvidia).To(BeNil())
+		})
+
+		It("should not set Nvidia when managementMode is Unmanaged", func() {
+			unmanaged := v1beta1.ManagementModeUnmanaged
+			nodeClass.Spec.GPU = &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &unmanaged}}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(profile.Nvidia).To(BeNil())
+		})
+
+		It("should set Nvidia.ManagementMode=Managed for NVIDIA SKU with Managed mode", func() {
+			managed := v1beta1.ManagementModeManaged
+			nodeClass.Spec.GPU = &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed}}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverInstall))
+			Expect(profile.Nvidia).ToNot(BeNil())
+			Expect(*profile.Nvidia.ManagementMode).To(Equal(armcontainerservice.ManagementModeManaged))
+		})
+
+		It("should not set Nvidia for AMD GPU SKU even when Managed is requested (NVIDIA-only guard)", func() {
+			managed := v1beta1.ManagementModeManaged
+			nodeClass.Spec.GPU = &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed}}
+			instanceType.Name = "Standard_NV4ads_V710_v5"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(profile.Nvidia).To(BeNil())
+		})
+
+		It("should not set Nvidia when Managed is requested but driver install is disabled (None mode)", func() {
+			managed := v1beta1.ManagementModeManaged
+			noneMode := v1beta1.GPUModeNone
+			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: &noneMode, Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed}}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverNone))
+			Expect(profile.Nvidia).To(BeNil())
+		})
+	})
+
+	Context("configureWorkloadRuntime", func() {
+		It("should return nil when workloadRuntime is unset (AKS defaults to OCIContainer)", func() {
+			nodeClass.Spec.WorkloadRuntime = nil
+			Expect(configureWorkloadRuntime(nodeClass)).To(BeNil())
+		})
+
+		It("should return nil for explicit OCIContainer", func() {
+			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer)
+			Expect(configureWorkloadRuntime(nodeClass)).To(BeNil())
+		})
+
+		It("should map KataVmIsolation", func() {
+			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+			Expect(lo.FromPtr(configureWorkloadRuntime(nodeClass))).To(Equal(armcontainerservice.WorkloadRuntimeKataVMIsolation))
+		})
+	})
+})

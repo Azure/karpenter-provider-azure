@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -50,16 +51,16 @@ func (c *NodeController) Reconcile(ctx context.Context, req reconcile.Request) (
 	n := &corev1.Node{}
 	if err := c.kubeClient.Get(ctx, req.NamespacedName, n); err != nil {
 		if errors.IsNotFound(err) {
-			fmt.Printf("[DELETED %s] NODE %s\n", time.Now().Format(time.RFC3339), req.NamespacedName.String())
+			fmt.Printf("[DELETED %s] NODE %s\n", time.Now().Format(time.RFC3339), req.String())
 		}
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
-	fmt.Printf("[CREATED/UPDATED %s] NODE %s %s\n", time.Now().Format(time.RFC3339), req.NamespacedName.Name, c.GetInfo(ctx, n))
+	fmt.Printf("[CREATED/UPDATED %s] NODE %s %s\n", time.Now().Format(time.RFC3339), req.Name, c.GetInfo(ctx, n))
 	return reconcile.Result{}, nil
 }
 
 func (c *NodeController) GetInfo(ctx context.Context, n *corev1.Node) string {
-	pods, _ := nodeutils.GetPods(ctx, c.kubeClient, n)
+	pods, _ := nodeutils.GetPods(ctx, c.kubeClient, n.Name)
 	return fmt.Sprintf("ready=%s schedulable=%t initialized=%s pods=%d taints=%v", nodeutils.GetCondition(n, corev1.NodeReady).Status, !n.Spec.Unschedulable, n.Labels[karpv1.NodeInitializedLabelKey], len(pods), n.Spec.Taints)
 }
 
@@ -79,6 +80,6 @@ func (c *NodeController) Register(ctx context.Context, m manager.Manager) error 
 				return o.GetLabels()[karpv1.NodePoolLabelKey] != ""
 			}),
 		)).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 10}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 10, SkipNameValidation: lo.ToPtr(true)}).
 		Complete(c)
 }

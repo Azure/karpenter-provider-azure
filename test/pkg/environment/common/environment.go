@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/awslabs/operatorpkg/object"
 	"github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -35,9 +34,10 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 
-	. "sigs.k8s.io/karpenter/pkg/utils/testing" //nolint:stylecheck
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 
-	"knative.dev/pkg/system"
+	. "sigs.k8s.io/karpenter/pkg/utils/testing" //nolint:staticcheck
+
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -51,6 +51,9 @@ type ContextKey string
 
 const (
 	GitRefContextKey = ContextKey("gitRef")
+
+	NetworkDataplaneCilium = "cilium"
+	NetworkDataplaneAzure  = "azure"
 )
 
 type Environment struct {
@@ -62,6 +65,10 @@ type Environment struct {
 	KubeClient kubernetes.Interface
 	Monitor    *Monitor
 
+	// Resolved from cluster
+	InClusterController bool
+	NetworkDataplane    string
+
 	StartingNodeCount int
 }
 
@@ -71,14 +78,13 @@ func NewEnvironment(t *testing.T) *Environment {
 	config := NewConfig()
 	client := NewClient(ctx, config)
 
-	lo.Must0(os.Setenv(system.NamespaceEnvKey, "kube-system"))
 	if val, ok := os.LookupEnv("GIT_REF"); ok {
 		ctx = context.WithValue(ctx, GitRefContextKey, val)
 	}
 
 	gomega.SetDefaultEventuallyTimeout(16 * time.Minute)
 	gomega.SetDefaultEventuallyPollingInterval(1 * time.Second)
-	return &Environment{
+	env := &Environment{
 		Context:    ctx,
 		cancel:     cancel,
 		Config:     config,
@@ -86,6 +92,9 @@ func NewEnvironment(t *testing.T) *Environment {
 		KubeClient: kubernetes.NewForConfigOrDie(config),
 		Monitor:    NewMonitor(ctx, client),
 	}
+	env.InClusterController = env.getInClusterController()
+	env.NetworkDataplane = lo.Ternary(env.IsCilium(), NetworkDataplaneCilium, NetworkDataplaneAzure)
+	return env
 }
 
 func (env *Environment) Stop() {
@@ -133,7 +142,7 @@ func NewClient(ctx context.Context, config *rest.Config) client.Client {
 	return c
 }
 
-func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *karpv1.NodePool {
+func (env *Environment) DefaultNodePool(nodeClass *v1beta1.AKSNodeClass) *karpv1.NodePool {
 	nodePool := coretest.NodePool()
 	nodePool.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{
 		Group: object.GVK(nodeClass).Group,
@@ -142,32 +151,24 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *karpv
 	}
 	nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 		{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      corev1.LabelOSStable,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{string(corev1.Linux)},
-			},
+			Key:      corev1.LabelOSStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{string(corev1.Linux)},
 		},
 		{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      karpv1.CapacityTypeLabelKey,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{karpv1.CapacityTypeOnDemand},
-			},
+			Key:      karpv1.CapacityTypeLabelKey,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{karpv1.CapacityTypeOnDemand},
 		},
 		{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      corev1.LabelArchStable,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{karpv1.ArchitectureAmd64},
-			},
+			Key:      corev1.LabelArchStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{karpv1.ArchitectureAmd64},
 		},
 		{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      v1alpha2.LabelSKUFamily,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{"D"},
-			},
+			Key:      v1beta1.LabelSKUFamily,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"D"},
 		},
 	}
 
@@ -179,27 +180,34 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *karpv
 		corev1.ResourceMemory: resource.MustParse("1000Gi"),
 	})
 
-	// TODO: make this conditional on Cilium
-	// https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
-	nodePool.Spec.Template.Spec.StartupTaints = append(nodePool.Spec.Template.Spec.StartupTaints, corev1.Taint{
-		Key:    "node.cilium.io/agent-not-ready",
-		Effect: corev1.TaintEffectNoExecute,
-		Value:  "true",
-	})
-	// # required for Karpenter to predict overhead from cilium DaemonSet
-	nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
-		"kubernetes.azure.com/ebpf-dataplane": "cilium",
-	})
+	return env.AdaptToClusterConfig(nodePool)
+}
+
+// AdaptToClusterConfig modifies NodePool to match the cluster configuration.
+// It has to be applied to any custom node pools constructed by tests;
+// is already applied by default test NodePool constructors.
+func (env *Environment) AdaptToClusterConfig(nodePool *karpv1.NodePool) *karpv1.NodePool {
+	if env.NetworkDataplane == NetworkDataplaneCilium {
+		// https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
+		nodePool.Spec.Template.Spec.StartupTaints = append(nodePool.Spec.Template.Spec.StartupTaints, corev1.Taint{
+			Key:    "node.cilium.io/agent-not-ready",
+			Effect: corev1.TaintEffectNoExecute,
+			Value:  "true",
+		})
+		// required for Karpenter to predict overhead from cilium DaemonSet
+		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
+			"kubernetes.azure.com/ebpf-dataplane": "cilium",
+		})
+	}
 	return nodePool
 }
 
-func (env *Environment) ArmNodepool(nodeClass *v1alpha2.AKSNodeClass) *karpv1.NodePool {
+func (env *Environment) ArmNodepool(nodeClass *v1beta1.AKSNodeClass) *karpv1.NodePool {
 	nodePool := env.DefaultNodePool(nodeClass)
 	coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-		NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-			Key:      corev1.LabelArchStable,
-			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{karpv1.ArchitectureArm64},
-		}})
+		Key:      corev1.LabelArchStable,
+		Operator: corev1.NodeSelectorOpIn,
+		Values:   []string{karpv1.ArchitectureArm64},
+	})
 	return nodePool
 }

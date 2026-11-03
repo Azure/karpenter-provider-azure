@@ -19,83 +19,398 @@ package cache
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/Azure/skewer"
 	"github.com/patrickmn/go-cache"
-	"knative.dev/pkg/logging"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/logging"
+)
+
+// unavailableOfferingsScope identifies either ordinary unreserved offerings or the offerings
+// associated with one capacity reservation group.
+type unavailableOfferingsScope string
+
+const (
+	unreservedScope unavailableOfferingsScope = ""
+	// wholeVMFamilyBlockedSentinel means that entire SKU family is blocked, not just certain instance types with a CPU count above a threshold
+	wholeVMFamilyBlockedSentinel = -1
 )
 
 var (
-	spotKey = key("", "", karpv1.CapacityTypeSpot)
+	spotKey = singleInstanceKey(unreservedScope, "", "", karpv1.CapacityTypeSpot)
 )
 
-// UnavailableOfferings stores any offerings that return ICE (insufficient capacity errors) when
-// attempting to launch the capacity. These offerings are ignored as long as they are in the cache on
-// GetInstanceTypes responses
+// UnavailableOfferings stores offerings rejected during launch due to capacity shortages or
+// unsupported availability zones. These offerings are ignored in GetInstanceTypes responses
+// until their cache entries expire.
 type UnavailableOfferings struct {
-	// key: <capacityType>:<instanceType>:<zone>, value: struct{}{}
-	cache  *cache.Cache
-	SeqNum uint64
+	mu sync.Mutex
+	// Key formats (all values are struct{}{}):
+	//   <capacityType>:<instanceType>:<zone> - unreserved offering
+	//   crg:<groupID>:<capacityType>:<instanceType>:<zone> - CRG-scoped offering
+	//   spot:: - all Spot offerings
+	//   skuZone:<instanceType>:<zone> - one SKU and zone, all capacities and CRGs
+	singleOfferingCache *cache.Cache
+	// Key formats (entire key lowercase):
+	//   skufamily:<skuFamilyName>:<zone>:<capacityType> - unreserved family
+	//   crg:<groupID>:skufamily:<skuFamilyName>:<zone>:<capacityType> - CRG-scoped family
+	// Values are int64 CPU counts at or above which offerings are blocked, or
+	// wholeVMFamilyBlockedSentinel when the entire family is blocked.
+	vmFamilyCache *cache.Cache
+	// seqNum is updated on any material changes to unavailable offerings cache (not updated on TTL only changes)
+	seqNum atomic.Uint64
 }
 
-func NewUnavailableOfferingsWithCache(c *cache.Cache) *UnavailableOfferings {
+func NewUnavailableOfferingsWithCache(singleOfferingCache, vmFamilyCache *cache.Cache) *UnavailableOfferings {
 	uo := &UnavailableOfferings{
-		cache:  c,
-		SeqNum: 0,
+		singleOfferingCache: singleOfferingCache,
+		vmFamilyCache:       vmFamilyCache,
 	}
-	uo.cache.OnEvicted(func(_ string, _ interface{}) {
-		atomic.AddUint64(&uo.SeqNum, 1)
+	uo.singleOfferingCache.OnEvicted(func(_ string, _ any) {
+		uo.seqNum.Add(1)
+	})
+	uo.vmFamilyCache.OnEvicted(func(_ string, _ any) {
+		uo.seqNum.Add(1)
 	})
 	return uo
 }
 
 func NewUnavailableOfferings() *UnavailableOfferings {
 	return NewUnavailableOfferingsWithCache(
-		cache.New(UnavailableOfferingsTTL, UnavailableOfferingsCleanupInterval))
+		cache.New(UnavailableOfferingsTTL, UnavailableOfferingsCleanupInterval),
+		cache.New(UnavailableOfferingsTTL, UnavailableOfferingsCleanupInterval),
+	)
+}
+
+func (u *UnavailableOfferings) SeqNum() uint64 {
+	return u.seqNum.Load()
 }
 
 // IsUnavailable returns true if the offering appears in the cache
-func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType string) bool {
+func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType string) bool {
+	return u.isUnavailable(unreservedScope, sku, zone, capacityType)
+}
+
+// ForCapacityReservationGroup returns a view of the cache whose entries are namespaced to
+// one capacity reservation group. An empty id yields the unreserved view.
+//
+// The read side is the most important: a general capacity shortage must not suppress a
+// reserved offering, because reserved capacity is what the user bought in order to survive
+// exactly that. IsUnavailable for a CRG-scoped on-demand offering only returns true if
+// that failure was recorded for the same CRG. SKU-zone validity restrictions
+// are an exception: reservations cannot change the SKU's supported zones.
+//
+// The write side is deliberately conservative. Capacity errors from a CRG-targeted launch
+// do not say whether Azure was consuming reserved headroom or attempting overallocation.
+// With headroom, a failure can be local to the matching reservation; once headroom is
+// exhausted, Azure falls back to ordinary regional capacity and quota, so the failure can
+// describe unreserved capacity too. Quota errors specifically imply that overallocation
+// was required. CRG configuration and authorization errors match no handler and are not
+// cached.
+//
+// We nevertheless scope handled failures to the group. Propagating an ambiguous,
+// reservation-local failure could suppress usable unreserved offerings for the full TTL;
+// withholding a truly regional signal costs the unreserved path a subsequent launch
+// attempt, which records it in the unreserved scope. Family quota is also covered for
+// unreserved offerings independently by the quota preflight.
+func (u *UnavailableOfferings) ForCapacityReservationGroup(id string) *CapacityReservationGroupUnavailableOfferings {
+	return &CapacityReservationGroupUnavailableOfferings{
+		offerings: u,
+		scope:     capacityReservationGroupScope(id),
+	}
+}
+
+// CapacityReservationGroupUnavailableOfferings marks and queries unavailable offerings either
+// for one capacity reservation group or outside any group. A group view also applies
+// CRG-specific propagation rules: Spot remains global, and a capacity failure does not widen to
+// other VM sizes or member placements. SKU-zone validity restrictions apply to every view.
+// It shares the underlying caches and sequence number with the UnavailableOfferings it came from.
+type CapacityReservationGroupUnavailableOfferings struct {
+	offerings *UnavailableOfferings
+	scope     unavailableOfferingsScope
+}
+
+// IsForCapacityReservationGroup reports whether this view belongs to a capacity reservation
+// group. Callers use it to stop a failure in one placement from implicating another: a group's
+// members are separately prepaid capacity, one VM size in one placement each.
+func (v *CapacityReservationGroupUnavailableOfferings) IsForCapacityReservationGroup() bool {
+	return v.scope != unreservedScope
+}
+
+// IsUnavailable returns true if the offering appears in the cache for this view.
+func (v *CapacityReservationGroupUnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType string) bool {
+	return v.offerings.isUnavailable(v.scope, sku, zone, capacityType)
+}
+
+func (u *UnavailableOfferings) isUnavailable(scope unavailableOfferingsScope, sku *skewer.SKU, zone, capacityType string) bool {
+	if _, found := u.singleOfferingCache.Get(skuZoneKey(sku.GetName(), zone)); found {
+		return true
+	}
+
+	// Spot is never reserved, so its unavailability is recorded and read unscoped.
 	if capacityType == karpv1.CapacityTypeSpot {
-		if _, found := u.cache.Get(spotKey); found {
+		if _, found := u.singleOfferingCache.Get(spotKey); found {
 			return true
 		}
 	}
-	_, found := u.cache.Get(key(instanceType, zone, capacityType))
+
+	// check if the offering is marked as unavailable at vm family level
+	if u.isFamilyUnavailable(scope, sku, zone, capacityType) {
+		return true
+	}
+
+	// lastly check if the offering is marked as unavailable for the specific instance type, zone and capacity type
+	_, found := u.singleOfferingCache.Get(singleInstanceKey(scope, sku.GetName(), zone, capacityType))
 	return found
+}
+
+func (u *UnavailableOfferings) isFamilyUnavailable(scope unavailableOfferingsScope, sku *skewer.SKU, zone, capacityType string) bool {
+	skuVCPUCount, err := sku.VCPU()
+	if err != nil {
+		// default to 0 if we can't determine VCPU count, this shouldn't happen as long as data in skewer.SKU is correct
+		skuVCPUCount = 0
+	}
+	// Check if VM family is blocked in the specific zone
+	if val, found := u.vmFamilyCache.Get(vmFamilyKey(scope, sku.GetFamilyName(), zone, capacityType)); found {
+		if blockedCPUCount, ok := val.(int64); ok {
+			if blockedCPUCount == wholeVMFamilyBlockedSentinel {
+				// Entire VM family is blocked in this zone
+				return true
+			}
+			// VM sizes from this family are blocked for CPU counts >= blockedCPUCount in this zone
+			return skuVCPUCount >= blockedCPUCount
+		}
+	}
+	return false
+}
+
+// markFamilyUnavailableAtCPUCount marks a VM family with custom TTL in a specific zone for all instance types that have CPU count at or above the SKU's vCPU count.
+// Information is derived from the provided skewer.SKU: family name via GetFamilyName() and CPU count via VCPU().
+func (u *UnavailableOfferings) markFamilyUnavailableAtCPUCount(ctx context.Context, scope unavailableOfferingsScope, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) bool {
+	cpuCount, err := sku.VCPU()
+	if err != nil {
+		// default to 0 if we can't determine VCPU count, this shouldn't happen as long as data in skewer.SKU is correct
+		cpuCount = 0
+	}
+	return u.markFamilyUnavailableAtCPUCountImpl(ctx, scope, sku, zone, capacityType, cpuCount, ttl)
+}
+
+// MarkFamilyUnavailable marks the entire VM family as unavailable in a specific zone for a specific capacity type with custom TTL.
+// Family name is derived from the provided skewer.SKU.
+func (u *UnavailableOfferings) MarkFamilyUnavailable(ctx context.Context, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) {
+	u.markFamilyUnavailable(ctx, unreservedScope, sku, zone, capacityType, ttl)
+}
+
+// MarkFamilyUnavailable marks the entire VM family as unavailable for this view.
+func (v *CapacityReservationGroupUnavailableOfferings) MarkFamilyUnavailable(ctx context.Context, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) {
+	v.offerings.markFamilyUnavailable(ctx, v.scope, sku, zone, capacityType, ttl)
+}
+
+func (u *UnavailableOfferings) markFamilyUnavailable(ctx context.Context, scope unavailableOfferingsScope, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.markFamilyUnavailableAtCPUCountImpl(ctx, scope, sku, zone, capacityType, wholeVMFamilyBlockedSentinel, ttl) {
+		u.seqNum.Add(1)
+	}
+}
+
+// markFamilyUnavailableAtCPUCountImpl is the internal implementation that marks a VM family unavailable at a given CPU count threshold.
+// Value of -1 is used as a "wholeVMFamilyBlockedSentinel" to indicate that the entire VM family is blocked in this zone for the specified capacity type.
+func (u *UnavailableOfferings) markFamilyUnavailableAtCPUCountImpl(ctx context.Context, scope unavailableOfferingsScope, sku *skewer.SKU, zone, capacityType string, cpuCount int64, ttl time.Duration) bool {
+	skuFamilyName := sku.GetFamilyName()
+	// This is a hedge against skewer having bad data where family name is missing,
+	// If family name is missing, we won't do any family level blocking, but we'll still mark the specific offering as unavailable.
+	if skuFamilyName == "" {
+		log.FromContext(ctx).V(0).Info("WARNING: cannot mark VM family as unavailable because SKU family name is missing",
+			"instanceType", sku.GetName(),
+			"zone", zone,
+			"capacity-type", capacityType)
+		return false
+	}
+	key := vmFamilyKey(scope, skuFamilyName, zone, capacityType)
+	changed := true
+
+	if existing, found := u.vmFamilyCache.Get(key); found {
+		if currentBlockedCPUCount, ok := existing.(int64); ok {
+			// Keep the more restrictive limit for CPU count(lower value, with -1 being most restrictive - wholeVMFamilyBlockedSentinel)
+			if currentBlockedCPUCount <= cpuCount {
+				cpuCount = currentBlockedCPUCount
+				changed = false
+			}
+		}
+	}
+
+	log.FromContext(ctx).V(1).Info("marking VM Family unavailable in zone",
+		"family", skuFamilyName,
+		"capacity-type", capacityType,
+		"zone", zone,
+		"max-cpu", cpuCount,
+		"ttl", ttl)
+
+	// call Set to update the cache entry, even if it already exists, to extend its TTL
+	u.vmFamilyCache.Set(key, cpuCount, ttl)
+	return changed
 }
 
 // MarkSpotUnavailable communicates recently observed temporary capacity shortages for spot
 func (u *UnavailableOfferings) MarkSpotUnavailableWithTTL(ctx context.Context, ttl time.Duration) {
-	u.MarkUnavailableWithTTL(ctx, "SpotUnavailable", "", "", karpv1.CapacityTypeSpot, UnavailableOfferingsTTL)
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	capacityType := karpv1.CapacityTypeSpot
+	_, wasUnavailable := u.singleOfferingCache.Get(spotKey)
+	// even if the key is already in the cache, we still need to call Set to extend the cached entry's TTL
+	log.FromContext(ctx).V(1).Info("removing offering from offerings",
+		"unavailable", "SpotUnavailable",
+		"capacity-type", capacityType,
+		"ttl", ttl)
+	u.singleOfferingCache.Set(spotKey, struct{}{}, ttl)
+	if !wasUnavailable {
+		u.seqNum.Add(1)
+	}
 }
 
-// MarkUnavailableWithTTL allows us to mark an offering unavailable with a custom TTL
-func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unavailableReason, instanceType, zone, capacityType string, ttl time.Duration) {
+// MarkSpotUnavailableWithTTL records a spot shortage. Spot cannot consume a capacity
+// reservation, so this is always recorded unscoped.
+func (v *CapacityReservationGroupUnavailableOfferings) MarkSpotUnavailableWithTTL(ctx context.Context, ttl time.Duration) {
+	v.offerings.MarkSpotUnavailableWithTTL(ctx, ttl)
+}
+
+// MarkUnavailableWithTTL allows us to mark an offering unavailable with a custom TTL.
+// In addition to marking the specific instance type unavailable, it also marks the VM family
+// unavailable at the SKU's vCPU count, so that larger sizes of the same family are also blocked.
+func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unavailableReason string, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) {
+	u.markUnavailableWithTTL(ctx, unreservedScope, unavailableReason, sku, zone, capacityType, ttl)
+}
+
+// MarkUnavailableWithTTL marks an offering unavailable for this view.
+func (v *CapacityReservationGroupUnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unavailableReason string, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) {
+	v.offerings.markUnavailableWithTTL(ctx, v.scope, unavailableReason, sku, zone, capacityType, ttl)
+}
+
+// MarkSKUZoneUnavailableWithTTL excludes one SKU and zone across capacity types and
+// reservation groups. The cache belongs to one provider's subscription, region and mode.
+func (u *UnavailableOfferings) MarkSKUZoneUnavailableWithTTL(ctx context.Context, unavailableReason, instanceType, zone string, ttl time.Duration) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	key := skuZoneKey(instanceType, zone)
+	_, wasUnavailable := u.singleOfferingCache.Get(key)
+	u.singleOfferingCache.Set(key, struct{}{}, ttl)
+	if !wasUnavailable {
+		log.FromContext(ctx).Info("marking SKU and availability zone unavailable",
+			"unavailable", unavailableReason,
+			"instance-type", instanceType,
+			"zone", zone,
+			"ttl", ttl)
+		u.seqNum.Add(1)
+	}
+}
+
+// MarkSKUZoneUnavailableWithTTL applies the SKU-zone exclusion across all scopes.
+func (v *CapacityReservationGroupUnavailableOfferings) MarkSKUZoneUnavailableWithTTL(ctx context.Context, unavailableReason, instanceType, zone string, ttl time.Duration) {
+	v.offerings.MarkSKUZoneUnavailableWithTTL(ctx, unavailableReason, instanceType, zone, ttl)
+}
+
+func (u *UnavailableOfferings) markUnavailableWithTTL(ctx context.Context, scope unavailableOfferingsScope, unavailableReason string, sku *skewer.SKU, zone, capacityType string, ttl time.Duration) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	instanceType := sku.GetName()
+	wasUnavailable := u.isUnavailable(scope, sku, zone, capacityType)
 	// even if the key is already in the cache, we still need to call Set to extend the cached entry's TTL
-	logging.FromContext(ctx).With(
+	log.FromContext(ctx).V(1).Info("removing offering from offerings",
 		"unavailable", unavailableReason,
-		"instance-type", instanceType,
+		logging.InstanceType, instanceType,
 		"zone", zone,
 		"capacity-type", capacityType,
-		"ttl", ttl).Debugf("removing offering from offerings")
-	u.cache.Set(key(instanceType, zone, capacityType), struct{}{}, ttl)
-	atomic.AddUint64(&u.SeqNum, 1)
+		"capacity-reservation-group", string(scope),
+		"ttl", ttl)
+	u.singleOfferingCache.Set(singleInstanceKey(scope, instanceType, zone, capacityType), struct{}{}, ttl)
+
+	// Widening to larger sizes of the same family is a guess that whatever blocked this
+	// size blocks bigger ones too. That holds for a shared regional pool, but not inside a
+	// capacity reservation group, where each member is a separately reserved block: one
+	// member failing says nothing about a larger sibling, and even quota does not carry
+	// across, because consumption up to a member's reserved quantity is quota-exempt.
+	// Widening there would suppress reserved capacity the user is paying for, for the whole
+	// TTL, on no evidence.
+	familyChanged := false
+	if scope == unreservedScope {
+		familyChanged = u.markFamilyUnavailableAtCPUCount(ctx, scope, sku, zone, capacityType, ttl)
+	}
+	if !wasUnavailable || familyChanged {
+		u.seqNum.Add(1)
+	}
 }
 
 // MarkUnavailable communicates recently observed temporary capacity shortages in the provided offerings
-func (u *UnavailableOfferings) MarkUnavailable(ctx context.Context, unavailableReason, instanceType, zone, capacityType string) {
-	u.MarkUnavailableWithTTL(ctx, unavailableReason, instanceType, zone, capacityType, UnavailableOfferingsTTL)
+func (u *UnavailableOfferings) MarkUnavailable(ctx context.Context, unavailableReason string, sku *skewer.SKU, zone, capacityType string) {
+	u.MarkUnavailableWithTTL(ctx, unavailableReason, sku, zone, capacityType, UnavailableOfferingsTTL)
+}
+
+// MarkUnavailable communicates recently observed temporary capacity shortages for this view.
+func (v *CapacityReservationGroupUnavailableOfferings) MarkUnavailable(ctx context.Context, unavailableReason string, sku *skewer.SKU, zone, capacityType string) {
+	v.MarkUnavailableWithTTL(ctx, unavailableReason, sku, zone, capacityType, UnavailableOfferingsTTL)
 }
 
 func (u *UnavailableOfferings) Flush() {
-	u.cache.Flush()
-	atomic.AddUint64(&u.SeqNum, 1)
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.singleOfferingCache.Flush()
+	u.vmFamilyCache.Flush()
+	u.seqNum.Add(1)
 }
 
-// key returns the cache key for all offerings in the cache
-func key(instanceType string, zone string, capacityType string) string {
-	return fmt.Sprintf("%s:%s:%s", capacityType, instanceType, zone)
+// InvalidateCapacityReservationGroup removes cached launch failures for one Capacity
+// Reservation Group without affecting unreserved offerings or other groups.
+func (u *UnavailableOfferings) InvalidateCapacityReservationGroup(id string) {
+	scope := capacityReservationGroupScope(id)
+	if scope == unreservedScope {
+		return
+	}
+
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	prefix := fmt.Sprintf("crg:%s:", scope)
+	for key := range u.singleOfferingCache.Items() {
+		if strings.HasPrefix(key, prefix) {
+			u.singleOfferingCache.Delete(key)
+		}
+	}
+	for key := range u.vmFamilyCache.Items() {
+		if strings.HasPrefix(key, prefix) {
+			u.vmFamilyCache.Delete(key)
+		}
+	}
+}
+
+func capacityReservationGroupScope(id string) unavailableOfferingsScope {
+	return unavailableOfferingsScope(strings.ToLower(id))
+}
+
+func skuZoneKey(instanceType, zone string) string {
+	return fmt.Sprintf("skuZone:%s:%s", instanceType, zone)
+}
+
+// singleInstanceKey returns an offering cache key, namespaced by capacity reservation group
+// when scope identifies a group.
+func singleInstanceKey(scope unavailableOfferingsScope, instanceType string, zone string, capacityType string) string {
+	if scope == unreservedScope {
+		return fmt.Sprintf("%s:%s:%s", capacityType, instanceType, zone)
+	}
+	return fmt.Sprintf("crg:%s:%s:%s:%s", scope, capacityType, instanceType, zone)
+}
+
+// vmFamilyKey returns a VM family cache key, namespaced by capacity reservation group when
+// scope identifies a group.
+func vmFamilyKey(scope unavailableOfferingsScope, skuFamilyName, zone, capacityType string) string {
+	if scope == unreservedScope {
+		return strings.ToLower(fmt.Sprintf("skuFamily:%s:%s:%s", skuFamilyName, zone, capacityType))
+	}
+	return strings.ToLower(fmt.Sprintf("crg:%s:skuFamily:%s:%s:%s", scope, skuFamilyName, zone, capacityType))
 }

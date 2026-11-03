@@ -60,10 +60,60 @@ buildAndPublish() {
   date_epoch="$(dateEpoch)"
   build_date="$(buildDate "${date_epoch}")"
 
-  img="$(GOFLAGS=${GOFLAGS:-} \
+  # Check if image tag already exists
+  if crane manifest "${oci_repo}/controller:${version}" > /dev/null 2>&1; then
+    echo "Image tag ${oci_repo}/controller:${version} already exists. Aborting."
+    exit 1
+  fi
+  if crane manifest "${oci_repo}/controller:${version}-aks" > /dev/null 2>&1; then
+    echo "Image tag ${oci_repo}/controller:${version}-aks already exists. Aborting."
+    exit 1
+  fi
+
+  # Set KO_GO_PATH to our go-crossbuild wrapper script, which sets CC for CGO cross-compilation.
+  # This allows us to build multi-arch images with CGO_ENABLED=1
+  export KO_GO_PATH=hack/go-crossbuild.sh
+
+  local tarball tarball_nap
+  tarball="$(mktemp -d)/controller.tar"
+  tarball_nap="$(mktemp -d)/controller-aks.tar"
+
+  # Build single-platform images to tarballs for trivy scanning.
+  # We only scan linux/amd64 since vulnerabilities are in base image/dependencies, not platform-specific.
+  # The actual multi-arch publish happens after scanning passes.
+  GOFLAGS="${GOFLAGS:-} -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=${version}" \
+    SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
+    ko build -B --sbom none --tarball="${tarball}" --platform=linux/amd64 --push=false ./cmd/controller
+  GOFLAGS="${GOFLAGS:-} -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=${version}-aks -tags=ccp" \
+    SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
+    ko build -B --sbom none --tarball="${tarball_nap}" --platform=linux/amd64 --push=false ./cmd/controller
+
+  # Run trivy scans on local tarballs BEFORE pushing.
+  # Set SKIP_TRIVY_SCAN=true to bypass the blocking gate (e.g. an emergency release). The scans
+  # still run in report-only mode so findings remain in the logs, but they no longer abort the publish.
+  if [[ "${SKIP_TRIVY_SCAN:-false}" == "true" ]]; then
+    echo "::warning::Trivy scan BYPASSED via SKIP_TRIVY_SCAN=true; running in report-only mode (findings will not block the release)."
+    trivy image --input "${tarball}"     --ignore-unfixed --exit-code 0 || true
+    trivy image --input "${tarball_nap}" --ignore-unfixed --exit-code 0 || true
+  else
+    if ! trivy image --input "${tarball}" --ignore-unfixed --exit-code 1; then
+      echo "Trivy scan failed for controller image. Aborting."
+      rm -f "${tarball}" "${tarball_nap}"
+      exit 1
+    fi
+    if ! trivy image --input "${tarball_nap}" --ignore-unfixed --exit-code 1; then
+      echo "Trivy scan failed for controller-aks image. Aborting."
+      rm -f "${tarball}" "${tarball_nap}"
+      exit 1
+    fi
+  fi
+  rm -f "${tarball}" "${tarball_nap}"
+
+  # Publish multi-arch images only after trivy passes
+  img="$(GOFLAGS="${GOFLAGS:-} -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=${version}" \
     SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
     ko publish -B --sbom none -t "${version}"     ./cmd/controller)"
-  img_nap="$(GOFLAGS="${GOFLAGS:-} -tags=ccp" \
+  img_nap="$(GOFLAGS="${GOFLAGS:-} -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=${version}-aks -tags=ccp" \
     SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
     ko publish -B --sbom none -t "${version}"-aks ./cmd/controller)"
 

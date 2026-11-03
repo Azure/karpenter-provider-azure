@@ -18,89 +18,77 @@ package imagefamily
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/samber/lo"
 )
 
 type NodeImageVersionsClient struct {
-	cred azcore.TokenCredential
+	client *armcontainerservice.Client
 }
 
-func NewNodeImageVersionsClient(cred azcore.TokenCredential) *NodeImageVersionsClient {
+func NewNodeImageVersionsClient(subscriptionID string, cred azcore.TokenCredential, opts *arm.ClientOptions) (*NodeImageVersionsClient, error) {
+	client, err := armcontainerservice.NewClient(subscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
 	return &NodeImageVersionsClient{
-		cred: cred,
-	}
+		client: client,
+	}, nil
 }
 
-func (l *NodeImageVersionsClient) List(ctx context.Context, location, subscription string) (NodeImageVersionsResponse, error) {
-	resourceURL := fmt.Sprintf(
-		"https://management.azure.com/subscriptions/%s/providers/Microsoft.ContainerService/locations/%s/nodeImageVersions?api-version=%s",
-		subscription, location, "2024-04-02-preview",
-	)
+func (l *NodeImageVersionsClient) List(ctx context.Context, location string) ([]*armcontainerservice.NodeImageVersion, error) {
+	pager := l.client.NewListNodeImageVersionsPager(location, nil)
 
-	token, err := l.cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
-	})
-	if err != nil {
-		return NodeImageVersionsResponse{}, err
+	var allVersions []*armcontainerservice.NodeImageVersion
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		allVersions = append(allVersions, page.Value...)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), "GET", resourceURL, nil)
-	if err != nil {
-		return NodeImageVersionsResponse{}, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token.Token)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return NodeImageVersionsResponse{}, err
-	}
-	defer resp.Body.Close()
-
-	var response NodeImageVersionsResponse
-	decoder := json.NewDecoder(resp.Body)
-	err = decoder.Decode(&response)
-	if err != nil {
-		return NodeImageVersionsResponse{}, err
-	}
-
-	response.Values = FilteredNodeImages(response.Values)
-	return response, nil
+	return FilteredNodeImages(allVersions), nil
 }
 
 // FilteredNodeImages filters on two conditions
 // 1. The image is the latest version for the given OS and SKU
-// 2. the image belongs to a supported gallery(AKS Ubuntu or Azure Linux)
-func FilteredNodeImages(nodeImageVersions []NodeImageVersion) []NodeImageVersion {
-	latestImages := make(map[string]NodeImageVersion)
+// 2. the image belongs to a supported gallery (AKS Ubuntu, Azure Linux, or AKS Windows)
+func FilteredNodeImages(nodeImageVersions []*armcontainerservice.NodeImageVersion) []*armcontainerservice.NodeImageVersion {
+	latestImages := make(map[string]*armcontainerservice.NodeImageVersion)
 
 	for _, image := range nodeImageVersions {
+		if image == nil {
+			continue
+		}
+		os := lo.FromPtr(image.OS)
+		sku := lo.FromPtr(image.SKU)
+		version := lo.FromPtr(image.Version)
+
 		// Skip the galleries that Karpenter does not support
-		if image.OS != AKSUbuntuGalleryName && image.OS != AKSAzureLinuxGalleryName {
+		if os != AKSUbuntuGalleryName && os != AKSAzureLinuxGalleryName && os != AKSWindowsGalleryName {
 			continue
 		}
 
-		key := image.OS + "-" + image.SKU
+		key := os + "-" + sku
 
 		currentLatest, exists := latestImages[key]
-		if !exists || isNewerVersion(image.Version, currentLatest.Version) {
+		if !exists || isNewerVersion(version, lo.FromPtr(currentLatest.Version)) {
 			latestImages[key] = image
 		}
 	}
 
-	var filteredImages []NodeImageVersion
+	filteredImages := make([]*armcontainerservice.NodeImageVersion, 0, len(latestImages))
 	for _, image := range latestImages {
 		filteredImages = append(filteredImages, image)
 	}
+
 	return filteredImages
 }
 

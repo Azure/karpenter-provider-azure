@@ -10,7 +10,7 @@ Use the following command to deploy a basic `NodePool`, and `AKSNodeClass` to yo
 - `labels`: these are labels that will be applyed to all of the nodes created by Karpenter in association with the NodePool.
     - We've added the label `eks-immersion-team: my-team`, which will be used throughout the rest of the workshop. (For context on the cilium label see the note below.)*
 - `limits`: limits can be used to restrict the total resource limits the NodePool is able to provision.
-    - We've chosen a `cpu` limit of `10` here. 
+    - We've chosen a `cpu` limit of `10` here.
 - `nodeClassRef`: each NodePool requires a reference to a NodeClass.
     - Here we've referenced the basic `AKSNodeClass` we're creating in the same deployment.
 - AKSNodeClass' `spec.imageFamily`: The given imageFamily to use, which AKSNodeClass currently support both `Ubuntu2204`, and `AzureLinux`, with `Ubuntu2204` as the default.
@@ -66,7 +66,7 @@ spec:
                 kind: AKSNodeClass
                 name: default
 ---
-apiVersion: karpenter.azure.com/v1alpha2
+apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
     name: default

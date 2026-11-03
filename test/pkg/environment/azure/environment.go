@@ -17,48 +17,324 @@ limitations under the License.
 package azure
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"os"
 	"testing"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"github.com/samber/lo"
+	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
+	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
+	clock "k8s.io/utils/clock"
 )
 
 func init() {
-	// TODO: should have core1beta1.NormalizedLabels too?
-	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": v1.LabelTopologyZone})
+	zones.RegisterCSIZoneNormalization()
+	coretest.DefaultImage = "mcr.microsoft.com/oss/kubernetes/pause:3.6"
 }
 
 const (
-	WindowsDefaultImage      = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
-	CiliumAgentNotReadyTaint = "node.cilium.io/agent-not-ready"
+	CiliumAgentNotReadyTaint    = "node.cilium.io/agent-not-ready"
+	EphemeralInitContainerImage = "alpine"
+
+	ciliumStartupTaintTolerationSeconds int64 = 120
 )
 
 type Environment struct {
 	*common.Environment
-	Region string
+
+	NodeResourceGroup    string
+	Region               string
+	SubscriptionID       string
+	VNETResourceGroup    string
+	ACRName              string
+	ClusterName          string
+	MachineAgentPoolName string
+	ClusterResourceGroup string
+	CloudConfig          cloud.Configuration
+	ProvisionMode        string
+
+	tracker *azure.Tracker
+
+	// These should be unexported and access should be through the Environment methods
+	// Any create calls should make sure they also register the created resources with the Environment's tracker
+	// to ensure they are cleaned up after the test.
+	vmClient             *armcompute.VirtualMachinesClient
+	vnetClient           *armnetwork.VirtualNetworksClient
+	subnetClient         *armnetwork.SubnetsClient
+	interfacesClient     *armnetwork.InterfacesClient
+	managedClusterClient *containerservice.ManagedClustersClient
+	agentPoolClient      *containerservice.AgentPoolsClient
+	machinesClient       *containerservice.MachinesClient
+	zoneProvider         *zone.Provider
+
+	// Public Clients
+	KeyVaultClient                  *armkeyvault.VaultsClient
+	DiskEncryptionSetClient         *armcompute.DiskEncryptionSetsClient
+	CapacityReservationGroupsClient *armcompute.CapacityReservationGroupsClient
+	CapacityReservationsClient      *armcompute.CapacityReservationsClient
+
+	defaultCredential azcore.TokenCredential
+
+	RBACManager *RBACManager
+}
+
+func readEnvRequired(name string) string {
+	value, exists := os.LookupEnv(name)
+	if !exists {
+		panic(fmt.Sprintf("Environment variable %s is not set", name))
+	}
+	if value == "" {
+		panic(fmt.Sprintf("Environment variable %s is set to an empty string", name))
+	}
+	return value
+}
+
+func readEnvOptional(name string) string {
+	value, exists := os.LookupEnv(name)
+	if !exists {
+		return ""
+	}
+	return value
+}
+
+func getCloudEnvironment() *auth.Environment {
+	cfg := auth.Config{}
+	lo.Must0(cfg.Build(), "Failed to build cloud environment")
+	lo.Must0(cfg.Default(), "Failed to set default cloud environment")
+	// This is a hack so we can re-use the same validate, even though in this test context we don't need a real subscription ID
+	cfg.SubscriptionID = "1234"
+	lo.Must0(cfg.Validate(), "Failed to validate cloud environment")
+
+	env, err := auth.ResolveCloudEnvironment(&cfg)
+	lo.Must0(err, "Failed to resolve cloud environment")
+	return env
 }
 
 func NewEnvironment(t *testing.T) *Environment {
-	env := common.NewEnvironment(t)
+	cloudEnv := getCloudEnvironment()
 
-	return &Environment{
-		Region:      "westus2",
-		Environment: env,
+	azureEnv := &Environment{
+		Environment:          common.NewEnvironment(t),
+		SubscriptionID:       readEnvRequired("AZURE_SUBSCRIPTION_ID"),
+		ClusterName:          readEnvRequired("AZURE_CLUSTER_NAME"),
+		ClusterResourceGroup: readEnvRequired("AZURE_RESOURCE_GROUP"),
+		ACRName:              readEnvRequired("AZURE_ACR_NAME"),
+		ProvisionMode:        readEnvOptional("PROVISION_MODE"),
+		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
+		CloudConfig:          cloudEnv.Cloud,
+		tracker:              azure.NewTracker(),
+	}
+
+	defaultNodeRG := fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region)
+	azureEnv.VNETResourceGroup = lo.Ternary(os.Getenv("VNET_RESOURCE_GROUP") == "", defaultNodeRG, os.Getenv("VNET_RESOURCE_GROUP"))
+	azureEnv.NodeResourceGroup = defaultNodeRG
+
+	credOptions := &azidentity.DefaultAzureCredentialOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: cloudEnv.Cloud,
+		},
+		TenantID: os.Getenv("AZURE_TENANT_ID"),
+	}
+	cred := lo.Must(azidentity.NewDefaultAzureCredential(credOptions))
+	azureEnv.defaultCredential = cred
+
+	clientOptions := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: azureEnv.CloudConfig,
+		},
+	}
+	rbacPropagationRetryOptions := azureEnv.ClientOptionsForRBACPropagation()
+	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.agentPoolClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, rbacPropagationRetryOptions))
+	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, rbacPropagationRetryOptions))
+	// Reuses the RBAC-propagation retry options: tests grant a role on the group and then
+	// immediately expect Karpenter to read it.
+	azureEnv.CapacityReservationGroupsClient = lo.Must(armcompute.NewCapacityReservationGroupsClient(azureEnv.SubscriptionID, cred, rbacPropagationRetryOptions))
+	azureEnv.CapacityReservationsClient = lo.Must(armcompute.NewCapacityReservationsClient(azureEnv.SubscriptionID, cred, rbacPropagationRetryOptions))
+	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
+	subscriptionsClient := lo.Must(armsubscriptions.NewClient(cred, nil))
+	azureEnv.zoneProvider = zone.NewProvider(subscriptionsClient, clock.RealClock{}, azureEnv.SubscriptionID)
+	// If ProvisionMode wasn't set, default to scriptless, though note that this is
+	// actually defaulted dynamically based on the value of a toggle in AKS which means
+	// assuming we're always in ProvisionMode Scriptless here is incorrect at times, though OK
+	// for our current usage.
+	if azureEnv.ProvisionMode == "" {
+		azureEnv.ProvisionMode = consts.ProvisionModeAKSScriptless
+	}
+	// Default to reserved managed machine agentpool name for NAP
+	azureEnv.MachineAgentPoolName = "aksmanagedap"
+	if azureEnv.InClusterController {
+		// Self-hosted machines pool name; matches AKS_MACHINES_POOL_NAME used at deploy time.
+		// Note: Windows machines require an agent pool name <= 6 characters, so keep this short.
+		azureEnv.MachineAgentPoolName = lo.Ternary(os.Getenv("AKS_MACHINES_POOL_NAME") == "", "mpool", os.Getenv("AKS_MACHINES_POOL_NAME"))
+	}
+	// Confirm we have a machine pool
+	if azureEnv.InClusterController && azureEnv.IsAKSMachineAPIMode() {
+		azureEnv.ExpectMachinesAgentPoolExists()
+	}
+	return azureEnv
+}
+
+func (env *Environment) GetDefaultCredential() azcore.TokenCredential {
+	return env.defaultCredential
+}
+
+// SupportsZones returns true if the region supports availability zones
+func (env *Environment) SupportsZones() bool {
+	return env.zoneProvider.SupportsZones(context.Background(), env.Region)
+}
+
+// GetAvailableZones returns the list of available zones for the current region.
+// Returns nil if the region doesn't support zones.
+func (env *Environment) GetAvailableZones() []string {
+	return env.zoneProvider.GetAvailableZones(context.Background(), env.Region)
+}
+
+// Retry options for BYOK-related clients that may encounter RBAC propagation delays
+// RBAC assignments can take time to propagate, resulting in 403 Forbidden errors
+// With 15 retries at 5 second intervals = 75 seconds total retry time
+func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
+	return &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: env.CloudConfig,
+			Retry: policy.RetryOptions{
+				MaxRetries: 15,
+				RetryDelay: time.Second * 5,
+				StatusCodes: []int{
+					http.StatusForbidden, // RBAC assignments haven't propagated yet
+				},
+			},
+		},
 	}
 }
 
-func (env *Environment) DefaultAKSNodeClass() *v1alpha2.AKSNodeClass {
-	nodeClass := test.AKSNodeClass()
-	return nodeClass
+func (env *Environment) IsAKSMachineAPIMode() bool {
+	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI || env.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 }
 
-func (env *Environment) AZLinuxNodeClass() *v1alpha2.AKSNodeClass {
-	nodeClass := env.DefaultAKSNodeClass()
-	nodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily)
-	return nodeClass
+func (env *Environment) IsMachineModeOrNPS() bool {
+	// Assumption is if we're not in the cluster, we're in NPS mode. Ideally we would just check this via ProvisionMode, but
+	// we can't do that right now as depending on context we may not set provision mode for the tests
+	return env.IsAKSMachineAPIMode() || !env.InClusterController
+}
+
+func (env *Environment) UsesSharedImageGallery() bool {
+	return env.IsMachineModeOrNPS()
+}
+
+// WindowsNodePool returns a NodePool that provisions Windows (amd64) nodes for the given
+// nodeClass by replacing the default os=linux requirement with os=windows.
+func (env *Environment) WindowsNodePool(nodeClass *v1beta1.AKSNodeClass) *karpv1.NodePool {
+	nodePool := env.DefaultNodePool(nodeClass)
+	coretest.ReplaceRequirements(nodePool,
+		karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1.LabelOSStable,
+			Operator: v1.NodeSelectorOpIn,
+			Values:   []string{string(v1.Windows)},
+		},
+	)
+	return nodePool
+}
+
+// SkipIfNotWindowsCapable skips the running spec unless this environment can actually provision
+// Windows nodes. Windows is an OS dimension layered onto existing suites, so suites that add
+// Windows cases call this rather than duplicating the preconditions.
+func (env *Environment) SkipIfNotWindowsCapable() {
+	GinkgoHelper()
+	// Windows nodes are only provisionable via the AKS Machine API provision mode.
+	if !env.IsAKSMachineAPIMode() {
+		Skip("Windows node provisioning is only supported in AKS Machine API provision mode")
+	}
+	// Windows machine names are bounded by the Windows NetBIOS computer-name limit once the AKS RP
+	// composes the VM name from the pool and machine names. The reserved NAP pool ("aksmanagedap")
+	// uses a 12-character pool-hash plus NodeClaim-suffix name. Custom pools use only the
+	// five-character NodeClaim suffix and additionally require the pool name to be <= 6 chars.
+	if env.MachineAgentPoolName != "aksmanagedap" && len(env.MachineAgentPoolName) > 6 {
+		Skip(fmt.Sprintf("Windows machines require the reserved aksmanagedap pool or a custom machines pool name <= 6 chars; got %q (%d chars)",
+			env.MachineAgentPoolName, len(env.MachineAgentPoolName)))
+	}
+	managedCluster := env.ExpectGetManagedCluster()
+	// Windows nodes do not support the Cilium dataplane configured on the cluster.
+	if managedCluster.Properties != nil && managedCluster.Properties.NetworkProfile != nil &&
+		lo.FromPtr(managedCluster.Properties.NetworkProfile.NetworkDataplane) == containerservice.NetworkDataplaneCilium {
+		Skip("Windows node provisioning is not supported with the Cilium dataplane")
+	}
+	// The AKS RP sources Windows node admin credentials from the cluster's windowsProfile, so a
+	// cluster without one cannot provision Windows at all. Fail rather than skip: the E2E workflow
+	// is expected to have created a Windows-capable cluster for any suite that reaches this point,
+	// so a missing windowsProfile is a misconfiguration that should be surfaced, not hidden.
+	Expect(managedCluster.Properties).ToNot(BeNil())
+	Expect(managedCluster.Properties.WindowsProfile).ToNot(BeNil(),
+		"cluster has no windowsProfile; the E2E workflow must create a Windows-capable cluster for suites running Windows contexts")
+}
+
+// WindowsPauseImage is a minimal Windows container image suitable for E2E workloads.
+const WindowsPauseImage = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
+
+// WindowsDeployment returns a Deployment that only schedules onto Windows nodes. It defaults the
+// container image to a Windows image and tolerates the OS taint Karpenter may briefly surface
+// while a Windows node registers.
+func (env *Environment) WindowsDeployment(options coretest.DeploymentOptions) *appsv1.Deployment {
+	if options.PodOptions.Image == "" {
+		options.PodOptions.Image = WindowsPauseImage
+	}
+	if options.PodOptions.NodeSelector == nil {
+		options.PodOptions.NodeSelector = map[string]string{}
+	}
+	options.PodOptions.NodeSelector[v1.LabelOSStable] = string(v1.Windows)
+	options.PodOptions.Tolerations = append(options.PodOptions.Tolerations, v1.Toleration{
+		Key:      v1.LabelOSStable,
+		Operator: v1.TolerationOpEqual,
+		Value:    string(v1.Windows),
+		Effect:   v1.TaintEffectNoSchedule,
+	})
+	return coretest.Deployment(options)
+}
+
+// Pod wraps coretest.Pod for Azure E2E tests; use it instead of coretest.Pod when the test should apply Azure environment defaults.
+// Currently this is any time one has to work around taint race described in https://github.com/Azure/karpenter-provider-azure/issues/1625
+// and cannot use Deployment instead.
+func (env *Environment) Pod(options coretest.PodOptions) *v1.Pod {
+	// Keep pod-based tests resilient to the Cilium startup-taint race while bounding how long the pod can tolerate it.
+	if env.IsCilium() {
+		options.Tolerations = append(options.Tolerations, v1.Toleration{
+			Key:               CiliumAgentNotReadyTaint,
+			Operator:          v1.TolerationOpExists,
+			Effect:            v1.TaintEffectNoExecute,
+			TolerationSeconds: new(ciliumStartupTaintTolerationSeconds),
+		})
+	}
+	return coretest.Pod(options)
 }

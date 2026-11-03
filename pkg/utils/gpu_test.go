@@ -19,11 +19,10 @@ package utils
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
 )
 
 func TestGetAKSGPUImageSHA(t *testing.T) {
-	assert := assert.New(t)
 	tests := []struct {
 		name          string
 		size          string
@@ -31,47 +30,54 @@ func TestGetAKSGPUImageSHA(t *testing.T) {
 		gpuDriverType string
 	}{
 		{"GRID Driver - NC Series v4", "standard_nc8ads_a10_v4", AKSGPUGridVersionSuffix, "grid"},
-		{"Cuda Driver - NV Series", "standard_nv6", AKSGPUCudaVersionSuffix, "cuda"},
-		{"CUDA Driver - NC Series", "standard_nc6s_v3", AKSGPUCudaVersionSuffix, "cuda"},
+		{"GRID v20 Driver - RTX PRO 6000 BSE ds", "standard_nc144ds_xl_rtxpro6000bse_v6", AKSGPUGridV20VersionSuffix, "grid-v20"},
+		{"GRID v20 Driver - RTX PRO 6000 BSE lds", "standard_nc144lds_xl_rtxpro6000bse_v6", AKSGPUGridV20VersionSuffix, "grid-v20"},
+		{"GRID v20 Driver - RTX PRO 6000 BSE mixed case", "Standard_NC24lds_xl_RTXPRO6000BSE_v6", AKSGPUGridV20VersionSuffix, "grid-v20"},
+		{"Cuda-LTS Driver - NV Series", "standard_nv6", AKSGPUCudaLTSVersionSuffix, "cuda-lts"},
+		{"CUDA-LTS Driver - NC Series", "standard_nc6s_v3", AKSGPUCudaLTSVersionSuffix, "cuda-lts"},
 		{"GRID Driver - NV Series v5", "standard_nv6ads_a10_v5", AKSGPUGridVersionSuffix, "grid"},
-		{"Unknown SKU", "unknown_sku", AKSGPUCudaVersionSuffix, "cuda"},
-		{"CUDA Driver - NC Series v2", "standard_nc6s_v2", AKSGPUCudaVersionSuffix, "cuda"},
-		{"CUDA Driver - NV Series v3", "standard_nv12s_v3", AKSGPUCudaVersionSuffix, "cuda"},
+		{"CUDA-LTS Driver - Unknown SKU", "unknown_sku", AKSGPUCudaLTSVersionSuffix, "cuda-lts"},
+		{"CUDA-LTS Driver - NC Series v2", "standard_nc6s_v2", AKSGPUCudaLTSVersionSuffix, "cuda-lts"},
+		{"CUDA-LTS Driver - NV Series v3", "standard_nv12s_v3", AKSGPUCudaLTSVersionSuffix, "cuda-lts"},
+		{"CUDA Driver - NC Series v1 (K80)", "standard_nc6s", AKSGPUCudaLTSVersionSuffix, "cuda"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			assert.Equal(test.gpuDriverSha, GetAKSGPUImageSHA(test.size), "Failed for size: %s", test.size)
-			assert.Equal(test.gpuDriverType, GetGPUDriverType(test.size), "Failed for size: %s", test.size)
+			g := NewWithT(t)
+			g.Expect(GetAKSGPUImageSHA(test.size)).To(Equal(test.gpuDriverSha), "Failed for size: %s", test.size)
+			g.Expect(GetGPUDriverType(test.size)).To(Equal(test.gpuDriverType), "Failed for size: %s", test.size)
 		})
 	}
 }
 
 func TestGetGPUDriverVersion(t *testing.T) {
-	assert := assert.New(t)
 	tests := []struct {
 		name   string
 		size   string
 		output string
 	}{
 		{"GRID Driver - NV Series v5", "standard_nv6ads_a10_v5", NvidiaGridDriverVersion},
+		{"GRID v20 Driver - RTX PRO 6000 BSE ds", "standard_nc144ds_xl_rtxpro6000bse_v6", NvidiaGridV20DriverVersion},
+		{"GRID v20 Driver - RTX PRO 6000 BSE lds", "standard_nc144lds_xl_rtxpro6000bse_v6", NvidiaGridV20DriverVersion},
+		{"GRID v20 Driver - RTX PRO 6000 BSE mixed case", "Standard_NC24lds_xl_RTXPRO6000BSE_v6", NvidiaGridV20DriverVersion},
 		{"CUDA Driver - NC Series v1", "standard_nc6s", Nvidia470CudaDriverVersion},
-		{"CUDA Driver - NC Series v2", "standard_nc6s_v2", NvidiaCudaDriverVersion},
-		{"Unknown SKU", "unknown_sku", NvidiaCudaDriverVersion},
-		{"CUDA Driver - NC Series v3", "standard_nc6s_v3", NvidiaCudaDriverVersion},
+		{"CUDA-LTS Driver - NC Series v2", "standard_nc6s_v2", NvidiaCudaLTSDriverVersion},
+		{"CUDA-LTS Driver - Unknown SKU", "unknown_sku", NvidiaCudaLTSDriverVersion},
+		{"CUDA-LTS Driver - NC Series v3", "standard_nc6s_v3", NvidiaCudaLTSDriverVersion},
 		{"GRID Driver - A10", "standard_nc8ads_a10_v4", NvidiaGridDriverVersion},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result := GetGPUDriverVersion(test.size)
-			assert.Equal(test.output, result, "Failed for size: %s", test.size)
+			g.Expect(result).To(Equal(test.output), "Failed for size: %s", test.size)
 		})
 	}
 }
 
 func TestIsNvidiaEnabledSKU(t *testing.T) {
-	assert := assert.New(t)
 	tests := []struct {
 		name   string
 		input  string
@@ -83,19 +89,22 @@ func TestIsNvidiaEnabledSKU(t *testing.T) {
 		{"Valid SKU - NV Series", "standard_nv6", true},
 		{"Invalid SKU", "standard_d2_v2", false},
 		{"Valid SKU - T4 Series", "standard_nc4as_t4_v3", true},
+		{"Valid SKU - RTX PRO 6000 BSE ds", "standard_nc144ds_xl_rtxpro6000bse_v6", true},
+		{"Valid SKU - RTX PRO 6000 BSE lds", "standard_nc144lds_xl_rtxpro6000bse_v6", true},
+		{"Valid SKU - RTX PRO 6000 BSE mixed case", "Standard_NC24lds_xl_RTXPRO6000BSE_v6", true},
 		{"Empty SKU", "", false},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result := IsNvidiaEnabledSKU(test.input)
-			assert.Equal(test.output, result, "Failed for input: %s", test.input)
+			g.Expect(result).To(Equal(test.output), "Failed for input: %s", test.input)
 		})
 	}
 }
 
 func TestIsMarinerEnabledGPUSKU(t *testing.T) {
-	assert := assert.New(t)
 	tests := []struct {
 		name   string
 		input  string
@@ -112,8 +121,156 @@ func TestIsMarinerEnabledGPUSKU(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result := IsMarinerEnabledGPUSKU(test.input)
-			assert.Equal(test.output, result, "Failed for input: %s", test.input)
+			g.Expect(result).To(Equal(test.output), "Failed for input: %s", test.input)
+		})
+	}
+}
+
+func TestIsGPUSKU(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		output bool
+	}{
+		{"NVIDIA SKU - NC Series", "standard_nc6s_v3", true},
+		{"NVIDIA SKU with Promo", "standard_nc6_promo", true},
+		{"AMD SKU - V710", "standard_nv4ads_v710_v5", true},
+		{"AMD SKU - MI300X", "standard_nd96isr_mi300x_v5", true},
+		{"Non-GPU SKU", "standard_d2_v2", false},
+		{"Empty SKU", "", false},
+		{"Non-Existent SKU", "non_existent_sku", false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := IsGPUSKU(test.input)
+			g.Expect(result).To(Equal(test.output), "Failed for input: %s", test.input)
+		})
+	}
+}
+
+func TestIsAMDEnabledSKU(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		output bool
+	}{
+		{"AMD SKU - V710", "standard_nv4ads_v710_v5", true},
+		{"AMD SKU - V710 large", "standard_nv28adms_v710_v5", true},
+		{"AMD SKU - MI300X", "standard_nd96isr_mi300x_v5", true},
+		{"AMD SKU - MI300X no RDMA", "standard_nd96is_mi300x_v5", true},
+		{"NVIDIA SKU - not AMD", "standard_nc6s_v3", false},
+		{"Non-GPU SKU", "standard_d2_v2", false},
+		{"Empty SKU", "", false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := IsAMDEnabledSKU(test.input)
+			g.Expect(result).To(Equal(test.output), "Failed for input: %s", test.input)
+		})
+	}
+}
+
+func TestAzureContainerLinuxGPUSupport(t *testing.T) {
+	g := NewWithT(t)
+	g.Expect(IsGPUSKUSupportedOnOS("standard_nc24ads_a100_v4", "azurecontainerlinux")).To(BeTrue())
+	g.Expect(IsGPUSKUSupportedOnOS("standard_nd112asr_a100_v4", "azurecontainerlinux")).To(BeFalse())
+	g.Expect(IsGPUSKUSupportedOnOS("standard_nd120asr_a100_v4", "azurecontainerlinux")).To(BeFalse())
+	g.Expect(IsGPUSKUSupportedOnOS("standard_nd112amsr_a100_v4", "azurecontainerlinux")).To(BeFalse())
+	g.Expect(IsGPUSKUSupportedOnOS("standard_nd120amsr_a100_v4", "azurecontainerlinux")).To(BeFalse())
+	g.Expect(IsGPUSKUSupportedOnOS("standard_nc144ds_xl_rtxpro6000bse_v6", "azurecontainerlinux")).To(BeFalse())
+	g.Expect(IsGPUSKUSupportedOnOS("standard_nv4ads_v710_v5", "azurecontainerlinux")).To(BeFalse())
+}
+
+func TestGetGPUManufacturer(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		output string
+	}{
+		{"NVIDIA SKU", "standard_nc6s_v3", "nvidia"},
+		{"NVIDIA SKU with Promo", "standard_nc6_promo", "nvidia"},
+		{"NVIDIA SKU - RTX PRO 6000 BSE ds", "standard_nc144ds_xl_rtxpro6000bse_v6", "nvidia"},
+		{"NVIDIA SKU - RTX PRO 6000 BSE lds", "standard_nc144lds_xl_rtxpro6000bse_v6", "nvidia"},
+		{"AMD SKU - V710", "standard_nv4ads_v710_v5", "amd"},
+		{"AMD SKU - MI300X", "standard_nd96isr_mi300x_v5", "amd"},
+		{"Non-GPU SKU", "standard_d2_v2", ""},
+		{"Empty SKU", "", ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := GetGPUManufacturer(test.input)
+			g.Expect(result).To(Equal(test.output), "Failed for input: %s", test.input)
+		})
+	}
+}
+
+func TestIsGPUSKUSupportedOnOS(t *testing.T) {
+	tests := []struct {
+		name   string
+		vmSize string
+		osName string
+		output bool
+	}{
+		{"NVIDIA on Ubuntu", "standard_nc6s_v3", "ubuntu", true},
+		{"NVIDIA on AzureLinux", "standard_nc6s_v3", "azurelinux", true},
+		{"NVIDIA Ubuntu-only on AzureLinux", "standard_nc6", "azurelinux", false},
+		{"NVIDIA Ubuntu-only on Ubuntu", "standard_nc6", "ubuntu", true},
+		{"NVIDIA A10 v4 on Ubuntu", "standard_nc16ads_a10_v4", "ubuntu", true},
+		{"NVIDIA A10 v4 on AzureLinux3", "standard_nc16ads_a10_v4", "azurelinux3", true},
+		{"NVIDIA A10 v5 on Ubuntu", "standard_nv6ads_a10_v5", "ubuntu", true},
+		{"NVIDIA A10 v5 on AzureLinux3", "standard_nv6ads_a10_v5", "azurelinux3", true},
+		{"AMD on Ubuntu", "standard_nv4ads_v710_v5", "ubuntu", true},
+		{"AMD on AzureLinux", "standard_nv4ads_v710_v5", "azurelinux", false},
+		{"RTX PRO 6000 BSE ds on Ubuntu", "standard_nc144ds_xl_rtxpro6000bse_v6", "ubuntu", true},
+		{"RTX PRO 6000 BSE lds on Ubuntu", "standard_nc144lds_xl_rtxpro6000bse_v6", "ubuntu", true},
+		{"RTX PRO 6000 BSE on AzureLinux", "standard_nc144lds_xl_rtxpro6000bse_v6", "azurelinux", false},
+		{"Non-GPU SKU", "standard_d2_v2", "ubuntu", false},
+		{"Empty SKU", "", "ubuntu", false},
+		{"Unknown OS", "standard_nc6s_v3", "windows_server_2025", false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := IsGPUSKUSupportedOnOS(test.vmSize, test.osName)
+			g.Expect(result).To(Equal(test.output), "Failed for vmSize: %s, os: %s", test.vmSize, test.osName)
+		})
+	}
+}
+
+func TestIsDriverInstallSupported(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		output bool
+	}{
+		{"NVIDIA SKU - has support", "standard_nc6s_v3", true},
+		{"NVIDIA SKU with Promo - has support", "standard_nc6s_v2_promo", true},
+		{"NVIDIA T4 - has support", "standard_nc4as_t4_v3", true},
+		{"NVIDIA A10 converged - has support", "standard_nv6ads_a10_v5", true},
+		{"NVIDIA RTX PRO 6000 BSE ds - has support", "standard_nc144ds_xl_rtxpro6000bse_v6", true},
+		{"NVIDIA RTX PRO 6000 BSE lds - has support", "standard_nc24lds_xl_rtxpro6000bse_v6", true},
+		{"AMD SKU V710 - no support", "standard_nv4ads_v710_v5", false},
+		{"AMD SKU MI300X - no support", "standard_nd96isr_mi300x_v5", false},
+		{"Non-GPU SKU - no support", "standard_d2_v2", false},
+		{"Empty SKU - no support", "", false},
+		{"Unknown SKU - no support", "non_existent_sku", false},
+		{"Case insensitive - has support", "Standard_NC6s_V3", true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := IsDriverInstallSupported(test.input)
+			g.Expect(result).To(Equal(test.output), "Failed for input: %s", test.input)
 		})
 	}
 }

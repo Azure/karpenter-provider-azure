@@ -1,0 +1,151 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package imagefamily_test
+
+import (
+	"testing"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	. "github.com/onsi/gomega"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+)
+
+func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
+	azureLinux3 := imagefamily.AzureLinux3{
+		Options: &parameters.StaticParameters{
+			ClusterName:                    "test-cluster",
+			SubnetID:                       "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+			Arch:                           karpv1.ArchitectureAmd64,
+			SubscriptionID:                 "test-subscription",
+			ResourceGroup:                  "test-rg",
+			ClusterResourceGroup:           "test-cluster-rg",
+			KubeletClientTLSBootstrapToken: "test-token",
+			KubernetesVersion:              "1.31.0",
+		},
+	}
+
+	kubeletConfig := &bootstrap.KubeletConfiguration{MaxPods: int32(110)}
+	taints := []v1.Taint{{Key: "test", Value: "value", Effect: v1.TaintEffectNoSchedule}}
+	startupTaints := []v1.Taint{{Key: "startup", Value: "value", Effect: v1.TaintEffectNoSchedule}}
+	labels := map[string]string{"test-label": "test-value"}
+	instanceType := &cloudprovider.InstanceType{
+		Name: "Standard_D2s_v3",
+		Capacity: v1.ResourceList{
+			v1.ResourceCPU:    resource.MustParse("2"),
+			v1.ResourceMemory: resource.MustParse("8Gi"),
+		},
+	}
+	imageDistro := "aks-azurelinux-v3-gen2"
+	storageProfile := "ManagedDisks"
+	nodeBootstrappingClient := &fake.NodeBootstrappingAPI{}
+
+	// Note: FIPSMode test scenarios are distributed across image families rather than comprehensively tested in each.
+	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
+	var fipsMode *v1beta1.FIPSMode                   // to test with nil
+	var localDNS *v1beta1.LocalDNS                   // to test with nil
+	var artifactStreaming *v1beta1.ArtifactStreaming // to test with nil
+	var linuxOSConfig *v1beta1.LinuxOSConfiguration  // to test with nil
+	var vTPMEnabled *bool                            // to test with nil
+	var secureBootEnabled *bool                      // to test with nil
+	var workloadRuntime *v1beta1.WorkloadRuntime     // default OCIContainer
+
+	bootstrapper := azureLinux3.CustomScriptsNodeBootstrapping(
+		kubeletConfig,
+		taints,
+		startupTaints,
+		labels,
+		instanceType,
+		imageDistro,
+		storageProfile,
+		nodeBootstrappingClient,
+		fipsMode,
+		workloadRuntime,
+		localDNS,
+		artifactStreaming,
+		linuxOSConfig,
+		vTPMEnabled,
+		secureBootEnabled,
+	)
+
+	g := NewWithT(t)
+
+	// Verify the returned bootstrapper is of the correct type
+	provisionBootstrapper, ok := bootstrapper.(customscriptsbootstrap.ProvisionClientBootstrap)
+	g.Expect(ok).To(BeTrue(), "Expected customscriptsbootstrap.ProvisionClientBootstrap type")
+
+	// Verify all fields are properly set
+	g.Expect(provisionBootstrapper.ClusterName).To(Equal("test-cluster"))
+	g.Expect(provisionBootstrapper.KubeletConfig).To(Equal(kubeletConfig))
+	g.Expect(provisionBootstrapper.Taints).To(Equal(taints))
+	g.Expect(provisionBootstrapper.StartupTaints).To(Equal(startupTaints))
+	g.Expect(provisionBootstrapper.Labels).To(Equal(labels))
+	g.Expect(provisionBootstrapper.SubnetID).To(Equal("/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"))
+	g.Expect(provisionBootstrapper.Arch).To(Equal(karpv1.ArchitectureAmd64))
+	g.Expect(provisionBootstrapper.SubscriptionID).To(Equal("test-subscription"))
+	g.Expect(provisionBootstrapper.ResourceGroup).To(Equal("test-rg"))
+	g.Expect(provisionBootstrapper.ClusterResourceGroup).To(Equal("test-cluster-rg"))
+	g.Expect(provisionBootstrapper.KubeletClientTLSBootstrapToken).To(Equal("test-token"))
+	g.Expect(provisionBootstrapper.KubernetesVersion).To(Equal("1.31.0"))
+	g.Expect(provisionBootstrapper.ImageDistro).To(Equal(imageDistro))
+	g.Expect(provisionBootstrapper.InstanceType).To(Equal(instanceType))
+	g.Expect(provisionBootstrapper.StorageProfile).To(Equal(storageProfile))
+	g.Expect(provisionBootstrapper.NodeBootstrappingProvider).To(Equal(nodeBootstrappingClient))
+	g.Expect(provisionBootstrapper.OSSKU).To(Equal(customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3), "ImageFamily field must be set to prevent unsupported image family errors")
+	g.Expect(provisionBootstrapper.FIPSMode).To(BeNil(), "FIPSMode should be nil when not specified")
+	g.Expect(provisionBootstrapper.LocalDNSProfile).To(BeNil(), "LocalDNSProfile should be nil when not specified")
+	g.Expect(provisionBootstrapper.LinuxOSConfig).To(BeNil(), "LinuxOSConfig should be nil when not specified")
+	g.Expect(provisionBootstrapper.VTPMEnabled).To(BeNil())
+	g.Expect(provisionBootstrapper.SecureBootEnabled).To(BeNil())
+}
+
+func TestAzureLinux3_Name(t *testing.T) {
+	g := NewWithT(t)
+	azureLinux3 := imagefamily.AzureLinux3{}
+	g.Expect(azureLinux3.Name()).To(Equal("AzureLinux3"))
+}
+
+func TestAzureLinux3_DefaultImages_Kata(t *testing.T) {
+	g := NewWithT(t)
+	azureLinux3 := imagefamily.AzureLinux3{}
+
+	// Kata: only the dedicated Pod Sandboxing image variant (amd64 + gen2) is returned.
+	kataImages := azureLinux3.DefaultImages(true, nil, false, true)
+	g.Expect(kataImages).To(HaveLen(1))
+	g.Expect(kataImages[0].ImageDefinition).To(Equal(imagefamily.AzureLinux3Gen2KataImageDefinition))
+	g.Expect(kataImages[0].Distro).To(Equal("aks-azurelinux-v3-gen2-kata"))
+	g.Expect(kataImages[0].Requirements.Get(v1.LabelArchStable).Values()).To(ConsistOf(karpv1.ArchitectureAmd64))
+	g.Expect(kataImages[0].Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV2))
+
+	// Non-Kata: standard images, and never the Kata variant.
+	stdImages := azureLinux3.DefaultImages(true, nil, false, false)
+	for _, img := range stdImages {
+		g.Expect(img.ImageDefinition).ToNot(Equal(imagefamily.AzureLinux3Gen2KataImageDefinition))
+	}
+
+	// FIPS+Kata is unsatisfiable (no FIPS Kata image): return no images rather than
+	// silently dropping the FIPS guarantee.
+	fipsMode := v1beta1.FIPSModeFIPS
+	g.Expect(azureLinux3.DefaultImages(true, &fipsMode, false, true)).To(BeEmpty())
+}

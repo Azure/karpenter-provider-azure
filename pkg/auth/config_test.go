@@ -18,8 +18,9 @@ package auth
 
 import (
 	"os"
-	"reflect"
 	"testing"
+
+	. "github.com/onsi/gomega"
 )
 
 func TestBuildAzureConfig(t *testing.T) {
@@ -37,81 +38,150 @@ func TestBuildAzureConfig(t *testing.T) {
 		{
 			name: "default",
 			expected: &Config{
-				SubscriptionID:    "12345",
-				ResourceGroup:     "my-rg",
-				NodeResourceGroup: "my-node-rg",
+				Cloud:          "AzurePublicCloud",
+				SubscriptionID: "12345",
+				ResourceGroup:  "my-rg",
 			},
 			wantErr: false,
 			env: map[string]string{
-				"ARM_RESOURCE_GROUP":        "my-rg",
-				"ARM_SUBSCRIPTION_ID":       "12345",
-				"AZURE_NODE_RESOURCE_GROUP": "my-node-rg",
-				"AZURE_SUBNET_ID":           "12345",
-				"AZURE_SUBNET_NAME":         "my-subnet",
-				"AZURE_VNET_NAME":           "my-vnet",
+				"ARM_RESOURCE_GROUP":    "my-rg",
+				"AZURE_SUBSCRIPTION_ID": "12345",
+				"AZURE_SUBNET_ID":       "12345",
+				"AZURE_SUBNET_NAME":     "my-subnet",
+				"AZURE_VNET_NAME":       "my-vnet",
 			},
 		},
 		{
 			name: "vmType=vm", // tests setVMType()
 			expected: &Config{
-				SubscriptionID:    "12345",
-				ResourceGroup:     "my-rg",
-				NodeResourceGroup: "my-node-rg",
+				Cloud:          "AzurePublicCloud",
+				SubscriptionID: "12345",
+				ResourceGroup:  "my-rg",
 			},
 			wantErr: false,
 			env: map[string]string{
-				"ARM_RESOURCE_GROUP":        "my-rg",
-				"ARM_SUBSCRIPTION_ID":       "12345",
-				"AZURE_NODE_RESOURCE_GROUP": "my-node-rg",
-				"AZURE_SUBNET_ID":           "12345",
-				"AZURE_SUBNET_NAME":         "my-subnet",
-				"AZURE_VNET_NAME":           "my-vnet",
-				"ARM_VM_TYPE":               "vm",
+				"ARM_RESOURCE_GROUP":    "my-rg",
+				"AZURE_SUBSCRIPTION_ID": "12345",
+				"AZURE_SUBNET_ID":       "12345",
+				"AZURE_SUBNET_NAME":     "my-subnet",
+				"AZURE_VNET_NAME":       "my-vnet",
+				"ARM_VM_TYPE":           "vm",
 			},
 		},
 		{
-			name: "valid kubelet identity",
+			name:     "both ARM_CLOUD and AZURE_ENVIRONMENT_FILEPATH set",
+			expected: nil,
+			wantErr:  true,
+			env: map[string]string{
+				"ARM_RESOURCE_GROUP":         "my-rg",
+				"AZURE_SUBSCRIPTION_ID":      "12345",
+				"AZURE_SUBNET_ID":            "12345",
+				"AZURE_SUBNET_NAME":          "my-subnet",
+				"AZURE_VNET_NAME":            "my-vnet",
+				"ARM_CLOUD":                  "AzurePublicCloud",
+				"AZURE_ENVIRONMENT_FILEPATH": "/etc/kubernetes/AzureStackCloud.json",
+			},
+		},
+		{
+			name: "only ARM_CLOUD set",
 			expected: &Config{
-				SubscriptionID:          "12345",
-				ResourceGroup:           "my-rg",
-				NodeResourceGroup:       "my-node-rg",
-				KubeletIdentityClientID: "11111111-2222-3333-4444-555555555555",
+				SubscriptionID: "12345",
+				ResourceGroup:  "my-rg",
+				Cloud:          "AzurePublicCloud",
+			},
+			wantErr: false,
+			env: map[string]string{
+				"ARM_RESOURCE_GROUP":    "my-rg",
+				"AZURE_SUBSCRIPTION_ID": "12345",
+				"AZURE_SUBNET_ID":       "12345",
+				"AZURE_SUBNET_NAME":     "my-subnet",
+				"AZURE_VNET_NAME":       "my-vnet",
+				"ARM_CLOUD":             "AzurePublicCloud",
+			},
+		},
+		{
+			name: "only AZURE_ENVIRONMENT_FILEPATH set",
+			expected: &Config{
+				SubscriptionID:           "12345",
+				ResourceGroup:            "my-rg",
+				AzureEnvironmentFilepath: "/etc/kubernetes/AzureStackCloud.json",
 			},
 			wantErr: false,
 			env: map[string]string{
 				"ARM_RESOURCE_GROUP":         "my-rg",
-				"ARM_SUBSCRIPTION_ID":        "12345",
-				"AZURE_NODE_RESOURCE_GROUP":  "my-node-rg",
+				"AZURE_SUBSCRIPTION_ID":      "12345",
 				"AZURE_SUBNET_ID":            "12345",
 				"AZURE_SUBNET_NAME":          "my-subnet",
 				"AZURE_VNET_NAME":            "my-vnet",
-				"KUBELET_IDENTITY_CLIENT_ID": "11111111-2222-3333-4444-555555555555",
+				"AZURE_ENVIRONMENT_FILEPATH": "/etc/kubernetes/AzureStackCloud.json",
+			},
+		},
+		{
+			name: "ARM_SUBSCRIPTION_ID and ARM_TENANT_ID used as fallback",
+			expected: &Config{
+				Cloud:          "AzurePublicCloud",
+				SubscriptionID: "arm-sub-id",
+				TenantID:       "arm-tenant-id",
+				ResourceGroup:  "my-rg",
+			},
+			wantErr: false,
+			env: map[string]string{
+				"ARM_RESOURCE_GROUP":  "my-rg",
+				"ARM_SUBSCRIPTION_ID": "arm-sub-id",
+				"ARM_TENANT_ID":       "arm-tenant-id",
+			},
+		},
+		{
+			name: "AZURE_* takes precedence over ARM_* for subscription and tenant",
+			expected: &Config{
+				Cloud:          "AzurePublicCloud",
+				SubscriptionID: "azure-sub-id",
+				TenantID:       "azure-tenant-id",
+				ResourceGroup:  "my-rg",
+			},
+			wantErr: false,
+			env: map[string]string{
+				"ARM_RESOURCE_GROUP":    "my-rg",
+				"ARM_SUBSCRIPTION_ID":   "arm-sub-id",
+				"ARM_TENANT_ID":         "arm-tenant-id",
+				"AZURE_SUBSCRIPTION_ID": "azure-sub-id",
+				"AZURE_TENANT_ID":       "azure-tenant-id",
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Clear all config-related env vars before each subtest to ensure isolation
+			// This is required if you run the test from a shell that happens to have one of these variables set.
+			for _, key := range []string{
+				"ARM_SUBSCRIPTION_ID",
+				"AZURE_SUBSCRIPTION_ID",
+				"ARM_TENANT_ID",
+				"AZURE_TENANT_ID",
+			} {
+				g.Expect(os.Unsetenv(key)).To(Succeed())
+			}
+
 			for k, v := range tt.env {
 				err := os.Setenv(k, v)
-				if err != nil {
-					t.Errorf("error setting environment %v = %s", tt.env, err)
-					return
-				}
+				g.Expect(err).ToNot(HaveOccurred(), "error setting environment variable %s = %s", k, v)
 			}
+
 			got, err := BuildAzureConfig()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("BuildAzureConfig() error = %v, wantErr %v", err, tt.wantErr)
-				return
+
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(got).To(BeNil())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(got).To(Equal(tt.expected))
 			}
-			if equal := reflect.DeepEqual(got, tt.expected); !equal {
-				t.Errorf("BuildAzureConfig() = %v, want %v", got, tt.expected)
-			}
+
 			for k := range tt.env {
 				err := os.Unsetenv(k)
-				if err != nil {
-					t.Errorf("error unsetting environment %v = %s", tt.env, err)
-					return
-				}
+				g.Expect(err).ToNot(HaveOccurred(), "error unsetting environment variable %s", k)
 			}
 		})
 	}

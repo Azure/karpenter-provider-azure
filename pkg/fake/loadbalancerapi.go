@@ -20,16 +20,22 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	fakesync "github.com/Azure/karpenter-provider-azure/pkg/fake/sync"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/samber/lo"
 )
 
+type LoadBalancerListInput struct {
+	ResourceGroupName string
+	Options           *armnetwork.LoadBalancersClientListOptions
+}
+
 type LoadBalancersBehavior struct {
-	LoadBalancers sync.Map
+	LoadBalancers        fakesync.Map[string, armnetwork.LoadBalancer]
+	NewListPagerBehavior MockedFunction[LoadBalancerListInput, *runtime.Pager[armnetwork.LoadBalancersClientListResponse]]
 }
 
 // assert that the fake implements the interface
@@ -41,10 +47,8 @@ type LoadBalancersAPI struct {
 
 // Reset must be called between tests otherwise tests will pollute each other.
 func (api *LoadBalancersAPI) Reset() {
-	api.LoadBalancers.Range(func(k, v any) bool {
-		api.LoadBalancers.Delete(k)
-		return true
-	})
+	api.LoadBalancers.Clear()
+	api.NewListPagerBehavior.Reset()
 }
 
 func (api *LoadBalancersAPI) Get(_ context.Context, resourceGroupName string, loadBalancerName string, _ *armnetwork.LoadBalancersClientGetOptions) (armnetwork.LoadBalancersClientGetResponse, error) {
@@ -54,40 +58,44 @@ func (api *LoadBalancersAPI) Get(_ context.Context, resourceGroupName string, lo
 		return armnetwork.LoadBalancersClientGetResponse{}, fmt.Errorf("not found")
 	}
 	return armnetwork.LoadBalancersClientGetResponse{
-		LoadBalancer: lb.(armnetwork.LoadBalancer),
+		LoadBalancer: lb,
 	}, nil
 }
 
-func (api *LoadBalancersAPI) NewListPager(_ string, _ *armnetwork.LoadBalancersClientListOptions) *runtime.Pager[armnetwork.LoadBalancersClientListResponse] {
-	pagingHandler := runtime.PagingHandler[armnetwork.LoadBalancersClientListResponse]{
-		More: func(page armnetwork.LoadBalancersClientListResponse) bool {
-			return false // TODO: It might be ideal if we had a MockPager which sometimes simulated multiple pages of results to ensure we handle that correctly
-		},
-		Fetcher: func(ctx context.Context, _ *armnetwork.LoadBalancersClientListResponse) (armnetwork.LoadBalancersClientListResponse, error) {
-			output := armnetwork.LoadBalancerListResult{
-				Value: []*armnetwork.LoadBalancer{},
-			}
-			api.LoadBalancers.Range(func(key, value any) bool {
-				cast := value.(armnetwork.LoadBalancer)
-				output.Value = append(output.Value, &cast)
-
-				return true
-			})
-
-			// Sort the result according to ID so that we have a stable base to write asserts upon
-			sort.Slice(output.Value, func(i, j int) bool {
-				l := output.Value[i]
-				r := output.Value[j]
-
-				return lo.FromPtr(l.ID) < lo.FromPtr(r.ID)
-			})
-
-			return armnetwork.LoadBalancersClientListResponse{
-				LoadBalancerListResult: output,
-			}, nil
-		},
+func (api *LoadBalancersAPI) NewListPager(resourceGroupName string, options *armnetwork.LoadBalancersClientListOptions) *runtime.Pager[armnetwork.LoadBalancersClientListResponse] {
+	input := &LoadBalancerListInput{
+		ResourceGroupName: resourceGroupName,
+		Options:           options,
 	}
-	return runtime.NewPager(pagingHandler)
+	pager, _ := api.NewListPagerBehavior.Invoke(input, func(_ *LoadBalancerListInput) (*runtime.Pager[armnetwork.LoadBalancersClientListResponse], error) {
+		p := runtime.NewPager(runtime.PagingHandler[armnetwork.LoadBalancersClientListResponse]{
+			More: func(page armnetwork.LoadBalancersClientListResponse) bool {
+				return false // TODO: It might be ideal if we had a MockPager which sometimes simulated multiple pages of results to ensure we handle that correctly
+			},
+			Fetcher: func(ctx context.Context, _ *armnetwork.LoadBalancersClientListResponse) (armnetwork.LoadBalancersClientListResponse, error) {
+				output := armnetwork.LoadBalancerListResult{
+					Value: []*armnetwork.LoadBalancer{},
+				}
+				api.LoadBalancers.Range(func(key string, value armnetwork.LoadBalancer) bool {
+					output.Value = append(output.Value, &value)
+					return true
+				})
+
+				// Sort the result according to ID so that we have a stable base to write asserts upon
+				sort.Slice(output.Value, func(i, j int) bool {
+					l := output.Value[i]
+					r := output.Value[j]
+					return lo.FromPtr(l.ID) < lo.FromPtr(r.ID)
+				})
+
+				return armnetwork.LoadBalancersClientListResponse{
+					LoadBalancerListResult: output,
+				}, nil
+			},
+		})
+		return p, nil
+	})
+	return pager
 }
 
 func MakeLoadBalancerID(resourceGroupName, loadBalancerName string) string {

@@ -21,17 +21,29 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 func TestFilteredNodeImagesGalleryFilter(t *testing.T) {
+	g := NewWithT(t)
 	nodeImageVersionAPI := NodeImageVersionsAPI{}
-	nodeImageVersions, _ := nodeImageVersionAPI.List(context.TODO(), "", "")
-	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersions.Values)
+	nodeImageVersions, _ := nodeImageVersionAPI.List(context.TODO(), "")
+	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersions)
+	supportedGalleries := sets.New("AKSUbuntu", "AKSAzureLinux", "AKSWindows")
+	sawWindows := false
 	for _, val := range filteredNodeImages {
-		assert.NotEqual(t, val.OS, "AKSWindows")
-		assert.NotEqual(t, val.OS, "AKSUbuntuEdgeZone")
+		os := lo.FromPtr(val.OS)
+		// Only supported galleries are returned; unsupported ones (e.g. EdgeZone) are filtered out.
+		g.Expect(supportedGalleries.Has(os)).To(BeTrue(), "unexpected gallery %q in filtered images", os)
+		g.Expect(os).ToNot(Equal("AKSUbuntuEdgeZone"))
+		if os == "AKSWindows" {
+			sawWindows = true
+		}
 	}
+	// Windows is now a supported gallery and must survive filtering.
+	g.Expect(sawWindows).To(BeTrue(), "expected at least one AKSWindows image to be included")
 }
 
 // The reasoning behind the test is the following set of output
@@ -60,13 +72,13 @@ func TestFilteredNodeImagesGalleryFilter(t *testing.T) {
 // duplicate entries for os + sku matchings.
 // This test validates we simply ignore the legacy distros and take in the latest Version.
 func TestFilteredNodeImagesMinimalUbuntuEdgeCase(t *testing.T) {
-	filteredNodeImages := imagefamily.FilteredNodeImages(NodeImageVersions)
+	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersionsSnapshotData)
 
-	expectedVersion := "202410.09.0"
+	expectedVersion := "202608.26.0"
 	found := false
 
 	for _, val := range filteredNodeImages {
-		if val.SKU == "2204gen2containerd" && val.Version == expectedVersion {
+		if lo.FromPtr(val.SKU) == "2204gen2containerd" && lo.FromPtr(val.Version) == expectedVersion {
 			found = true
 			break
 		}
@@ -81,15 +93,16 @@ func TestFilteredNodeImagesMinimalUbuntuEdgeCase(t *testing.T) {
 // similar to the behavior we would see if someone is using the node image versions api call.
 // the fake imports the same clientside filtering so we need to assert that behavior is the same
 func TestFilteredNodeImageVersionsFromProviderList(t *testing.T) {
+	g := NewWithT(t)
 	nodeImageVersionsAPI := NodeImageVersionsAPI{}
-	filteredNodeImages, err := nodeImageVersionsAPI.List(context.TODO(), "", "")
-	assert.Nil(t, err)
+	filteredNodeImages, err := nodeImageVersionsAPI.List(context.TODO(), "")
+	g.Expect(err).To(BeNil())
 
-	expectedVersion := "202410.09.0"
+	expectedVersion := "202608.26.0"
 	found := false
 
-	for _, val := range filteredNodeImages.Values {
-		if val.SKU == "2204gen2containerd" && val.Version == expectedVersion {
+	for _, val := range filteredNodeImages {
+		if lo.FromPtr(val.SKU) == "2204gen2containerd" && lo.FromPtr(val.Version) == expectedVersion && lo.FromPtr(val.OS) == "AKSUbuntu" {
 			found = true
 			break
 		}

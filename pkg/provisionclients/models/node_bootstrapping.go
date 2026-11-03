@@ -22,6 +22,7 @@ package models
 
 import (
 	"context"
+	stderrors "errors"
 
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
@@ -103,11 +104,15 @@ func (m *NodeBootstrapping) validateOsImageConfig(formats strfmt.Registry) error
 
 	if m.OsImageConfig != nil {
 		if err := m.OsImageConfig.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("osImageConfig")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("osImageConfig")
 			}
+
 			return err
 		}
 	}
@@ -123,11 +128,15 @@ func (m *NodeBootstrapping) validateSigImageConfig(formats strfmt.Registry) erro
 
 	if m.SigImageConfig != nil {
 		if err := m.SigImageConfig.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("sigImageConfig")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("sigImageConfig")
 			}
+
 			return err
 		}
 	}
@@ -158,11 +167,15 @@ func (m *NodeBootstrapping) contextValidateOsImageConfig(ctx context.Context, fo
 	if m.OsImageConfig != nil {
 
 		if err := m.OsImageConfig.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("osImageConfig")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("osImageConfig")
 			}
+
 			return err
 		}
 	}
@@ -175,11 +188,15 @@ func (m *NodeBootstrapping) contextValidateSigImageConfig(ctx context.Context, f
 	if m.SigImageConfig != nil {
 
 		if err := m.SigImageConfig.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("sigImageConfig")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("sigImageConfig")
 			}
+
 			return err
 		}
 	}

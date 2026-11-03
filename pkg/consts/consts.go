@@ -27,8 +27,38 @@ const (
 	NetworkDataplaneCilium = "cilium"
 	NetworkDataplaneAzure  = "azure"
 
-	DefaultKubernetesMaxPods = 250
+	// NetworkPolicy values (matched case-insensitively).
+	NetworkPolicyCilium = "cilium"
+	NetworkPolicyCalico = "calico"
 
-	ProvisionModeAKSScriptless       = "aksscriptless"
-	ProvisionModeBootstrappingClient = "bootstrappingclient"
+	StorageProfileManagedDisks = "ManagedDisks"
+	StorageProfileEphemeral    = "Ephemeral"
+
+	// All of these values for max pods match the aks defaults for max pods for the various
+	// cni modes
+	DefaultNetPluginNoneMaxPods = 250
+	DefaultOverlayMaxPods       = 250
+	DefaultNodeSubnetMaxPods    = 30
+	DefaultKubernetesMaxPods    = 110
+
+	ProvisionModeAKSScriptless            = "aksscriptless"
+	ProvisionModeBootstrappingClient      = "bootstrappingclient"
+	ProvisionModeAKSMachineAPI            = "aksmachineapi"
+	ProvisionModeAKSMachineAPIHeaderBatch = "aksmachineapiheaderbatch"
+
+	AKSMachineAPIHeaderBatchMaxSize = 50
+
+	// Compute recommendation mode values.
+	ComputeRecommendationModeDisabled = "disabled"
+	ComputeRecommendationModeLog      = "log-only"
+	ComputeRecommendationModeEnabled  = "enabled"
+
+	// Provisioning states for AKS Machine objects.
+	// The SDK's Machine.Properties.ProvisioningState is typed as *string (no typed constants).
+	// Suggestion: find a constant from azure-sdk-for-go if one becomes available.
+	ProvisioningStateCreating  = "Creating"
+	ProvisioningStateUpdating  = "Updating"
+	ProvisioningStateSucceeded = "Succeeded"
+	ProvisioningStateFailed    = "Failed"
+	ProvisioningStateDeleting  = "Deleting"
 )

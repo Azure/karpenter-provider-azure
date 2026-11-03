@@ -1,0 +1,295 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package offerings
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	"github.com/Azure/skewer"
+	. "github.com/onsi/gomega"
+	gocache "github.com/patrickmn/go-cache"
+	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
+)
+
+const (
+	testInstanceName               = "Standard_D2s_v3"
+	testInstanceVMSize             = "D2s_v3"
+	testInstanceFamilyName         = "standardDsv3Family"
+	testZone1                      = "westus-1"
+	testZone2                      = "westus-2"
+	testZone3                      = "westus-3"
+	testCapacityReservationGroupID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"
+
+	errMsgLowPriorityQuota                  = "this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota"
+	errMsgSKUFamilyQuotaFmt                 = "subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)"
+	errMsgSKUNotAvailableFmt                = "the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable"
+	errMsgZonalAllocationFailureFmt         = "unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)"
+	errMsgAllocationFailureFmt              = "unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)"
+	errMsgOverconstrainedZonalFmt           = "unable to allocate resources in the selected zone (%s) with %s capacity type and %s VM size. (will try a different zone, capacity type or VM size to fulfill your request)"
+	errMsgOverconstrainedAllocationFmt      = "unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)"
+	errMsgRegionalQuotaExceeded             = "regional on-demand vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests"
+	errMsgSKUNotAvailableForSubscriptionFmt = "VM size %s is not supported for this subscription in this location, for more details please visit: https://aka.ms/aks/vm-size-selector"
+	errMsgInvalidAvailabilityZoneFmt        = "availability zone %s is not supported for instance type %s (will try another available placement)"
+)
+
+var (
+	zone1OnDemand    = offering{zone: testZone1, capacityType: karpv1.CapacityTypeOnDemand}
+	zone1Spot        = offering{zone: testZone1, capacityType: karpv1.CapacityTypeSpot}
+	zone2OnDemand    = offering{zone: testZone2, capacityType: karpv1.CapacityTypeOnDemand}
+	zone2Spot        = offering{zone: testZone2, capacityType: karpv1.CapacityTypeSpot}
+	zone3OnDemand    = offering{zone: testZone3, capacityType: karpv1.CapacityTypeOnDemand}
+	zone3Spot        = offering{zone: testZone3, capacityType: karpv1.CapacityTypeSpot}
+	regionalOnDemand = offering{zone: zones.Regional, capacityType: karpv1.CapacityTypeOnDemand}
+	regionalSpot     = offering{zone: zones.Regional, capacityType: karpv1.CapacityTypeSpot}
+)
+
+// offering represents a zone and capacity type combination for cleaner test setup
+type offering struct {
+	zone         string
+	capacityType string
+}
+
+type offeringToCheck struct {
+	skuToCheck   *skewer.SKU
+	zone         string
+	capacityType string
+}
+
+func createInstanceType(offerings ...offering) *cloudprovider.InstanceType {
+	it := &cloudprovider.InstanceType{
+		Name: testInstanceName,
+		Requirements: scheduling.NewRequirements(
+			scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, "2"),
+		),
+		Offerings: []*cloudprovider.Offering{},
+	}
+
+	for _, o := range offerings {
+		it.Offerings = append(it.Offerings, &cloudprovider.Offering{
+			Requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, o.capacityType),
+				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, o.zone),
+				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, zones.PlacementScopeForZone(o.zone)),
+			),
+		})
+	}
+
+	return it
+}
+
+func offeringInformation(zone, capacityType, instanceTypeName, instanceVMSize, familyName, cpuCount string) offeringToCheck {
+	return offeringToCheck{
+		skuToCheck:   createTestSKU(instanceTypeName, instanceVMSize, familyName, cpuCount),
+		zone:         zone,
+		capacityType: capacityType,
+	}
+}
+
+// Helper to create default offering information for testing, for errors where we don't block specific families of VM SKUs
+func defaultTestOfferingInfo(zone, capacityType string) offeringToCheck {
+	return offeringInformation(zone, capacityType, testInstanceName, testInstanceVMSize, testInstanceFamilyName, "2")
+}
+
+// allDefaultTestOfferingInfo covers every zone and capacity type of the default test instance type,
+// for errors that must not mark any offering unavailable.
+func allDefaultTestOfferingInfo() []offeringToCheck {
+	zoneValues := []string{testZone1, testZone2, testZone3, zones.Regional}
+	capacityTypes := []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot}
+	infos := make([]offeringToCheck, 0, len(zoneValues)*len(capacityTypes))
+	for _, zone := range zoneValues {
+		for _, capacityType := range capacityTypes {
+			infos = append(infos, defaultTestOfferingInfo(zone, capacityType))
+		}
+	}
+	return infos
+}
+
+func createTestSKU(name, size, family, cpuCount string) *skewer.SKU {
+	return &skewer.SKU{
+		Name:   &name,
+		Size:   &size,
+		Family: &family,
+		Capabilities: &[]compute.ResourceSkuCapabilities{
+			{
+				Name:  lo.ToPtr(skewer.VCPUs),
+				Value: &cpuCount,
+			},
+		},
+	}
+}
+
+// Helper functions for common error handler tests
+
+func createCommonErrorTestSKU(name, size, family, cpuCount string) *skewer.SKU {
+	return &skewer.SKU{
+		Name:   &name,
+		Size:   &size,
+		Family: &family,
+		Capabilities: &[]compute.ResourceSkuCapabilities{
+			{
+				Name:  lo.ToPtr(skewer.VCPUs),
+				Value: &cpuCount,
+			},
+		},
+	}
+}
+
+func createDefaultCommonErrorTestSKU() *skewer.SKU {
+	return createCommonErrorTestSKU(testInstanceName, testInstanceVMSize, testInstanceFamilyName, "2")
+}
+
+func createCommonErrorInstanceType(offerings ...offering) *cloudprovider.InstanceType {
+	it := &cloudprovider.InstanceType{
+		Name: testInstanceName,
+		Requirements: scheduling.NewRequirements(
+			scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, "2"),
+		),
+		Offerings: []*cloudprovider.Offering{},
+	}
+
+	for _, o := range offerings {
+		it.Offerings = append(it.Offerings, &cloudprovider.Offering{
+			Requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, o.capacityType),
+				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, o.zone),
+				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, zones.PlacementScopeForZone(o.zone)),
+			),
+		})
+	}
+
+	return it
+}
+
+func TestHandleInvalidAvailabilityZoneError(t *testing.T) {
+	for _, groupID := range []string{"", testCapacityReservationGroupID} {
+		for _, zone := range []string{testZone2, zones.Regional, ""} {
+			t.Run("scope="+groupID+"/zone="+zone, func(t *testing.T) {
+				g := NewWithT(t)
+				singleInstanceCache := gocache.New(time.Hour, time.Hour)
+				unavailableOfferings := cache.NewUnavailableOfferingsWithCache(singleInstanceCache, gocache.New(time.Hour, time.Hour))
+				sku := createDefaultCommonErrorTestSKU()
+				err := handleInvalidAvailabilityZoneError(t.Context(), unavailableOfferings.ForCapacityReservationGroup(groupID),
+					sku, createCommonErrorInstanceType(zone2OnDemand, regionalOnDemand),
+					zone, karpv1.CapacityTypeOnDemand, "", "The zone is not supported for resource '/subscriptions/private-sub/resourceGroups/private-rg/virtualMachines/private-vm'.")
+
+				if zone == "" || zone == zones.Regional {
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(singleInstanceCache.ItemCount()).To(BeZero())
+					return
+				}
+				assertHandledError(t, err, fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, zone, testInstanceName), InvalidAvailabilityZoneReason)
+				g.Expect(err.Error()).ToNot(ContainSubstring("private"))
+				g.Expect(singleInstanceCache.ItemCount()).To(Equal(1))
+				otherSKU := createCommonErrorTestSKU("Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2")
+				largerSKU := createCommonErrorTestSKU("Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16")
+				for _, viewGroupID := range []string{"", testCapacityReservationGroupID, testCapacityReservationGroupID + "-other"} {
+					view := unavailableOfferings.ForCapacityReservationGroup(viewGroupID)
+					for _, capacityType := range []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot} {
+						g.Expect(view.IsUnavailable(sku, zone, capacityType)).To(BeTrue())
+						g.Expect(view.IsUnavailable(sku, testZone3, capacityType)).To(BeFalse())
+						g.Expect(view.IsUnavailable(sku, zones.Regional, capacityType)).To(BeFalse())
+						g.Expect(view.IsUnavailable(otherSKU, zone, capacityType)).To(BeFalse())
+						g.Expect(view.IsUnavailable(largerSKU, zone, capacityType)).To(BeFalse())
+					}
+				}
+				for _, item := range singleInstanceCache.Items() {
+					g.Expect(time.Until(time.Unix(0, item.Expiration))).To(BeNumerically("~", 4*time.Hour, time.Second))
+				}
+			})
+		}
+	}
+}
+
+func TestMarkOfferingsUnavailableForCapacityTypeAndPlacement(t *testing.T) {
+	g := NewWithT(t)
+	ctx := context.Background()
+	unavailableOfferings := cache.NewUnavailableOfferings()
+	sku := createDefaultCommonErrorTestSKU()
+	instanceType := createCommonErrorInstanceType(
+		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, regionalOnDemand, regionalSpot)
+
+	markOfferingsUnavailableForCapacityTypeAndPlacement(ctx, unavailableOfferings.ForCapacityReservationGroup(""), sku, instanceType, testZone1, karpv1.CapacityTypeSpot, AllocationFailureReason, AllocationFailureTTL)
+
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeSpot)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone2, karpv1.CapacityTypeSpot)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, zones.Regional, karpv1.CapacityTypeSpot)).To(BeFalse())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+}
+
+func TestMarkOfferingsUnavailableForRegionalPlacement(t *testing.T) {
+	g := NewWithT(t)
+	ctx := context.Background()
+	unavailableOfferings := cache.NewUnavailableOfferings()
+	sku := createDefaultCommonErrorTestSKU()
+	instanceType := createCommonErrorInstanceType(
+		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, regionalOnDemand, regionalSpot)
+
+	markOfferingsUnavailableForPlacementForBothCapacityTypes(ctx, unavailableOfferings.ForCapacityReservationGroup(""), sku, instanceType, zones.Regional, AllocationFailureReason, AllocationFailureTTL)
+
+	g.Expect(unavailableOfferings.IsUnavailable(sku, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, zones.Regional, karpv1.CapacityTypeSpot)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone2, karpv1.CapacityTypeSpot)).To(BeFalse())
+}
+
+// The two helpers below widen across sibling zones for unreserved capacity, which the two
+// tests above cover. Inside a capacity reservation group they must not: siblings are
+// separate member reservations. On-demand only, because reserved capacity is never spot.
+const testHelperCRGID = "/subscriptions/1234/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg"
+
+func TestMarkOfferingsUnavailableForCapacityTypeAndPlacement_CapacityReservationGroup(t *testing.T) {
+	g := NewWithT(t)
+	ctx := context.Background()
+	unavailableOfferings := cache.NewUnavailableOfferings()
+	sku := createDefaultCommonErrorTestSKU()
+	instanceType := createCommonErrorInstanceType(
+		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, regionalOnDemand, regionalSpot)
+	scoped := unavailableOfferings.ForCapacityReservationGroup(testHelperCRGID)
+
+	markOfferingsUnavailableForCapacityTypeAndPlacement(ctx, scoped, sku, instanceType, testZone1, karpv1.CapacityTypeOnDemand, AllocationFailureReason, AllocationFailureTTL)
+
+	g.Expect(scoped.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+	g.Expect(scoped.IsUnavailable(sku, testZone2, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+}
+
+func TestMarkOfferingsUnavailableForPlacementForBothCapacityTypes_CapacityReservationGroup(t *testing.T) {
+	g := NewWithT(t)
+	ctx := context.Background()
+	unavailableOfferings := cache.NewUnavailableOfferings()
+	sku := createDefaultCommonErrorTestSKU()
+	instanceType := createCommonErrorInstanceType(
+		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, regionalOnDemand, regionalSpot)
+	scoped := unavailableOfferings.ForCapacityReservationGroup(testHelperCRGID)
+
+	markOfferingsUnavailableForPlacementForBothCapacityTypes(ctx, scoped, sku, instanceType, testZone1, AllocationFailureReason, AllocationFailureTTL)
+
+	g.Expect(scoped.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+	g.Expect(scoped.IsUnavailable(sku, testZone2, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+}

@@ -14,142 +14,1001 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package customscriptsbootstrap
+package customscriptsbootstrap_test
 
 import (
-	"fmt"
-	"math"
+	"context"
+	"encoding/base64"
 	"testing"
+	"time"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-func TestReverseVMMemoryOverhead(t *testing.T) {
-	type Cases struct {
-		name                    string
-		originalGiB             int64
-		vmMemoryOverheadPercent float64
-	}
-	var cases []Cases
-
-	// Generate test cases from originalGiB 1 to 2000 x vmMemoryOverheadPercent 0 to 0.25 using for loops
-	// In fact, mathematically, the reverse won't be perfectly equal, but current accuracy in GiB should be enough
-	for i := 1; i <= 2000; i++ {
-		for j := 0; j <= 250; j++ {
-			cases = append(cases, Cases{
-				name:                    fmt.Sprintf("Test %d - %f", i, float64(j)/1000),
-				originalGiB:             int64(i),
-				vmMemoryOverheadPercent: float64(j) / 1000,
-			})
-		}
-	}
-	t.Run("2000 x 0.25", func(t *testing.T) {
-		for _, tc := range cases {
-			subtracted := instancetype.CalculateMemoryWithoutOverhead(tc.vmMemoryOverheadPercent, float64(tc.originalGiB)).Value()
-			reversedGiB := int64(math.Round(reverseVMMemoryOverhead(tc.vmMemoryOverheadPercent, float64(subtracted)) / 1024 / 1024 / 1024))
-			if tc.originalGiB != reversedGiB {
-				t.Errorf("Expected %d but got %d", tc.originalGiB, reversedGiB)
-			}
-		}
-	})
-}
-
-func TestConvertContainerLogMaxSizeToMB(t *testing.T) {
+func TestGetCustomDataAndCSE(t *testing.T) {
 	tests := []struct {
-		name                string
-		containerLogMaxSize string
-		expected            *int32
+		name         string
+		bootstrapper *customscriptsbootstrap.ProvisionClientBootstrap
+		expectError  bool
+		setupMock    func(pcb *customscriptsbootstrap.ProvisionClientBootstrap)
 	}{
 		{
-			name:                "Default",
-			containerLogMaxSize: "50Mi",
-			expected:            lo.ToPtr(int32(50)),
+			name: "Success with valid parameters",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101: fake bootstrap token in test fixture
+				ClusterName:                    "test-cluster",
+				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                           karpv1.ArchitectureAmd64,
+				SubscriptionID:                 "test-sub",
+				ClusterResourceGroup:           "test-cluster-rg",
+				ResourceGroup:                  "test-rg",
+				KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
+				KubernetesVersion:              "1.31.0",
+				ImageDistro:                    "aks-ubuntu-containerd-22.04-gen2",
+				IsWindows:                      false,
+				StorageProfile:                 consts.StorageProfileManagedDisks,
+				OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+				NodeBootstrappingProvider:      &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
 		},
 		{
-			name:                "Valid size in Mi",
-			containerLogMaxSize: "1024Mi",
-			expected:            lo.ToPtr(int32(1024)),
+			name: "Error with nil NodeBootstrapping provider",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101: fake bootstrap token in test fixture
+				ClusterName:                    "test-cluster",
+				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                           karpv1.ArchitectureAmd64,
+				SubscriptionID:                 "test-sub",
+				ClusterResourceGroup:           "test-cluster-rg",
+				ResourceGroup:                  "test-rg",
+				KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
+				KubernetesVersion:              "1.31.0",
+				ImageDistro:                    "aks-ubuntu-containerd-22.04-gen2",
+				IsWindows:                      false,
+				StorageProfile:                 consts.StorageProfileManagedDisks,
+				OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+				NodeBootstrappingProvider:      nil,
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: true,
 		},
 		{
-			name:                "Valid size in Gi",
-			containerLogMaxSize: "1Gi",
-			expected:            lo.ToPtr(int32(1024)),
+			name: "Error with Windows OS",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101: fake bootstrap token in test fixture
+				ClusterName:                    "test-cluster",
+				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                           karpv1.ArchitectureAmd64,
+				SubscriptionID:                 "test-sub",
+				ClusterResourceGroup:           "test-cluster-rg",
+				ResourceGroup:                  "test-rg",
+				KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
+				KubernetesVersion:              "1.31.0",
+				ImageDistro:                    "aks-windows-dummy",
+				IsWindows:                      true,
+				StorageProfile:                 consts.StorageProfileManagedDisks,
+				OSSKU:                          "Windows",
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: true,
 		},
 		{
-			name:                "Valid size in Ki",
-			containerLogMaxSize: "1048576Ki",
-			expected:            lo.ToPtr(int32(1024)),
-		},
-		{
-			name:                "Invalid size",
-			containerLogMaxSize: "invalid",
-			expected:            nil,
-		},
-		{
-			name:                "Empty size",
-			containerLogMaxSize: "",
-			expected:            nil,
+			name: "NodeBootstrapping returns error",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101: fake bootstrap token in test fixture
+				ClusterName:                    "test-cluster",
+				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                           karpv1.ArchitectureAmd64,
+				SubscriptionID:                 "test-sub",
+				ClusterResourceGroup:           "test-cluster-rg",
+				ResourceGroup:                  "test-rg",
+				KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
+				KubernetesVersion:              "1.31.0",
+				ImageDistro:                    "aks-ubuntu-containerd-22.04-gen2",
+				IsWindows:                      false,
+				StorageProfile:                 consts.StorageProfileManagedDisks,
+				OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{
+					SimulateDown: true,
+				},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertContainerLogMaxSizeToMB(tt.containerLogMaxSize)
-			if tt.expected == nil && result != nil {
-				t.Errorf("Expected nil but got %v", *result)
-			} else if tt.expected != nil && result == nil {
-				t.Errorf("Expected %v but got nil", *tt.expected)
-			} else if tt.expected != nil && result != nil && *tt.expected != *result {
-				t.Errorf("Expected %v but got %v", *tt.expected, *result)
+			g := NewWithT(t)
+			// Setup context with options
+			ctx := options.ToContext(context.Background(), &options.Options{
+				VMMemoryOverheadPercent: 0.075,
+				KubeletIdentityClientID: "test-kubelet-client-id",
+			})
+
+			// Apply mocks/setup
+			if tt.setupMock != nil {
+				tt.setupMock(tt.bootstrapper)
+			}
+
+			// Call the function
+			customData, cse, err := tt.bootstrapper.GetCustomDataAndCSE(ctx)
+
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(customData).ToNot(BeEmpty())
+			g.Expect(cse).ToNot(BeEmpty())
+
+			// Verify that the bootstrap token template is not present in the output
+			// This ensures proper hydration or that no token template was needed
+			g.Expect(cse).ToNot(ContainSubstring("{{.TokenID}}.{{.TokenSecret}}"))
+
+			// Check CustomData has no token template
+			decodedCustomData, err := base64.StdEncoding.DecodeString(customData)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(string(decodedCustomData)).ToNot(ContainSubstring("{{.TokenID}}.{{.TokenSecret}}"))
+		})
+	}
+}
+
+func TestConstructProvisionValues(t *testing.T) {
+	tests := []struct {
+		name         string
+		bootstrapper *customscriptsbootstrap.ProvisionClientBootstrap
+		expectError  bool
+		validate     func(t *testing.T, values *models.ProvisionValues)
+	}{
+		{
+			name: "Basic Ubuntu 2004 configuration",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-ubuntu-fips-containerd-20.04-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
+				Labels:                    map[string]string{"key": "value"},
+				FIPSMode:                  &v1beta1.FIPSModeFIPS,
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile).ToNot(BeNil())
+				g.Expect(values.ProvisionHelperValues).ToNot(BeNil())
+
+				// Check Profile
+				profile := values.ProvisionProfile
+				g.Expect(*profile.Architecture).To(Equal("x64"))
+				g.Expect(*profile.OsType).To(Equal(models.OSTypeLinux))
+				g.Expect(*profile.OsSku).To(Equal(models.OSSKUUbuntu))
+				g.Expect(*profile.VMSize).To(Equal("Standard_D2s_v3"))
+				g.Expect(*profile.Distro).To(Equal("aks-ubuntu-fips-containerd-20.04-gen2"))
+				g.Expect(*profile.OrchestratorVersion).To(Equal("1.31.0"))
+				g.Expect(*profile.VnetSubnetID).To(Equal("/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"))
+				g.Expect(*profile.StorageProfile).To(Equal(consts.StorageProfileManagedDisks))
+				g.Expect(*profile.MaxPods).To(Equal(int32(110)))
+				g.Expect(*profile.Mode).To(Equal(models.AgentPoolModeUser))
+				g.Expect(*profile.EnableFIPS).To(BeTrue())
+
+				// Check Helper Values
+				helperValues := values.ProvisionHelperValues
+				g.Expect(*helperValues.SkuCPU).To(Equal(float64(2)))
+				g.Expect(*helperValues.SkuMemory).To(BeNumerically("~", float64(9), 0.1)) // Checking approximate value due to overhead calculation
+			},
+		},
+		{
+			name: "Basic Ubuntu 2204 configuration",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-ubuntu-containerd-22.04-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+				Labels:                    map[string]string{"key": "value"},
+				FIPSMode:                  &v1beta1.FIPSModeDisabled,
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile).ToNot(BeNil())
+				g.Expect(values.ProvisionHelperValues).ToNot(BeNil())
+
+				// Check Profile
+				profile := values.ProvisionProfile
+				g.Expect(*profile.Architecture).To(Equal("x64"))
+				g.Expect(*profile.OsType).To(Equal(models.OSTypeLinux))
+				g.Expect(*profile.OsSku).To(Equal(models.OSSKUUbuntu))
+				g.Expect(*profile.VMSize).To(Equal("Standard_D2s_v3"))
+				g.Expect(*profile.Distro).To(Equal("aks-ubuntu-containerd-22.04-gen2"))
+				g.Expect(*profile.OrchestratorVersion).To(Equal("1.31.0"))
+				g.Expect(*profile.VnetSubnetID).To(Equal("/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"))
+				g.Expect(*profile.StorageProfile).To(Equal(consts.StorageProfileManagedDisks))
+				g.Expect(*profile.MaxPods).To(Equal(int32(110)))
+				g.Expect(*profile.Mode).To(Equal(models.AgentPoolModeUser))
+				g.Expect(*profile.EnableFIPS).To(BeFalse())
+
+				// Check Helper Values
+				helperValues := values.ProvisionHelperValues
+				g.Expect(*helperValues.SkuCPU).To(Equal(float64(2)))
+				g.Expect(*helperValues.SkuMemory).To(BeNumerically("~", float64(9), 0.1)) // Checking approximate value due to overhead calculation
+			},
+		},
+		{
+			name: "Azure Linux configuration",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-azurelinux-v2-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+				Labels:                    map[string]string{"kubernetes.azure.com/mode": "system"}, // Test system mode
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile).ToNot(BeNil())
+
+				// Check Profile
+				profile := values.ProvisionProfile
+				g.Expect(*profile.OsSku).To(Equal(models.OSSKUAzureLinux))
+				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v2-gen2"))
+
+				// Check system mode
+				g.Expect(*profile.Mode).To(Equal(models.AgentPoolModeSystem))
+
+				// Check artifact streaming defaults to disabled for AzureLinux (nil ArtifactStreaming)
+				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeFalse())
+
+				// Check FIPS enablement (unset/nil FIPSMode is effectively false for now)
+				g.Expect(*profile.EnableFIPS).To(BeFalse())
+			},
+		},
+		{
+			name: "Azure Linux 3 configuration",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.32.0",
+				ImageDistro:               "aks-azurelinux-v3-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+				Labels:                    map[string]string{"key": "value"},
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile).ToNot(BeNil())
+
+				// Check Profile
+				profile := values.ProvisionProfile
+				g.Expect(*profile.OsSku).To(Equal(models.OSSKUAzureLinux))
+				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v3-gen2"))
+				g.Expect(*profile.Mode).To(Equal(models.AgentPoolModeUser))
+
+				// Check artifact streaming defaults to disabled for AzureLinux (nil ArtifactStreaming)
+				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeFalse())
+
+				// Check FIPS enablement (unset/nil FIPSMode is effectively false for now)
+				g.Expect(*profile.EnableFIPS).To(BeFalse())
+
+				// WorkloadRuntime is left unset for the default OCIContainer case, so non-Kata
+				// NodeClasses keep their existing wire payload.
+				g.Expect(profile.WorkloadRuntime).To(BeNil())
+			},
+		},
+		{
+			name: "Azure Linux 3 Kata (Pod Sandboxing) configuration",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.32.0",
+				ImageDistro:               "aks-azurelinux-v3-gen2-kata",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+				Labels:                    map[string]string{"key": "value"},
+				WorkloadRuntime:           lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation),
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v5",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				profile := values.ProvisionProfile
+				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v3-gen2-kata"))
+				// The RP enum value that installs the Kata host stack.
+				g.Expect(profile.WorkloadRuntime).ToNot(BeNil())
+				g.Expect(*profile.WorkloadRuntime).To(Equal(models.WorkloadRuntimeKataVMIsolation))
+			},
+		},
+		{
+			name: "Windows configuration - should error",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-windows",
+				IsWindows:                 true, // This should cause an error
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     "Windows",
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "GPU instance type",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:                  "test-cluster",
+				KubeletConfig:                &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                     "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                         karpv1.ArchitectureAmd64,
+				ResourceGroup:                "test-rg",
+				KubernetesVersion:            "1.31.0",
+				ImageDistro:                  "aks-ubuntu-containerd-22.04-gen2",
+				IsWindows:                    false,
+				StorageProfile:               consts.StorageProfileManagedDisks,
+				OSSKU:                        customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+				NodeBootstrappingProvider:    &fake.NodeBootstrappingAPI{},
+				GPUDriverInstallationEnabled: true,
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_NC6s_v3", // GPU instance
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("6"),
+						v1.ResourceMemory: resource.MustParse("112Gi"),
+						"nvidia.com/gpu":  resource.MustParse("1"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile.GpuProfile).ToNot(BeNil())
+				g.Expect(*values.ProvisionProfile.GpuProfile.InstallGPUDriver).To(BeTrue())
+				g.Expect(*values.ProvisionProfile.GpuProfile.DriverType).To(Equal(models.DriverTypeCUDA))
+			},
+		},
+		{
+			name: "GPU instance type with driver installation disabled",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:                  "test-cluster",
+				KubeletConfig:                &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                     "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                         karpv1.ArchitectureAmd64,
+				ResourceGroup:                "test-rg",
+				KubernetesVersion:            "1.31.0",
+				ImageDistro:                  "aks-ubuntu-containerd-22.04-gen2",
+				IsWindows:                    false,
+				StorageProfile:               consts.StorageProfileManagedDisks,
+				OSSKU:                        customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+				NodeBootstrappingProvider:    &fake.NodeBootstrappingAPI{},
+				GPUDriverInstallationEnabled: false,
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_NC6s_v3", // GPU instance
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("6"),
+						v1.ResourceMemory: resource.MustParse("112Gi"),
+						"nvidia.com/gpu":  resource.MustParse("1"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile.GpuProfile).ToNot(BeNil())
+				g.Expect(*values.ProvisionProfile.GpuProfile.InstallGPUDriver).To(BeFalse())
+				g.Expect(*values.ProvisionProfile.GpuProfile.DriverType).To(Equal(models.DriverTypeCUDA))
+			},
+		},
+		{
+			name: "ARM64 architecture",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureArm64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-ubuntu-arm64-containerd-22.04-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2ps_v5", // ARM64 instance
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				g.Expect(*values.ProvisionProfile.Architecture).To(Equal("Arm64"))
+
+				// Artifact streaming should be disabled for ARM64
+				g.Expect(*values.ProvisionProfile.ArtifactStreamingProfile.Enabled).To(BeFalse())
+			},
+		},
+		{
+			name: "ARM64 AzureLinux2 configuration",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureArm64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-azurelinux-v2-arm64-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2ps_v5", // ARM64 instance
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile).ToNot(BeNil())
+
+				// Check Profile
+				profile := values.ProvisionProfile
+				g.Expect(*profile.Architecture).To(Equal("Arm64"))
+				g.Expect(*profile.OsSku).To(Equal(models.OSSKUAzureLinux))
+				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v2-arm64-gen2"))
+
+				// Artifact streaming should be disabled for ARM64
+				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeFalse())
+			},
+		},
+		{
+			name: "ARM64 AzureLinux3 configuration",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureArm64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.32.0",
+				ImageDistro:               "aks-azurelinux-v3-arm64-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2ps_v5", // ARM64 instance
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile).ToNot(BeNil())
+
+				// Check Profile
+				profile := values.ProvisionProfile
+				g.Expect(*profile.Architecture).To(Equal("Arm64"))
+				g.Expect(*profile.OsSku).To(Equal(models.OSSKUAzureLinux))
+				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v3-arm64-gen2"))
+
+				// Artifact streaming should be disabled for ARM64
+				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeFalse())
+			},
+		},
+		{
+			name: "Unsupported image family - should error",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-unknown-distro",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     "UnsupportedFamily",
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "With custom kubelet config",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName: "test-cluster",
+				KubeletConfig: &bootstrap.KubeletConfiguration{
+					MaxPods: int32(110),
+					KubeletConfiguration: v1beta1.KubeletConfiguration{
+						CPUManagerPolicy:            lo.ToPtr("static"),
+						CPUCFSQuota:                 lo.ToPtr(true),
+						CPUCFSQuotaPeriod:           metav1.Duration{Duration: 100 * time.Millisecond},
+						TopologyManagerPolicy:       lo.ToPtr("single-numa-node"),
+						ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
+						ImageGCLowThresholdPercent:  lo.ToPtr(int32(75)),
+						ContainerLogMaxSize:         lo.ToPtr("100Mi"),
+						ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
+						PodPidsLimit:                lo.ToPtr(int64(1024)),
+						AllowedUnsafeSysctls:        []string{"kernel.msg*", "net.ipv4.route.min_pmtu"},
+						FailSwapOn:                  lo.ToPtr(false),
+					},
+				},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-ubuntu-containerd-22.04-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D8s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("8"),
+						v1.ResourceMemory: resource.MustParse("32Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				// Validate that CustomKubeletConfig was properly set
+				g.Expect(values.ProvisionProfile.CustomKubeletConfig).ToNot(BeNil())
+
+				// CPU config
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.CPUCfsQuota).To(BeTrue())
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.CPUCfsQuotaPeriod).To(Equal("100ms"))
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.CPUManagerPolicy).To(Equal("static"))
+
+				// Topology manager
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.TopologyManagerPolicy).To(Equal("single-numa-node"))
+
+				// Image GC
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.ImageGcHighThreshold).To(Equal(int32(85)))
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.ImageGcLowThreshold).To(Equal(int32(75)))
+
+				// Container logs
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.ContainerLogMaxSizeMB).To(Equal(int32(100)))
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.ContainerLogMaxFiles).To(Equal(int32(10)))
+
+				// Pod PIDs
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.PodMaxPids).To(Equal(int32(1024)))
+
+				// Sysctls
+				g.Expect(values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls).To(HaveLen(2))
+				g.Expect(values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls).To(ContainElement("kernel.msg*"))
+				g.Expect(values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls).To(ContainElement("net.ipv4.route.min_pmtu"))
+
+				// FailSwapOn
+				g.Expect(values.ProvisionProfile.CustomKubeletConfig.FailSwapOn).ToNot(BeNil())
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.FailSwapOn).To(BeFalse())
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			// Setup context with options
+			ctx := options.ToContext(context.Background(), &options.Options{
+				VMMemoryOverheadPercent: 0.075,
+				KubeletIdentityClientID: "test-kubelet-client-id",
+			})
+
+			// Call the function
+			values, err := tt.bootstrapper.ConstructProvisionValues(ctx)
+
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(values).ToNot(BeNil())
+
+			// Run custom validation if provided
+			if tt.validate != nil {
+				tt.validate(t, values)
 			}
 		})
 	}
 }
 
-func TestConvertPodMaxPids(t *testing.T) {
+func TestArtifactStreamingEnablement(t *testing.T) {
+	baseBootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101: fake bootstrap token in test fixture
+		ClusterName:                    "test-cluster",
+		KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+		SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+		SubscriptionID:                 "test-sub",
+		ClusterResourceGroup:           "test-cluster-rg",
+		ResourceGroup:                  "test-rg",
+		KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
+		IsWindows:                      false,
+		StorageProfile:                 consts.StorageProfileManagedDisks,
+		NodeBootstrappingProvider:      &fake.NodeBootstrappingAPI{},
+		InstanceType: &cloudprovider.InstanceType{
+			Name: "Standard_D2s_v3",
+			Capacity: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("2"),
+				v1.ResourceMemory: resource.MustParse("8Gi"),
+			},
+		},
+	}
+
 	tests := []struct {
-		name         string
-		podPidsLimit *int64
-		expected     *int32
+		name                             string
+		arch                             string
+		ossku                            string
+		kubernetesVersion                string
+		imageDistro                      string
+		artifactStreaming                *v1beta1.ArtifactStreaming
+		expectedArtifactStreamingEnabled bool
+		expectError                      bool
+		expectedErrorSubstring           string
 	}{
+		// Default behavior (artifactStreaming = nil) — disabled for all
 		{
-			name:         "Valid PIDs limit within int32 range",
-			podPidsLimit: lo.ToPtr(int64(1000)),
-			expected:     lo.ToPtr(int32(1000)),
+			name:                             "AMD64 default - Artifact streaming disabled",
+			arch:                             karpv1.ArchitectureAmd64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			kubernetesVersion:                "1.31.0",
+			imageDistro:                      "aks-ubuntu-containerd-22.04-gen2",
+			expectedArtifactStreamingEnabled: false,
 		},
 		{
-			name:         "PIDs limit exceeding int32 range",
-			podPidsLimit: lo.ToPtr(int64(math.MaxInt32) + int64(1)),
-			expected:     lo.ToPtr(int32(math.MaxInt32)),
+			name:                             "ARM64 default - Artifact streaming disabled",
+			arch:                             karpv1.ArchitectureArm64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			kubernetesVersion:                "1.31.0",
+			imageDistro:                      "aks-ubuntu-arm64-containerd-22.04-gen2",
+			expectedArtifactStreamingEnabled: false,
 		},
 		{
-			name:         "PIDs limit at int32 max value",
-			podPidsLimit: lo.ToPtr(int64(math.MaxInt32)),
-			expected:     lo.ToPtr(int32(math.MaxInt32)),
+			name:                   "AMD64 Custom OSSKU - error",
+			arch:                   karpv1.ArchitectureAmd64,
+			ossku:                  "CustomUnsupportedOSSKU",
+			kubernetesVersion:      "1.31.0",
+			imageDistro:            "aks-custom-distro",
+			expectError:            true,
+			expectedErrorSubstring: "unsupported OSSKU",
+		},
+		// Explicit artifact streaming values
+		{
+			name:                             "AMD64 - Artifact streaming explicitly enabled",
+			arch:                             karpv1.ArchitectureAmd64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			kubernetesVersion:                "1.31.0",
+			imageDistro:                      "aks-ubuntu-containerd-22.04-gen2",
+			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			expectedArtifactStreamingEnabled: true,
 		},
 		{
-			name:         "PIDs limit almost at int32 max value",
-			podPidsLimit: lo.ToPtr(int64(math.MaxInt32 - 1)),
-			expected:     lo.ToPtr(int32(math.MaxInt32 - 1)),
+			name:                             "AMD64 - Artifact streaming explicitly disabled",
+			arch:                             karpv1.ArchitectureAmd64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			kubernetesVersion:                "1.31.0",
+			imageDistro:                      "aks-ubuntu-containerd-22.04-gen2",
+			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+			expectedArtifactStreamingEnabled: false,
 		},
 		{
-			name:         "Nil PIDs limit",
-			podPidsLimit: nil,
-			expected:     nil,
+			name:                             "ARM64 - Artifact streaming explicitly enabled still disabled (unsupported)",
+			arch:                             karpv1.ArchitectureArm64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			kubernetesVersion:                "1.31.0",
+			imageDistro:                      "aks-ubuntu-arm64-containerd-22.04-gen2",
+			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			expectedArtifactStreamingEnabled: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertPodMaxPids(tt.podPidsLimit)
-			if tt.expected == nil && result != nil {
-				t.Errorf("Expected nil but got %v", *result)
-			} else if tt.expected != nil && result == nil {
-				t.Errorf("Expected %v but got nil", *tt.expected)
-			} else if tt.expected != nil && result != nil && *tt.expected != *result {
-				t.Errorf("Expected %v but got %v", *tt.expected, *result)
+			g := NewWithT(t)
+			// Create a copy of the base bootstrapper and modify for this test
+			bootstrapper := *baseBootstrapper
+			bootstrapper.Arch = tt.arch
+			bootstrapper.OSSKU = tt.ossku
+			bootstrapper.KubernetesVersion = tt.kubernetesVersion
+			bootstrapper.ImageDistro = tt.imageDistro
+			bootstrapper.ArtifactStreaming = tt.artifactStreaming
+
+			// Setup context with options
+			ctx := options.ToContext(context.Background(), &options.Options{
+				VMMemoryOverheadPercent: 0.075,
+				KubeletIdentityClientID: "test-kubelet-client-id",
+			})
+
+			values, err := bootstrapper.ConstructProvisionValues(ctx)
+
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.expectedErrorSubstring))
+				return
 			}
+
+			g.Expect(err).ToNot(HaveOccurred(), tt.name)
+			g.Expect(values).ToNot(BeNil(), "ProvisionValues should not be nil")
+			g.Expect(values.ProvisionProfile).ToNot(BeNil(), "ProvisionProfile should not be nil")
+			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile).ToNot(BeNil(), "ArtifactStreamingProfile should not be nil")
+			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile.Enabled).ToNot(BeNil(), "ArtifactStreamingProfile.Enabled should not be nil")
+
+			actualEnabled := *values.ProvisionProfile.ArtifactStreamingProfile.Enabled
+			g.Expect(actualEnabled).To(Equal(tt.expectedArtifactStreamingEnabled),
+				"Artifact streaming enablement mismatch: %s. Expected: %v, Actual: %v",
+				tt.name, tt.expectedArtifactStreamingEnabled, actualEnabled)
+		})
+	}
+}
+
+func TestFIPSEnablement(t *testing.T) {
+	baseBootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101: fake bootstrap token in test fixture
+		ClusterName:                    "test-cluster",
+		KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+		SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+		Arch:                           karpv1.ArchitectureAmd64,
+		SubscriptionID:                 "test-sub",
+		ClusterResourceGroup:           "test-cluster-rg",
+		ResourceGroup:                  "test-rg",
+		KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
+		IsWindows:                      false,
+		StorageProfile:                 consts.StorageProfileManagedDisks,
+		NodeBootstrappingProvider:      &fake.NodeBootstrappingAPI{},
+		InstanceType: &cloudprovider.InstanceType{
+			Name: "Standard_D2s_v3",
+			Capacity: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("2"),
+				v1.ResourceMemory: resource.MustParse("8Gi"),
+			},
+		},
+	}
+
+	tests := []struct {
+		name               string
+		ossku              string
+		kubernetesVersion  string
+		imageDistro        string
+		fipsMode           *v1beta1.FIPSMode
+		expectedEnableFIPS bool
+		description        string
+	}{
+		{
+			name:               "FIPSMode FIPS Ubuntu2004 - EnableFIPS true",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
+			kubernetesVersion:  "1.31.0",
+			imageDistro:        "aks-ubuntu-fips-containerd-20.04-gen2",
+			fipsMode:           &v1beta1.FIPSModeFIPS,
+			expectedEnableFIPS: true,
+			description:        "FIPS should be enabled for Ubuntu2004 with FIPSMode FIPS",
+		},
+		{
+			name:               "FIPSMode nil Ubuntu2204 - EnableFIPS false",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			kubernetesVersion:  "1.31.0",
+			imageDistro:        "aks-ubuntu-containerd-22.04-gen2",
+			fipsMode:           nil,
+			expectedEnableFIPS: false,
+			description:        "FIPS should be disabled for Ubuntu2204 with FIPSMode nil",
+		},
+		{
+			name:               "FIPSMode Disabled Ubuntu2204 - EnableFIPS false",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			kubernetesVersion:  "1.31.0",
+			imageDistro:        "aks-ubuntu-containerd-22.04-gen2",
+			fipsMode:           &v1beta1.FIPSModeDisabled,
+			expectedEnableFIPS: false,
+			description:        "FIPS should be disabled for Ubuntu2204 with FIPSMode Disabled",
+		},
+		{
+			name:               "FIPSMode FIPS AzureLinux2 - EnableFIPS true",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+			kubernetesVersion:  "1.31.0",
+			imageDistro:        "aks-azurelinux-v2-gen2",
+			fipsMode:           &v1beta1.FIPSModeFIPS,
+			expectedEnableFIPS: true,
+			description:        "FIPS should be enabled for AzureLinux2 with FIPSMode FIPS",
+		},
+		{
+			name:               "FIPSMode nil AzureLinux2 - EnableFIPS false",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+			kubernetesVersion:  "1.31.0",
+			imageDistro:        "aks-azurelinux-v2-gen2",
+			fipsMode:           nil,
+			expectedEnableFIPS: false,
+			description:        "FIPS should be disabled for AzureLinux2 with FIPSMode nil",
+		},
+		{
+			name:               "FIPSMode Disabled AzureLinux2 - EnableFIPS false",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+			kubernetesVersion:  "1.31.0",
+			imageDistro:        "aks-azurelinux-v2-gen2",
+			fipsMode:           &v1beta1.FIPSModeDisabled,
+			expectedEnableFIPS: false,
+			description:        "FIPS should be disabled for AzureLinux2 with FIPSMode Disabled",
+		},
+		{
+			name:               "FIPSMode FIPS AzureLinux3 - EnableFIPS true",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+			kubernetesVersion:  "1.32.0",
+			imageDistro:        "aks-azurelinux-v3-gen2",
+			fipsMode:           &v1beta1.FIPSModeFIPS,
+			expectedEnableFIPS: true,
+			description:        "FIPS should be enabled for AzureLinux3 with FIPSMode FIPS",
+		},
+		{
+			name:               "FIPSMode nil AzureLinux3 - EnableFIPS false",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+			kubernetesVersion:  "1.32.0",
+			imageDistro:        "aks-azurelinux-v3-gen2",
+			fipsMode:           nil,
+			expectedEnableFIPS: false,
+			description:        "FIPS should be disabled for AzureLinux3 with FIPSMode nil",
+		},
+		{
+			name:               "FIPSMode Disabled AzureLinux3 - EnableFIPS false",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+			kubernetesVersion:  "1.32.0",
+			imageDistro:        "aks-azurelinux-v3-gen2",
+			fipsMode:           &v1beta1.FIPSModeDisabled,
+			expectedEnableFIPS: false,
+			description:        "FIPS should be disabled for AzureLinux3 with FIPSMode Disabled",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			// Create a copy of the base bootstrapper and modify for this test
+			bootstrapper := *baseBootstrapper
+			bootstrapper.OSSKU = tt.ossku
+			bootstrapper.KubernetesVersion = tt.kubernetesVersion
+			bootstrapper.ImageDistro = tt.imageDistro
+			bootstrapper.FIPSMode = tt.fipsMode
+
+			// Setup context with options
+			ctx := options.ToContext(context.Background(), &options.Options{
+				VMMemoryOverheadPercent: 0.075,
+				KubeletIdentityClientID: "test-kubelet-client-id",
+			})
+
+			values, err := bootstrapper.ConstructProvisionValues(ctx)
+
+			// For all cases, expect success
+			g.Expect(err).ToNot(HaveOccurred(), tt.description)
+			g.Expect(values).ToNot(BeNil(), "ProvisionValues should not be nil")
+			g.Expect(values.ProvisionProfile).ToNot(BeNil(), "ProvisionProfile should not be nil")
+
+			g.Expect(values.ProvisionProfile.EnableFIPS).To(Equal(lo.ToPtr(tt.expectedEnableFIPS)),
+				"FIPS enablement mismatch: %s. Expected: %t, Actual: %t",
+				tt.description, tt.expectedEnableFIPS, *values.ProvisionProfile.EnableFIPS)
 		})
 	}
 }

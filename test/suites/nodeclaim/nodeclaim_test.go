@@ -17,7 +17,8 @@ limitations under the License.
 package nodeclaim_test
 
 import (
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
@@ -34,26 +35,24 @@ var _ = Describe("StandaloneNodeClaim", func() {
 		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 			Spec: karpv1.NodeClaimSpec{
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1alpha2.LabelSKUFamily,
+					{Key: v1beta1.LabelSKUFamily,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"D"},
-					}},
-					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      karpv1.CapacityTypeLabelKey,
+						Values:   []string{"D"}},
+					{Key: karpv1.CapacityTypeLabelKey,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{karpv1.CapacityTypeOnDemand},
-					}},
+						Values:   []string{karpv1.CapacityTypeOnDemand}},
 				},
 				NodeClassRef: &karpv1.NodeClassReference{
-					Name: nodeClass.Name,
+					Group: object.GVK(nodeClass).Group,
+					Kind:  object.GVK(nodeClass).Kind,
+					Name:  nodeClass.Name,
 				},
 			},
 		})
 		env.ExpectCreated(nodeClass, nodeClaim)
+		nodeClaim = env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
-		nodeClaim = env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
-		Expect(node.Labels).To(HaveKeyWithValue(v1alpha2.LabelSKUFamily, "D"))
+		Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelSKUFamily, "D"))
 		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 	})
 	It("should create a standard NodeClaim based on resource requests", func() {
@@ -66,7 +65,9 @@ var _ = Describe("StandaloneNodeClaim", func() {
 					},
 				},
 				NodeClassRef: &karpv1.NodeClassReference{
-					Name: nodeClass.Name,
+					Group: object.GVK(nodeClass).Group,
+					Kind:  object.GVK(nodeClass).Kind,
+					Name:  nodeClass.Name,
 				},
 			},
 		})
@@ -100,7 +101,9 @@ var _ = Describe("StandaloneNodeClaim", func() {
 					},
 				},
 				NodeClassRef: &karpv1.NodeClassReference{
-					Name: nodeClass.Name,
+					Group: object.GVK(nodeClass).Group,
+					Kind:  object.GVK(nodeClass).Kind,
+					Name:  nodeClass.Name,
 				},
 			},
 		})
@@ -127,19 +130,17 @@ var _ = Describe("StandaloneNodeClaim", func() {
 		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 			Spec: karpv1.NodeClaimSpec{
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1alpha2.LabelSKUFamily,
+					{Key: v1beta1.LabelSKUFamily,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"D"},
-					}},
-					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      karpv1.CapacityTypeLabelKey,
+						Values:   []string{"D"}},
+					{Key: karpv1.CapacityTypeLabelKey,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{karpv1.CapacityTypeOnDemand},
-					}},
+						Values:   []string{karpv1.CapacityTypeOnDemand}},
 				},
 				NodeClassRef: &karpv1.NodeClassReference{
-					Name: nodeClass.Name,
+					Group: object.GVK(nodeClass).Group,
+					Kind:  object.GVK(nodeClass).Kind,
+					Name:  nodeClass.Name,
 				},
 			},
 		})

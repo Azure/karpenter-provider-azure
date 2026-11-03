@@ -22,6 +22,7 @@ package models
 
 import (
 	"context"
+	stderrors "errors"
 
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
@@ -74,11 +75,15 @@ func (m *CustomLinuxOSConfig) validateSysctls(formats strfmt.Registry) error {
 
 	if m.Sysctls != nil {
 		if err := m.Sysctls.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("sysctls")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("sysctls")
 			}
+
 			return err
 		}
 	}
@@ -93,11 +98,15 @@ func (m *CustomLinuxOSConfig) validateUlimits(formats strfmt.Registry) error {
 
 	if m.Ulimits != nil {
 		if err := m.Ulimits.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("ulimits")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("ulimits")
 			}
+
 			return err
 		}
 	}
@@ -132,11 +141,15 @@ func (m *CustomLinuxOSConfig) contextValidateSysctls(ctx context.Context, format
 		}
 
 		if err := m.Sysctls.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("sysctls")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("sysctls")
 			}
+
 			return err
 		}
 	}
@@ -153,11 +166,15 @@ func (m *CustomLinuxOSConfig) contextValidateUlimits(ctx context.Context, format
 		}
 
 		if err := m.Ulimits.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("ulimits")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("ulimits")
 			}
+
 			return err
 		}
 	}

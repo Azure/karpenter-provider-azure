@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -39,7 +40,8 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	nodeutils "sigs.k8s.io/karpenter/pkg/utils/node"
 
-	v1alpha2 "github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	v1beta1 "github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
@@ -48,7 +50,7 @@ import (
 )
 
 var env *azure.Environment
-var nodeClass *v1alpha2.AKSNodeClass
+var nodeClass *v1beta1.AKSNodeClass
 var nodePool *karpv1.NodePool
 
 func TestChaos(t *testing.T) {
@@ -61,7 +63,7 @@ func TestChaos(t *testing.T) {
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()
-	nodeClass = env.DefaultAKSNodeClass()
+	nodeClass = test.AKSNodeClass()
 	nodePool = env.DefaultNodePool(nodeClass)
 })
 var _ = AfterEach(func() { env.Cleanup() })
@@ -74,11 +76,9 @@ var _ = Describe("Chaos", func() {
 			defer cancel()
 
 			nodePool = coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{karpv1.CapacityTypeSpot},
-				},
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeSpot},
 			})
 			nodePool.Spec.Disruption.ConsolidationPolicy = karpv1.ConsolidationPolicyWhenEmptyOrUnderutilized
 			nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
@@ -87,7 +87,6 @@ var _ = Describe("Chaos", func() {
 			dep := coretest.Deployment(coretest.DeploymentOptions{
 				Replicas: int32(numPods),
 				PodOptions: coretest.PodOptions{
-					Image: "mcr.microsoft.com/oss/kubernetes/pause:3.6",
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{"app": "my-app"},
 					},
@@ -168,8 +167,7 @@ func (t *taintAdder) Reconcile(ctx context.Context, req reconcile.Request) (reco
 func (t *taintAdder) Builder(mgr manager.Manager) *controllerruntime.Builder {
 	return controllerruntime.NewControllerManagedBy(mgr).
 		For(&corev1.Node{}).
-		// TODO: restore after controller-runtime version update
-		// WithOptions(controller.Options{SkipNameValidation: lo.ToPtr(true)}).
+		WithOptions(controller.Options{SkipNameValidation: lo.ToPtr(true)}).
 		WithEventFilter(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 			node := obj.(*corev1.Node)
 			if _, ok := node.Labels[coretest.DiscoveryLabel]; !ok {

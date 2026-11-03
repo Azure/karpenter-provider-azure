@@ -21,6 +21,9 @@ import (
 
 	"go.uber.org/multierr"
 	"k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -31,34 +34,71 @@ import (
 
 	"sigs.k8s.io/karpenter/pkg/utils/result"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/awslabs/operatorpkg/reasonable"
+	"github.com/samber/lo"
 )
 
-type nodeClassStatusReconciler interface {
-	Reconcile(context.Context, *v1alpha2.AKSNodeClass) (reconcile.Result, error)
+type reconciler interface {
+	Reconcile(context.Context, *v1beta1.AKSNodeClass) (reconcile.Result, error)
 }
 
 type Controller struct {
 	kubeClient client.Client
 
-	readiness *Readiness //TODO : Remove this when we have sub status conditions
+	kubernetesVersion        *KubernetesVersionReconciler
+	nodeImage                *NodeImageReconciler
+	subnet                   *SubnetReconciler
+	validation               *StaticValidationReconciler
+	localDNS                 *LocalDNSReconciler
+	capacityReservationGroup *CapacityReservationGroupReconciler
 }
 
-func NewController(kubeClient client.Client) *Controller {
+// TODO: Consider splitting this (and other similar constructors)
+// into some kind of builder struct to make the calling code easier to read.
+func NewController(
+	kubeClient client.Client,
+	subscriptionID string,
+	location string,
+	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
+	nodeImageProvider imagefamily.NodeImageProvider,
+	inClusterKubernetesInterface kubernetes.Interface,
+	managedKubernetesInterface kubernetes.Interface,
+	managedDynamicInterface dynamic.Interface,
+	subnetClient azapi.SubnetsAPI,
+	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
+	parsedDiskEncryptionSetID *arm.ResourceID,
+	networkPolicy string,
+	networkPlugin string,
+	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI,
+	capacityReservationsClient azapi.CapacityReservationsAPI,
+	instanceTypes instanceTypeLister,
+	unavailableOfferings capacityReservationGroupOfferingsInvalidator,
+	systemNamespace string,
+) *Controller {
 	return &Controller{
+
 		kubeClient: kubeClient,
 
-		readiness: &Readiness{},
+		kubernetesVersion:        NewKubernetesVersionReconciler(kubernetesVersionProvider),
+		nodeImage:                NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface, systemNamespace),
+		subnet:                   NewSubnetReconciler(subnetClient),
+		validation:               NewStaticValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
+		localDNS:                 NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),
+		capacityReservationGroup: NewCapacityReservationGroupReconciler(subscriptionID, location, capacityReservationGroupsClient, capacityReservationsClient, instanceTypes, unavailableOfferings),
 	}
 }
 
-func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
+func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = injection.WithControllerName(ctx, "nodeclass.status")
 
-	if !controllerutil.ContainsFinalizer(nodeClass, v1alpha2.TerminationFinalizer) {
+	if !controllerutil.ContainsFinalizer(nodeClass, v1beta1.TerminationFinalizer) {
 		stored := nodeClass.DeepCopy()
-		controllerutil.AddFinalizer(nodeClass, v1alpha2.TerminationFinalizer)
+		controllerutil.AddFinalizer(nodeClass, v1beta1.TerminationFinalizer)
 		if err := c.kubeClient.Patch(ctx, nodeClass, client.MergeFrom(stored)); err != nil {
 			return reconcile.Result{}, err
 		}
@@ -67,16 +107,26 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 
 	var results []reconcile.Result
 	var errs error
-	for _, reconciler := range []nodeClassStatusReconciler{
-		c.readiness,
-	} {
+	reconcilers := []reconciler{
+		c.kubernetesVersion,
+		c.nodeImage,
+		c.subnet,
+		c.validation,
+		c.localDNS,
+		c.capacityReservationGroup,
+	}
+	for _, reconciler := range reconcilers {
 		res, err := reconciler.Reconcile(ctx, nodeClass)
 		errs = multierr.Append(errs, err)
 		results = append(results, res)
 	}
 
 	if !equality.Semantic.DeepEqual(stored, nodeClass) {
-		if err := c.kubeClient.Status().Patch(ctx, nodeClass, client.MergeFrom(stored)); err != nil {
+		snapshotRecentlyUsed(stored, nodeClass)
+		// We use client.MergeFromWithOptimisticLock because patching a list with a JSON merge patch
+		// can cause races due to the fact that it fully replaces the list on a change
+		// Here, we are updating the status condition list
+		if err := c.kubeClient.Status().Patch(ctx, nodeClass, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
 			errs = multierr.Append(errs, client.IgnoreNotFound(err))
 		}
 	}
@@ -89,10 +139,59 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named("nodeclass.status").
-		For(&v1alpha2.AKSNodeClass{}).
+		For(&v1beta1.AKSNodeClass{}).
 		WithOptions(controller.Options{
-			RateLimiter:             reasonable.RateLimiter(),
+			RateLimiter: reasonable.RateLimiter(),
+			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
+			// Comments thread discussing this: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
 			MaxConcurrentReconciles: 10,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
+}
+
+func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
+	if !oldNodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() ||
+		!oldNodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue() {
+		return
+	}
+
+	if oldNodeClass.Status.KubernetesVersion == nil {
+		return
+	}
+
+	oldImages := oldNodeClass.Status.Images
+	newImages := newNodeClass.Status.Images
+
+	if len(oldImages) == 0 {
+		return
+	}
+
+	oldSuffix := parseVersion(oldImages[0].ID)
+
+	var newSuffix string
+	if len(newImages) > 0 {
+		newSuffix = parseVersion(newImages[0].ID)
+	}
+
+	oldK8sVer := lo.FromPtr(oldNodeClass.Status.KubernetesVersion)
+	newK8sVer := lo.FromPtr(newNodeClass.Status.KubernetesVersion)
+
+	// Snapshot the previous ready pair even when the new pair is not ready. On the next
+	// reconcile, the partially updated status becomes the old state and can no longer
+	// provide the last verified pair.
+	if newSuffix != oldSuffix || newK8sVer != oldK8sVer {
+		if newNodeClass.Status.ObservedVersions == nil {
+			newNodeClass.Status.ObservedVersions = &v1beta1.ObservedVersions{}
+		}
+
+		now := metav1.Now()
+		// For now, we only keep the most recent version in the RecentlyUsedVersions list.
+		newNodeClass.Status.ObservedVersions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
+			{
+				NodeImageVersion:  &oldSuffix,
+				TimeUsed:          &now,
+				KubernetesVersion: oldNodeClass.Status.KubernetesVersion,
+			},
+		}
+	}
 }

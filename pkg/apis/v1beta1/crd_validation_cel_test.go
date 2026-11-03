@@ -1,0 +1,2054 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package v1beta1_test
+
+import (
+	"strings"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Pallinder/go-randomdata"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/test"
+)
+
+var _ = AfterEach(func() {
+	// Clean up all AKSNodeClasses created during tests
+	nodeClassList := &v1beta1.AKSNodeClassList{}
+	if err := env.Client.List(ctx, nodeClassList); err == nil {
+		for i := range nodeClassList.Items {
+			_ = env.Client.Delete(ctx, &nodeClassList.Items[i])
+		}
+	}
+})
+
+var _ = Describe("CEL/Validation", func() {
+	var nodePool *karpv1.NodePool
+
+	// Helper function to create a complete LocalDNSZoneOverride with all required fields
+	// Use forwardToVnetDNS=true for root zone "." in vnetDNSOverrides and for external domains
+	// Use forwardToVnetDNS=false only for cluster.local zone
+	createCompleteLocalDNSZoneOverride := func(zone string, forwardToVnetDNS bool) v1beta1.LocalDNSZoneOverride {
+		forwardDest := v1beta1.LocalDNSForwardDestinationClusterCoreDNS
+		if forwardToVnetDNS {
+			forwardDest = v1beta1.LocalDNSForwardDestinationVnetDNS
+		}
+		return v1beta1.LocalDNSZoneOverride{
+			Zone:               zone,
+			QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+			Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+			ForwardDestination: forwardDest,
+			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+			MaxConcurrent:      lo.ToPtr(int32(100)),
+			CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+			ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+			ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+		}
+	}
+
+	BeforeEach(func() {
+		if env.Version.Minor() < 25 {
+			Skip("CEL Validation is for 1.25>")
+		}
+		nodePool = &karpv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+			Spec: karpv1.NodePoolSpec{
+				Template: karpv1.NodeClaimTemplate{
+					Spec: karpv1.NodeClaimTemplateSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
+							Group: "karpenter.azure.com",
+							Kind:  "AKSNodeClass",
+							Name:  "default",
+						},
+						Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+							{
+								Key:      karpv1.CapacityTypeLabelKey,
+								Operator: corev1.NodeSelectorOpExists,
+							},
+						},
+					},
+				},
+			},
+		}
+	})
+	Context("Kubelet overrides", func() {
+		DescribeTable("should validate kubeReserved", func(kubeReserved *v1beta1.KubeReserved, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{KubeReserved: kubeReserved},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid cpu and memory", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))}, true),
+			Entry("maximum int32 values", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(2147483647)), MemoryMB: lo.ToPtr(int32(2147483647))}, true),
+			Entry("cpu below minimum", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(139))}, false),
+			Entry("cpu at minimum", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(140))}, true),
+			Entry("memory below minimum", &v1beta1.KubeReserved{MemoryMB: lo.ToPtr(int32(749))}, false),
+			Entry("memory at minimum", &v1beta1.KubeReserved{MemoryMB: lo.ToPtr(int32(750))}, true),
+			Entry("zero cpu", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(0))}, false),
+			Entry("negative memory", &v1beta1.KubeReserved{MemoryMB: lo.ToPtr(int32(-1))}, false),
+		)
+
+		It("should reject kubeReserved values above int32 before typed decoding", func() {
+			nodeClass := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "karpenter.azure.com/v1beta1",
+				"kind":       "AKSNodeClass",
+				"metadata":   map[string]any{"name": strings.ToLower(randomdata.SillyName())},
+				"spec": map[string]any{"kubelet": map[string]any{
+					"kubeReserved": map[string]any{"cpuMillicores": int64(2147483648)},
+				}},
+			}}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		DescribeTable("should validate evictionHard", func(evictionHard *v1beta1.EvictionThreshold, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{EvictionHard: evictionHard},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid supported signals", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi"), NodeFsAvailable: lo.ToPtr("12%"), NodeFsInodesFree: lo.ToPtr("100000")}, true),
+			Entry("valid percentage boundary", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("100%")}, true),
+			Entry("invalid memory quantity", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("invalid")}, false),
+			Entry("node filesystem percentage above 100", &v1beta1.EvictionThreshold{NodeFsAvailable: lo.ToPtr("101%")}, false),
+			Entry("inode byte quantity", &v1beta1.EvictionThreshold{NodeFsInodesFree: lo.ToPtr("100Mi")}, false),
+		)
+
+		DescribeTable("should validate evictionSoft", func(evictionSoft *v1beta1.EvictionThreshold, gracePeriods *v1beta1.EvictionSoftGracePeriod, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{EvictionSoft: evictionSoft, EvictionSoftGracePeriod: gracePeriods},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid supported signals", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi"), NodeFsAvailable: lo.ToPtr("15%")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s")), NodeFsAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("2m"))}, true),
+			Entry("invalid quantity", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("invalid")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))}, false),
+			Entry("duration below minimum", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("1%")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("29s"))}, false),
+		)
+
+		It("should preserve supported fields", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{
+					KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(750))},
+					EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
+					EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))},
+					EvictionMaxPodGracePeriod: lo.ToPtr(int32(60)),
+				}},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			persisted := &v1beta1.AKSNodeClass{}
+			Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), persisted)).To(Succeed())
+			Expect(persisted.Spec.Kubelet.KubeReserved.CPUMillicores).To(Equal(lo.ToPtr(int32(250))))
+		})
+
+		It("should reject mismatched soft eviction and grace period signals", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{
+					EvictionSoft:            &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
+					EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{NodeFsAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))},
+				}},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		It("should reject malformed grace periods before typed decoding", func() {
+			nodeClass := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "karpenter.azure.com/v1beta1",
+				"kind":       "AKSNodeClass",
+				"metadata":   map[string]any{"name": strings.ToLower(randomdata.SillyName())},
+				"spec": map[string]any{"kubelet": map[string]any{
+					"evictionSoft":            map[string]any{"memoryAvailable": "500Mi"},
+					"evictionSoftGracePeriod": map[string]any{"memoryAvailable": "not-a-duration"},
+				}},
+			}}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+	Context("CapacityReservation", func() {
+		DescribeTable("Should only accept a valid CapacityReservation GroupID", func(crgID string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(crgID)},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid CapacityReservation GroupID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg", true),
+			// ARM returns resource IDs with inconsistent casing, so the pattern must be case-insensitive.
+			Entry("uppercase segments", "/SUBSCRIPTIONS/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/RGNAME/PROVIDERS/MICROSOFT.COMPUTE/CAPACITYRESERVATIONGROUPS/CRG", true),
+			Entry("mixed-case resource group and group name", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/MyResourceGroup/providers/Microsoft.Compute/capacityReservationGroups/MyGroup", true),
+			Entry("resource group with parentheses", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/contains.(parentheses)/providers/Microsoft.Compute/capacityReservationGroups/crg", true),
+			Entry("wrong provider namespace", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/capacityReservationGroups/crg", false),
+			Entry("wrong resource type", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/diskEncryptionSets/des", false),
+			Entry("child capacity reservation rather than the group", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg/capacityReservations/cr", false),
+			Entry("missing resourceGroups segment", "/subscriptions/12345678-1234-1234-1234-123456789012/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg", false),
+			Entry("resource group ending with a dot", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/ends.with.dot./providers/Microsoft.Compute/capacityReservationGroups/crg", false),
+			Entry("not a resource ID", "crg", false),
+			Entry("empty group ID", "", false),
+		)
+	})
+	Context("NodePublicIP", func() {
+		const prefixID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/publicIPPrefixes/prefix"
+		routingPreferenceTag := v1beta1.IPTag{IPTagType: "RoutingPreference", Tag: "Internet"}
+
+		DescribeTable("Should only accept a valid nodePublicIP configuration", func(nodePublicIP *v1beta1.NodePublicIP, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					NodePublicIP: nodePublicIP,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("omitted", nil, true),
+			Entry("empty", &v1beta1.NodePublicIP{}, true),
+			Entry("enabled false", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false)}, true),
+			Entry("enabled true without prefixes", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}, true),
+			Entry("enabled true with one prefix", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}}, true),
+			Entry("prefixes with enabled omitted", &v1beta1.NodePublicIP{PrefixIDs: []string{prefixID}}, false),
+			Entry("prefixes with enabled false", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false), PrefixIDs: []string{prefixID}}, false),
+			Entry("two prefixes", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID, prefixID + "2"}}, false),
+			Entry("one IP tag with enabled true", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{routingPreferenceTag}}, true),
+			Entry("two IP tags with enabled true", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{routingPreferenceTag, {IPTagType: "FirstPartyUsage", Tag: "/Unprivileged"}}}, true),
+			Entry("IP tags with enabled omitted", &v1beta1.NodePublicIP{IPTags: []v1beta1.IPTag{routingPreferenceTag}}, false),
+			Entry("IP tags with enabled false", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(false), IPTags: []v1beta1.IPTag{routingPreferenceTag}}, false),
+			Entry("IP tags with a prefix", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}, IPTags: []v1beta1.IPTag{routingPreferenceTag}}, false),
+			Entry("empty ipTagType", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "", Tag: "Internet"}}}, false),
+			Entry("empty tag", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: ""}}}, false),
+			Entry("256-character tag", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: strings.Repeat("a", 256)}}}, true),
+			Entry("257-character tag", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: strings.Repeat("a", 257)}}}, false),
+			Entry("duplicate IP tag", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{routingPreferenceTag, routingPreferenceTag}}, false),
+			Entry("five IP tags", &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), IPTags: []v1beta1.IPTag{
+				{IPTagType: "A", Tag: "1"}, {IPTagType: "A", Tag: "2"}, {IPTagType: "A", Tag: "3"}, {IPTagType: "A", Tag: "4"}, {IPTagType: "A", Tag: "5"},
+			}}, false),
+		)
+		DescribeTable("Should only accept a valid public IP prefix ID", func(prefixID string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					NodePublicIP: &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true), PrefixIDs: []string{prefixID}},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid prefix ID", prefixID, true),
+			// ARM returns resource IDs with inconsistent casing, so the pattern must be case-insensitive.
+			Entry("uppercase segments", strings.ToUpper(prefixID), true),
+			Entry("public IP address rather than prefix", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/publicIPAddresses/pip", false),
+			Entry("wrong provider namespace", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/publicIPPrefixes/prefix", false),
+			Entry("child resource of the prefix", prefixID+"/child/name", false),
+			Entry("not a resource ID", "prefix", false),
+			Entry("empty prefix ID", "", false),
+		)
+	})
+	Context("VnetSubnetID", func() {
+		DescribeTable("Should only accept valid VnetSubnetID", func(vnetSubnetID string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					VNETSubnetID: &vnetSubnetID,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid VnetSubnetID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", true),
+			Entry("should allow mixed casing in all the names", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgName/providers/Microsoft.Network/virtualNetworks/vnetName/subnets/subnetName", true),
+			Entry("valid format with different subnet name", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/virtualNetworks/vnet/subnets/anotherSubnet", true),
+			Entry("valid format with uppercase subnet name", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/virtualNetworks/vnet/subnets/SUBNET", true),
+			Entry("valid format with mixed-case resource group and subnet name", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/MyResourceGroup/providers/Microsoft.Network/virtualNetworks/MyVirtualNetwork/subnets/MySubnet", true),
+			Entry("missing resourceGroups in path", "/subscriptions/12345678-1234-1234-1234-123456789012/rgname/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", false),
+			Entry("invalid provider in path", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Storage/virtualNetworks/vnet/subnets/subnet", false),
+			Entry("missing virtualNetworks in path", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/subnets/subnet", false),
+			Entry("valid VnetSubnetID at max length", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/"+strings.Repeat("a", 63)+"/providers/Microsoft.Network/virtualNetworks/"+strings.Repeat("b", 63)+"/subnets/"+strings.Repeat("c", 63), true),
+			Entry("valid resource group name 'my-resource_group'", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-resource_group/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", true),
+			Entry("valid resource group name starting with dot '.starting.with.dot'", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/.starting.with.dot/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", true),
+			Entry("valid resource group name ending with hyphen 'ends-with-hyphen-'", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/ends-with-hyphen-/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", true),
+			Entry("valid resource group name with parentheses 'contains.(parentheses)'", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/contains.(parentheses)/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", true),
+			Entry("valid resource group name 'valid.name-with-multiple.characters'", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/valid.name-with-multiple.characters/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", true),
+			Entry("invalid resource group name ending with dot 'ends.with.dot.'", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/ends.with.dot./providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", false),
+			Entry("invalid resource group name with invalid character 'invalid#character'", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/invalid#character/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", false),
+			Entry("invalid resource group name with unsupported chars 'name@with*unsupported&chars'", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/name@with*unsupported&chars/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", false),
+		)
+	})
+
+	Context("ImageFamily", func() {
+		It("should reject invalid ImageFamily", func() {
+			invalidImageFamily := "123"
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily: &invalidImageFamily,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+
+	Context("Versions", func() {
+		DescribeTable("should require kubernetesVersion when nodeImageVersion is set", func(kubernetesVersion, nodeImageVersion *string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Versions: &v1beta1.Versions{
+						KubernetesVersion: kubernetesVersion,
+						NodeImageVersion:  nodeImageVersion,
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("should accept omitted versions", nil, nil, true),
+			Entry("should accept kubernetesVersion without nodeImageVersion", lo.ToPtr("1.31.0"), nil, true),
+			Entry("should reject nodeImageVersion without kubernetesVersion", nil, lo.ToPtr("202501.01.0"), false),
+			Entry("should accept nodeImageVersion with kubernetesVersion", lo.ToPtr("1.31.0"), lo.ToPtr("202501.01.0"), true),
+		)
+	})
+
+	Context("OSDiskType", func() {
+		It("should accept Managed OSDiskType", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					OSDiskType: lo.ToPtr(v1beta1.OSDiskTypeManaged),
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept omitted OSDiskType", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{
+					// OSDiskType is nil - should be accepted
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			Expect(nodeClass.Spec.OSDiskType).To(BeNil())
+		})
+
+		It("should reject invalid OSDiskType", func() {
+			invalidOSDiskType := v1beta1.OSDiskType("asdf")
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					OSDiskType: &invalidOSDiskType,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+
+	Context("FIPSMode", func() {
+		It("should reject invalid FIPSMode", func() {
+			invalidFIPSMode := v1beta1.FIPSMode("123")
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					FIPSMode: &invalidFIPSMode,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+
+	Context("ArtifactStreaming", func() {
+		It("should accept when ArtifactStreaming is completely omitted", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{
+					// ArtifactStreaming is nil - should be accepted
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept ArtifactStreaming with enabled true", func() {
+			enabled := true
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ArtifactStreaming: &v1beta1.ArtifactStreaming{
+						Enabled: &enabled,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept ArtifactStreaming with enabled false", func() {
+			disabled := false
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ArtifactStreaming: &v1beta1.ArtifactStreaming{
+						Enabled: &disabled,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+
+	Context("LocalDNS", func() {
+		It("should accept when LocalDNS is completely omitted", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{
+					// LocalDNS is nil - should be accepted
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept complete LocalDNS configuration with all required fields", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode: v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", true),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
+						},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", false),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		DescribeTable("should validate LocalDNSMode", func(mode v1beta1.LocalDNSMode, expectedErr string) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode:             mode,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			}
+		},
+			Entry("valid mode: Preferred", v1beta1.LocalDNSModePreferred, ""),
+			Entry("valid mode: Required", v1beta1.LocalDNSModeRequired, ""),
+			Entry("valid mode: Disabled", v1beta1.LocalDNSModeDisabled, ""),
+			Entry("invalid mode: invalid-string", v1beta1.LocalDNSMode("invalid-string"), "spec.localDNS.mode"),
+			Entry("invalid mode: empty", v1beta1.LocalDNSMode(""), "spec.localDNS.mode"),
+		)
+
+		DescribeTable("should validate LocalDNSQueryLogging", func(queryLogging v1beta1.LocalDNSQueryLogging, expectedErr string) {
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
+			overrideConfig.QueryLogging = queryLogging
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode: v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", true),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
+							overrideConfig,
+						},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", false),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
+						},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			}
+		},
+			Entry("valid query logging: Error", v1beta1.LocalDNSQueryLoggingError, ""),
+			Entry("valid query logging: Log", v1beta1.LocalDNSQueryLoggingLog, ""),
+			Entry("invalid query logging: invalid-string", v1beta1.LocalDNSQueryLogging("invalid-string"), "queryLogging"),
+			Entry("invalid query logging: empty", v1beta1.LocalDNSQueryLogging(""), "queryLogging"),
+		)
+
+		DescribeTable("should validate LocalDNSProtocol", func(protocol v1beta1.LocalDNSProtocol, expectedErr string) {
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
+			overrideConfig.Protocol = protocol
+			// When using ForceTCP, we can't use ServeStaleVerify, so use Immediate instead
+			if protocol == v1beta1.LocalDNSProtocolForceTCP {
+				overrideConfig.ServeStale = v1beta1.LocalDNSServeStaleImmediate
+			}
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode:             v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			}
+		},
+			Entry("valid protocol: PreferUDP", v1beta1.LocalDNSProtocolPreferUDP, ""),
+			Entry("valid protocol: ForceTCP", v1beta1.LocalDNSProtocolForceTCP, ""),
+			Entry("invalid protocol: invalid-string", v1beta1.LocalDNSProtocol("invalid-string"), "protocol"),
+			Entry("invalid protocol: empty", v1beta1.LocalDNSProtocol(""), "protocol"),
+		)
+
+		DescribeTable("should validate LocalDNSForwardDestination", func(forwardDestination v1beta1.LocalDNSForwardDestination, expectedErr string) {
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
+			overrideConfig.ForwardDestination = forwardDestination
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode:             v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			}
+		},
+			Entry("invalid forward destination: ClusterCoreDNS for external domain", v1beta1.LocalDNSForwardDestinationClusterCoreDNS, "external domains cannot be forwarded to ClusterCoreDNS"),
+			Entry("valid forward destination: VnetDNS", v1beta1.LocalDNSForwardDestinationVnetDNS, ""),
+			Entry("invalid forward destination: invalid-string", v1beta1.LocalDNSForwardDestination("invalid-string"), "forwardDestination"),
+			Entry("invalid forward destination: empty", v1beta1.LocalDNSForwardDestination(""), "forwardDestination"),
+		)
+
+		DescribeTable("should validate LocalDNSForwardPolicy", func(forwardPolicy v1beta1.LocalDNSForwardPolicy, expectedErr string) {
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
+			overrideConfig.ForwardPolicy = forwardPolicy
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode:             v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			}
+		},
+			Entry("valid forward policy: Sequential", v1beta1.LocalDNSForwardPolicySequential, ""),
+			Entry("valid forward policy: RoundRobin", v1beta1.LocalDNSForwardPolicyRoundRobin, ""),
+			Entry("valid forward policy: Random", v1beta1.LocalDNSForwardPolicyRandom, ""),
+			Entry("invalid forward policy: invalid-string", v1beta1.LocalDNSForwardPolicy("invalid-string"), "forwardPolicy"),
+			Entry("invalid forward policy: empty", v1beta1.LocalDNSForwardPolicy(""), "forwardPolicy"),
+		)
+
+		DescribeTable("should validate LocalDNSServeStale", func(serveStale v1beta1.LocalDNSServeStale, expectedErr string) {
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
+			overrideConfig.ServeStale = serveStale
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode:             v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			}
+		},
+			Entry("valid serve stale: Verify", v1beta1.LocalDNSServeStaleVerify, ""),
+			Entry("valid serve stale: Immediate", v1beta1.LocalDNSServeStaleImmediate, ""),
+			Entry("valid serve stale: Disable", v1beta1.LocalDNSServeStaleDisable, ""),
+			Entry("invalid serve stale: invalid-string", v1beta1.LocalDNSServeStale("invalid-string"), "serveStale"),
+			Entry("invalid serve stale: empty", v1beta1.LocalDNSServeStale(""), "serveStale"),
+		)
+
+		DescribeTable("should validate CacheDuration", func(durationStr string, expectedErr string) {
+			cacheDuration := karpv1.MustParseNillableDuration(durationStr)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
+			overrideConfig.CacheDuration = cacheDuration
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode:             v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			}
+		},
+			Entry("valid duration: 1h", "1h", ""),
+			Entry("valid duration: 30m", "30m", ""),
+			Entry("valid duration: 60s", "60s", ""),
+			Entry("valid duration: 1h30m", "1h30m", ""),
+			Entry("valid duration: 2h15m30s", "2h15m30s", ""),
+		)
+
+		DescribeTable("should validate ServeStaleDuration", func(durationStr string, expectedErr string) {
+			serveStaleDuration := karpv1.MustParseNillableDuration(durationStr)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
+			overrideConfig.ServeStaleDuration = serveStaleDuration
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode:             v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			}
+		},
+			Entry("valid duration: 1h", "1h", ""),
+			Entry("valid duration: 30m", "30m", ""),
+			Entry("valid duration: 60s", "60s", ""),
+			Entry("valid duration: 1h30m", "1h30m", ""),
+			Entry("valid duration: 2h15m30s", "2h15m30s", ""),
+		)
+
+		DescribeTable("should validate MaxConcurrent", func(maxConcurrent *int32, expectedErr string) {
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
+			overrideConfig.MaxConcurrent = maxConcurrent
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode:             v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			}
+		},
+			Entry("valid: 0 (minimum)", lo.ToPtr(int32(0)), ""),
+			Entry("valid: 1", lo.ToPtr(int32(1)), ""),
+			Entry("valid: 100", lo.ToPtr(int32(100)), ""),
+			Entry("valid: 1000", lo.ToPtr(int32(1000)), ""),
+			Entry("invalid: -1 (below minimum)", lo.ToPtr(int32(-1)), "maxConcurrent"),
+			Entry("invalid: -100 (below minimum)", lo.ToPtr(int32(-100)), "maxConcurrent"),
+		)
+
+		It("should reject duplicate zones in VnetDNSOverrides due to listType=map", func() {
+			// This test proves that listType=map with listMapKey=zone enforces uniqueness
+			// at the API server level, making explicit CEL duplicate validation redundant
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode: v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", true),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
+							createCompleteLocalDNSZoneOverride("example.com", false),
+							createCompleteLocalDNSZoneOverride("example.com", false), // Duplicate zone
+						},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", false),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
+						},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+			// The API server rejects this due to listType=map enforcement
+			Expect(err.Error()).To(ContainSubstring("Duplicate value"))
+			Expect(err.Error()).To(ContainSubstring("{\"zone\":\"example.com\"}"))
+		})
+
+		It("should reject duplicate zones in KubeDNSOverrides due to listType=map", func() {
+			// This test proves that listType=map with listMapKey=zone enforces uniqueness
+			// at the API server level, making explicit CEL duplicate validation redundant
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode: v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", true),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
+						},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", false),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
+							createCompleteLocalDNSZoneOverride("test.com", false),
+							createCompleteLocalDNSZoneOverride("test.com", false), // Duplicate zone
+						},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+			// The API server rejects this due to listType=map enforcement
+			Expect(err.Error()).To(ContainSubstring("Duplicate value"))
+			Expect(err.Error()).To(ContainSubstring("{\"zone\":\"test.com\"}"))
+		})
+
+		DescribeTable("should validate required zones in overrides",
+			func(vnetOverrides []v1beta1.LocalDNSZoneOverride, kubeOverrides []v1beta1.LocalDNSZoneOverride, expectedErr string) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						LocalDNS: &v1beta1.LocalDNS{
+							Mode:             v1beta1.LocalDNSModeRequired,
+							VnetDNSOverrides: vnetOverrides,
+							KubeDNSOverrides: kubeOverrides,
+						},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			},
+			Entry("VnetDNSOverrides missing root zone '.'",
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride("cluster.local", false)},
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+				"must contain required zones '.' and 'cluster.local'"),
+			Entry("VnetDNSOverrides missing 'cluster.local'",
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true)},
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+				"must contain required zones '.' and 'cluster.local'"),
+			Entry("KubeDNSOverrides missing root zone '.'",
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride("cluster.local", false)},
+				"must contain required zones '.' and 'cluster.local'"),
+			Entry("KubeDNSOverrides missing 'cluster.local'",
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false)},
+				"must contain required zones '.' and 'cluster.local'"),
+		)
+
+		DescribeTable("should validate zone forwarding restrictions",
+			func(testZone string, forwardDest v1beta1.LocalDNSForwardDestination, expectedErr string) {
+				override := createCompleteLocalDNSZoneOverride(testZone, false)
+				override.ForwardDestination = forwardDest
+				vnetOverrides := []v1beta1.LocalDNSZoneOverride{
+					createCompleteLocalDNSZoneOverride(".", true),
+					createCompleteLocalDNSZoneOverride("cluster.local", false),
+				}
+				// Replace the appropriate zone in vnetOverrides
+				if testZone == "." {
+					vnetOverrides[0] = override
+				} else {
+					vnetOverrides = append(vnetOverrides, override)
+				}
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						LocalDNS: &v1beta1.LocalDNS{
+							Mode:             v1beta1.LocalDNSModeRequired,
+							VnetDNSOverrides: vnetOverrides,
+							KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+								createCompleteLocalDNSZoneOverride(".", false),
+								createCompleteLocalDNSZoneOverride("cluster.local", false),
+							},
+						},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			},
+			Entry("root zone '.' cannot be forwarded to ClusterCoreDNS in VnetDNSOverrides",
+				".", v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+				"root zone '.' cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides"),
+			Entry("'cluster.local' cannot be forwarded to VnetDNS",
+				"cluster.local", v1beta1.LocalDNSForwardDestinationVnetDNS,
+				"'cluster.local' cannot be forwarded to VnetDNS"),
+			Entry("subdomain of 'cluster.local' cannot be forwarded to VnetDNS",
+				"svc.cluster.local", v1beta1.LocalDNSForwardDestinationVnetDNS,
+				"'cluster.local' cannot be forwarded to VnetDNS"),
+		)
+
+		DescribeTable("should validate protocol and serveStale combinations",
+			func(protocol v1beta1.LocalDNSProtocol, serveStale v1beta1.LocalDNSServeStale, shouldSucceed bool) {
+				override := createCompleteLocalDNSZoneOverride("example.com", true)
+				override.Protocol = protocol
+				override.ServeStale = serveStale
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						LocalDNS: &v1beta1.LocalDNS{
+							Mode: v1beta1.LocalDNSModeRequired,
+							VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+								createCompleteLocalDNSZoneOverride(".", true),
+								createCompleteLocalDNSZoneOverride("cluster.local", false),
+								override,
+							},
+							KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+								createCompleteLocalDNSZoneOverride(".", false),
+								createCompleteLocalDNSZoneOverride("cluster.local", false),
+							},
+						},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				if shouldSucceed {
+					Expect(err).To(Succeed())
+				} else {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("serveStale Verify cannot be used with protocol ForceTCP"))
+				}
+			},
+			Entry("reject: ForceTCP with Verify", v1beta1.LocalDNSProtocolForceTCP, v1beta1.LocalDNSServeStaleVerify, false),
+			Entry("accept: ForceTCP with Immediate", v1beta1.LocalDNSProtocolForceTCP, v1beta1.LocalDNSServeStaleImmediate, true),
+			Entry("accept: ForceTCP with Disable", v1beta1.LocalDNSProtocolForceTCP, v1beta1.LocalDNSServeStaleDisable, true),
+			Entry("accept: PreferUDP with Verify", v1beta1.LocalDNSProtocolPreferUDP, v1beta1.LocalDNSServeStaleVerify, true),
+		)
+	})
+
+	Context("OSDiskSizeGB", func() {
+		DescribeTable("Should validate OSDiskSizeGB constraints", func(osDiskSizeGB *int32, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					OSDiskSizeGB: osDiskSizeGB,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid minimum size (30 GB)", lo.ToPtr(int32(30)), true),
+			Entry("valid default size (128 GB)", lo.ToPtr(int32(128)), true),
+			Entry("valid large size (1024 GB)", lo.ToPtr(int32(1024)), true),
+			Entry("valid maximum size (2048 GB)", lo.ToPtr(int32(2048)), true),
+			Entry("nil value (auto-sized)", nil, true),
+			Entry("zero is explicit and invalid (not auto)", lo.ToPtr(int32(0)), false),
+			Entry("below minimum (29 GB)", lo.ToPtr(int32(29)), false),
+			Entry("above maximum (2049 GB)", lo.ToPtr(int32(2049)), false),
+			Entry("well above maximum (4096 GB)", lo.ToPtr(int32(4096)), false),
+		)
+	})
+
+	Context("ImageFamily, FIPSMode, and TrustedLaunch", func() {
+		DescribeTable("should only accept valid ImageFamily, FIPSMode, and TrustedLaunch combinations", func(imageFamily string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{},
+			}
+			// allows for leaving imageFamily unset, which currently defaults to Ubuntu2204
+			if imageFamily != "" {
+				nodeClass.Spec.ImageFamily = &imageFamily
+			}
+			nodeClass.Spec.FIPSMode = fipsMode
+			if trustedLaunch {
+				nodeClass.Spec.Security = &v1beta1.Security{
+					TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
+				}
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("generic Ubuntu when FIPSMode is explicitly Disabled should succeed", v1beta1.UbuntuImageFamily, &v1beta1.FIPSModeDisabled, false, true),
+			Entry("generic Ubuntu when FIPSMode is not explicitly set should succeed", v1beta1.UbuntuImageFamily, nil, false, true),
+			Entry("generic Ubuntu when FIPSMode is explicitly FIPS should succeed", v1beta1.UbuntuImageFamily, &v1beta1.FIPSModeFIPS, false, true),
+			Entry("generic Ubuntu when TrustedLaunch is enabled should succeed", v1beta1.UbuntuImageFamily, nil, true, true),
+			Entry("generic Ubuntu when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1beta1.UbuntuImageFamily, &v1beta1.FIPSModeFIPS, true, true),
+			Entry("Ubuntu2204 when FIPSMode is explicitly Disabled should succeed", v1beta1.Ubuntu2204ImageFamily, &v1beta1.FIPSModeDisabled, false, true),
+			Entry("Ubuntu2204 when FIPSMode is not explicitly set should succeed", v1beta1.Ubuntu2204ImageFamily, nil, false, true),
+			Entry("Ubuntu2204 when TrustedLaunch is enabled should succeed", v1beta1.Ubuntu2204ImageFamily, nil, true, true),
+			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1beta1.Ubuntu2204ImageFamily, &v1beta1.FIPSModeFIPS, true, true),
+			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS should succeed", v1beta1.Ubuntu2204ImageFamily, &v1beta1.FIPSModeFIPS, false, true),
+			Entry("Ubuntu2404 when FIPSMode is explicitly Disabled should succeed", v1beta1.Ubuntu2404ImageFamily, &v1beta1.FIPSModeDisabled, false, true),
+			Entry("Ubuntu2404 when FIPSMode is not explicitly set should succeed", v1beta1.Ubuntu2404ImageFamily, nil, false, true),
+			Entry("Ubuntu2404 when TrustedLaunch is enabled should succeed", v1beta1.Ubuntu2404ImageFamily, nil, true, true),
+			Entry("Ubuntu2404 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should fail", v1beta1.Ubuntu2404ImageFamily, &v1beta1.FIPSModeFIPS, true, false),
+			//TODO: Modify when Ubuntu 24.04 with FIPS becomes available
+			Entry("Ubuntu2404 when FIPSMode is explicitly FIPS should fail", v1beta1.Ubuntu2404ImageFamily, &v1beta1.FIPSModeFIPS, false, false),
+			Entry("generic AzureLinux when FIPSMode is explicitly Disabled should succeed", v1beta1.AzureLinuxImageFamily, &v1beta1.FIPSModeDisabled, false, true),
+			Entry("generic AzureLinux when FIPSMode is not explicitly set should succeed", v1beta1.AzureLinuxImageFamily, nil, false, true),
+			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1beta1.AzureLinuxImageFamily, &v1beta1.FIPSModeFIPS, false, true),
+			Entry("generic AzureLinux when TrustedLaunch is enabled should succeed", v1beta1.AzureLinuxImageFamily, nil, true, true),
+			Entry("generic AzureLinux when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should fail", v1beta1.AzureLinuxImageFamily, &v1beta1.FIPSModeFIPS, true, false),
+			Entry("Windows2022 when FIPSMode is explicitly Disabled should succeed", v1beta1.Windows2022ImageFamily, &v1beta1.FIPSModeDisabled, false, true),
+			Entry("Windows2022 when FIPSMode is not explicitly set should succeed", v1beta1.Windows2022ImageFamily, nil, false, true),
+			Entry("Windows2022 when FIPSMode is explicitly FIPS should fail", v1beta1.Windows2022ImageFamily, &v1beta1.FIPSModeFIPS, false, false),
+			Entry("Windows2022 when TrustedLaunch is enabled should fail", v1beta1.Windows2022ImageFamily, nil, true, false),
+			Entry("Windows2025 when FIPSMode is explicitly Disabled should fail", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeDisabled, false, false),
+			Entry("Windows2025 when FIPSMode is not explicitly set should succeed", v1beta1.Windows2025ImageFamily, nil, false, true),
+			Entry("Windows2025 when FIPSMode is explicitly FIPS should succeed", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeFIPS, false, true),
+			Entry("Windows2025 when TrustedLaunch is enabled should succeed", v1beta1.Windows2025ImageFamily, nil, true, true),
+			Entry("Windows2025 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeFIPS, true, true),
+			Entry("AzureContainerLinux without security should fail", v1beta1.AzureContainerLinuxImageFamily, nil, false, false),
+			Entry("AzureContainerLinux with FIPS but without security should fail", v1beta1.AzureContainerLinuxImageFamily, &v1beta1.FIPSModeFIPS, false, false),
+			Entry("AzureContainerLinux with only vTPM should fail", v1beta1.AzureContainerLinuxImageFamily, nil, true, false),
+			Entry("AzureContainerLinux with FIPS and only vTPM should fail", v1beta1.AzureContainerLinuxImageFamily, &v1beta1.FIPSModeFIPS, true, false),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly Disabled should succeed", "", &v1beta1.FIPSModeDisabled, false, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, false, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1beta1.FIPSModeFIPS, false, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when TrustedLaunch is enabled should succeed", "", nil, true, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", "", &v1beta1.FIPSModeFIPS, true, true),
+		)
+
+		DescribeTable("should require explicit AzureContainerLinux security on create and update",
+			func(security *v1beta1.Security, valid bool) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						ImageFamily: lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
+						Security:    security,
+					},
+				}
+				if valid {
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+					Expect(nodeClass.IsVTPMEnabled()).To(BeTrue())
+					Expect(nodeClass.IsSecureBootEnabled()).To(BeTrue())
+				} else {
+					Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("to be explicitly set to true")))
+					nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+					nodeClass.Spec.Security = security
+					Expect(env.Client.Update(ctx, nodeClass)).To(MatchError(ContainSubstring("to be explicitly set to true")))
+				}
+			},
+			Entry("omitted security", nil, false),
+			Entry("empty security", &v1beta1.Security{}, false),
+			Entry("empty Trusted Launch", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{}}, false),
+			Entry("only vTPM enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}}, false),
+			Entry("only Secure Boot enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}}, false),
+			Entry("both enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, true),
+			Entry("vTPM disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false)}}, false),
+			Entry("Secure Boot disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(false)}}, false),
+			Entry("vTPM enabled but Secure Boot disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(false)}}, false),
+			Entry("Secure Boot enabled but vTPM disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(true)}}, false),
+		)
+
+		DescribeTable("should require at least a 60 GB OS disk for AzureContainerLinux", func(size *int32, valid bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:  lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
+					OSDiskSizeGB: size,
+					Security:     &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
+				},
+			}
+			if valid {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+				Expect(nodeClass.Spec.OSDiskSizeGB).To(Equal(size))
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("AzureContainerLinux requires an OS disk of at least 60 GB")))
+			}
+		},
+			Entry("below minimum", lo.ToPtr(int32(59)), false),
+			Entry("minimum", lo.ToPtr(int32(60)), true),
+			Entry("unset (auto-sized)", nil, true),
+		)
+
+		It("should accept AzureContainerLinux FIPS with explicit Secure Boot and vTPM", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
+					FIPSMode:    &v1beta1.FIPSModeFIPS,
+					Security:    &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should reject Kata with AzureContainerLinux", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:     lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
+					WorkloadRuntime: lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation),
+					Security:        &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("workloadRuntime KataVmIsolation requires imageFamily AzureLinux")))
+		})
+	})
+
+	Context("WorkloadRuntime and ImageFamily", func() {
+		DescribeTable("should only accept valid WorkloadRuntime and ImageFamily combinations", func(imageFamily string, workloadRuntime *v1beta1.WorkloadRuntime, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{},
+			}
+			// allows for leaving imageFamily unset, which currently defaults to Ubuntu
+			if imageFamily != "" {
+				nodeClass.Spec.ImageFamily = &imageFamily
+			}
+			nodeClass.Spec.WorkloadRuntime = workloadRuntime
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("unset WorkloadRuntime with Ubuntu should succeed", v1beta1.UbuntuImageFamily, nil, true),
+			Entry("unset WorkloadRuntime with AzureLinux should succeed", v1beta1.AzureLinuxImageFamily, nil, true),
+			Entry("OCIContainer with Ubuntu should succeed", v1beta1.UbuntuImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer), true),
+			Entry("OCIContainer with AzureLinux should succeed", v1beta1.AzureLinuxImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer), true),
+			Entry("KataVmIsolation with AzureLinux should succeed", v1beta1.AzureLinuxImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
+			Entry("KataVmIsolation with Ubuntu should fail", v1beta1.UbuntuImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("KataVmIsolation with Ubuntu2204 should fail", v1beta1.Ubuntu2204ImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("KataVmIsolation with Ubuntu2404 should fail", v1beta1.Ubuntu2404ImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("KataVmIsolation with unspecified ImageFamily (defaults to Ubuntu) should fail", "", lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+		)
+
+		DescribeTable("should reject KataVmIsolation combined with FIPS", func(fipsMode *v1beta1.FIPSMode, workloadRuntime *v1beta1.WorkloadRuntime, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:     lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+					FIPSMode:        fipsMode,
+					WorkloadRuntime: workloadRuntime,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			// Kata is not FIPS compliant, so the combination has no satisfiable image and is rejected
+			// at admission rather than surfacing later as ImagesNotFound.
+			Entry("FIPS with KataVmIsolation should fail", lo.ToPtr(v1beta1.FIPSModeFIPS), lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("Disabled FIPS with KataVmIsolation should succeed", lo.ToPtr(v1beta1.FIPSModeDisabled), lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
+			Entry("unset FIPS with KataVmIsolation should succeed", nil, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
+			Entry("FIPS with OCIContainer should succeed", lo.ToPtr(v1beta1.FIPSModeFIPS), lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer), true),
+			Entry("FIPS with unset workloadRuntime should succeed", lo.ToPtr(v1beta1.FIPSModeFIPS), nil, true),
+		)
+
+		DescribeTable("should reject KataVmIsolation combined with TrustedLaunch", func(trustedLaunch *v1beta1.TrustedLaunch, workloadRuntime *v1beta1.WorkloadRuntime, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:     lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+					WorkloadRuntime: workloadRuntime,
+				},
+			}
+			if trustedLaunch != nil {
+				nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: trustedLaunch}
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("vTPM with KataVmIsolation should fail", &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("Secure Boot with KataVmIsolation should fail", &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("disabled TrustedLaunch with KataVmIsolation should succeed", &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(false)}, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
+			Entry("unset TrustedLaunch with KataVmIsolation should succeed", nil, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
+			Entry("vTPM with OCIContainer should succeed", &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer), true),
+		)
+	})
+
+	Context("Windows unsupported profiles", func() {
+		It("should reject artifact streaming for Windows", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:       lo.ToPtr(v1beta1.Windows2022ImageFamily),
+					ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		It("should allow disabled artifact streaming for Windows", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:       lo.ToPtr(v1beta1.Windows2022ImageFamily),
+					ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		DescribeTable("should validate LocalDNS mode for Windows",
+			func(mode v1beta1.LocalDNSMode, expected bool) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						ImageFamily: lo.ToPtr(v1beta1.Windows2022ImageFamily),
+						LocalDNS: &v1beta1.LocalDNS{
+							Mode:             mode,
+							VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+							KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+						},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				if expected {
+					Expect(err).To(Succeed())
+				} else {
+					Expect(err).ToNot(Succeed())
+				}
+			},
+			Entry("Disabled is accepted", v1beta1.LocalDNSModeDisabled, true),
+			Entry("Preferred is rejected", v1beta1.LocalDNSModePreferred, false),
+			Entry("Required is rejected", v1beta1.LocalDNSModeRequired, false),
+		)
+	})
+
+	Context("GPU", func() {
+		It("should accept gpu.mode set to Driver", func() {
+			gpuMode := v1beta1.GPUModeDriver
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode: &gpuMode,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu.mode set to None", func() {
+			gpuMode := v1beta1.GPUModeNone
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode: &gpuMode,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject invalid gpu.mode value", func() {
+			invalidMode := v1beta1.GPUMode("Invalid")
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode: &invalidMode,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept when gpu field is omitted entirely", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu set with mode omitted", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu.nvidia.managementMode set to Managed (default Driver mode)", func() {
+			managed := v1beta1.ManagementModeManaged
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu.nvidia.managementMode set to Unmanaged", func() {
+			unmanaged := v1beta1.ManagementModeUnmanaged
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &unmanaged},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu.nvidia.managementMode=Managed with mode explicitly Driver", func() {
+			managed := v1beta1.ManagementModeManaged
+			driverMode := v1beta1.GPUModeDriver
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode:   &driverMode,
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject gpu.nvidia.managementMode=Managed when mode is None", func() {
+			managed := v1beta1.ManagementModeManaged
+			noneMode := v1beta1.GPUModeNone
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode:   &noneMode,
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &managed},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept gpu.nvidia.managementMode=Unmanaged with mode None", func() {
+			unmanaged := v1beta1.ManagementModeUnmanaged
+			noneMode := v1beta1.GPUModeNone
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode:   &noneMode,
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &unmanaged},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject invalid gpu.nvidia.managementMode value", func() {
+			invalid := v1beta1.ManagementMode("Invalid")
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Nvidia: &v1beta1.NvidiaGPU{ManagementMode: &invalid},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+
+	Context("Requirements", func() {
+		// Labels with registered WellKnownValuesForRequirements reject arbitrary In values.
+		// Exclude them from the generic well-known label test below, which uses "test" as a placeholder value.
+		knownValueRequirementLabels := sets.New(
+			karpv1.NodePoolLabelKey,
+			karpv1.CapacityTypeLabelKey,
+			v1beta1.LabelSKUAcceleratedNetworking,
+			v1beta1.LabelSKUStoragePremiumCapable,
+			v1beta1.LabelSKUGPUManufacturer,
+			v1beta1.LabelPlacementScope,
+			v1beta1.AKSLabelMode,
+			v1beta1.AKSLabelScaleSetPriority,
+			v1beta1.AKSLabelPriority,
+			v1beta1.AKSLabelOSSKU,
+			v1beta1.AKSLabelFIPSEnabled,
+			v1beta1.AKSLabelKataVMIsolation,
+			v1beta1.LabelUltraSSD,
+		)
+		expectKnownValueValidationError := func(err error, key string) {
+			Expect(err).To(MatchError(And(
+				ContainSubstring("no valid values found"),
+				ContainSubstring(key),
+			)))
+		}
+
+		It("should allow well known label exceptions", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for label := range karpv1.WellKnownLabels.Difference(knownValueRequirementLabels) {
+				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+					{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		DescribeTable("should fail validation with only unsupported capacity types", func(capacityType string) {
+			oldNodePool := nodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{capacityType},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			expectKnownValueValidationError(nodePool.RuntimeValidate(ctx), karpv1.CapacityTypeLabelKey)
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		},
+			Entry("unknown capacity type", "xspot"),
+			Entry("reserved capacity type", karpv1.CapacityTypeReserved),
+		)
+		It("should pass validation with valid capacity types", func() {
+			oldNodePool := nodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeOnDemand}, // Valid value,
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		DescribeTable("should fail open if unsupported and valid capacity types are present", func(capacityType string) {
+			oldNodePool := nodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeOnDemand, capacityType},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		},
+			Entry("unknown capacity type", "xspot"),
+			Entry("reserved capacity type", karpv1.CapacityTypeReserved),
+		)
+		DescribeTable("should validate Azure known requirement values", func(key, validValue, invalidValue string) {
+			oldNodePool := nodePool.DeepCopy()
+
+			By("rejecting a requirement with only invalid values")
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{invalidValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			expectKnownValueValidationError(nodePool.RuntimeValidate(ctx), key)
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+
+			By("accepting a requirement with only valid values")
+			nodePool = oldNodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{validValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+
+			By("failing open when valid and invalid values are both present")
+			nodePool = oldNodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{validValue, invalidValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+
+			By("rejecting values that differ only by case")
+			upperValue := strings.ToUpper(validValue)
+			nodePool = oldNodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{upperValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			expectKnownValueValidationError(nodePool.RuntimeValidate(ctx), key)
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		},
+			Entry("SKU accelerated networking", v1beta1.LabelSKUAcceleratedNetworking, "true", "maybe"),
+			Entry("SKU premium storage", v1beta1.LabelSKUStoragePremiumCapable, "true", "maybe"),
+			Entry("SKU GPU manufacturer", v1beta1.LabelSKUGPUManufacturer, v1beta1.ManufacturerNvidia, "intel"),
+			Entry("placement scope", v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal, "global"),
+			Entry("AKS mode", v1beta1.AKSLabelMode, v1beta1.ModeSystem, "control-plane"),
+			Entry("AKS scale set priority", v1beta1.AKSLabelScaleSetPriority, v1beta1.ScaleSetPriorityRegular, "low"),
+			Entry("AKS priority", v1beta1.AKSLabelPriority, v1beta1.PriorityRegular, "low"),
+			Entry("AKS OS SKU Ubuntu", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUUbuntu, v1beta1.Ubuntu2204ImageFamily),
+			Entry("AKS OS SKU AzureLinux", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUAzureLinux, "AzureLinux3"),
+			Entry("AKS FIPS enabled", v1beta1.AKSLabelFIPSEnabled, "true", "false"),
+			Entry("AKS Kata VM isolation", v1beta1.AKSLabelKataVMIsolation, "true", "false"),
+			Entry("UltraSSD", v1beta1.LabelUltraSSD, "true", "maybe"),
+		)
+		It("should not allow internal labels", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for label := range v1beta1.RestrictedLabels {
+				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+					{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should not allow restricted kubernetes.azure.com requirements", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{"kubernetes.azure.com/some-random-label", "kubernetes.azure.com/agentpool", "kubernetes.azure.com/custom", "kubernetes.azure.com/cluster-health-monitor-checker-synthetic"} {
+				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+					{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should allow special kubernetes.azure.com requirements", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{
+				"kubernetes.azure.com/ebpf-dataplane",
+				"kubernetes.azure.com/ebpf-host-routing",
+				"kubernetes.azure.com/network-policy",
+				"kubernetes.azure.com/hostedvm",
+			} {
+				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+					{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should not allow agentpool requirement", func() {
+			nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: "agentpool", Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+		It("should not allow storageprofile requirement", func() {
+			nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: "storageprofile", Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+		It("should not allow storagetier requirement", func() {
+			nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: "storagetier", Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+		It("should not allow accelerator requirement", func() {
+			nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: "accelerator", Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+	})
+	Context("Labels", func() {
+		It("should allow well known label exceptions", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for label := range karpv1.WellKnownLabels.Difference(sets.New(karpv1.NodePoolLabelKey)) {
+				nodePool.Spec.Template.Labels = map[string]string{
+					label: "test",
+				}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should not allow internal labels", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for label := range v1beta1.RestrictedLabels {
+				nodePool.Spec.Template.Labels = map[string]string{
+					label: "test",
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should not allow restricted kubernetes.azure.com labels", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{"kubernetes.azure.com/some-random-label", "kubernetes.azure.com/agentpool", "kubernetes.azure.com/custom", "kubernetes.azure.com/cluster-health-monitor-checker-synthetic"} {
+				nodePool.Spec.Template.Labels = map[string]string{
+					label: "test",
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should allow special kubernetes.azure.com labels", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{
+				"kubernetes.azure.com/ebpf-dataplane",
+				"kubernetes.azure.com/ebpf-host-routing",
+				"kubernetes.azure.com/network-policy",
+				"kubernetes.azure.com/hostedvm",
+			} {
+				nodePool.Spec.Template.Labels = map[string]string{
+					label: "test",
+				}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should not allow agentpool label", func() {
+			nodePool.Spec.Template.Labels = map[string]string{
+				"agentpool": "test",
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+		It("should not allow storageprofile label", func() {
+			nodePool.Spec.Template.Labels = map[string]string{
+				"storageprofile": "test",
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+		It("should not allow storagetier label", func() {
+			nodePool.Spec.Template.Labels = map[string]string{
+				"storagetier": "test",
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+		It("should not allow accelerator label", func() {
+			nodePool.Spec.Template.Labels = map[string]string{
+				"accelerator": "test",
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+	})
+
+	Context("Taints", func() {
+		It("should allow the kubernetes.azure.com/scalesetpriority taint", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: v1beta1.AKSLabelScaleSetPriority, Value: "spot", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject kubernetes.azure.com/scalesetpriority taint with non-spot value", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: v1beta1.AKSLabelScaleSetPriority, Value: "regular", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should allow the kubernetes.azure.com/scalesetpriority startup taint", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{Key: v1beta1.AKSLabelScaleSetPriority, Value: "spot", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should allow taints with non-restricted domains", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "example.com/my-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject taints with restricted kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/some-other-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject startup taints with restricted kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/some-other-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+	})
+
+	Context("Tags", func() {
+		It("should allow tags with valid keys and values", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Tags: map[string]string{
+						"valid-key":  "valid-value",
+						"anotherKey": "anotherValue",
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		DescribeTable(
+			"should reject tags with invalid keys",
+			func(key string) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						Tags: map[string]string{
+							key: "value",
+						},
+					},
+				}
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			},
+			Entry("key contains <", "invalid<key"),
+			Entry("key contains >", "invalid>key"),
+			Entry("key contains %", "invalid%key"),
+			Entry("key contains &", "invalid&key"),
+			Entry(`key contains \`, `invalid\key`),
+			Entry("key contains ?", "invalid?key"),
+			Entry("key exceeds max length", strings.Repeat("a", 513)),
+		)
+
+		DescribeTable(
+			"should reject tags with invalid values",
+			func(value string) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						Tags: map[string]string{
+							"valid-key": value,
+						},
+					},
+				}
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			},
+			Entry("value exceeds max length", strings.Repeat("b", 257)),
+		)
+
+		It("should allow tags with keys and values at max valid length", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Tags: map[string]string{
+						strings.Repeat("a", 512): strings.Repeat("b", 256),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+	Context("LinuxOSConfig sysctl cross-field validation", func() {
+		It("should reject rmemDefault > rmemMax", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreRmemDefault: lo.ToPtr(int32(1048576)),
+							NetCoreRmemMax:     lo.ToPtr(int32(212992)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept rmemDefault <= rmemMax", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreRmemDefault: lo.ToPtr(int32(212992)),
+							NetCoreRmemMax:     lo.ToPtr(int32(1048576)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject wmemDefault > wmemMax", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreWmemDefault: lo.ToPtr(int32(1048576)),
+							NetCoreWmemMax:     lo.ToPtr(int32(212992)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept wmemDefault <= wmemMax", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreWmemDefault: lo.ToPtr(int32(212992)),
+							NetCoreWmemMax:     lo.ToPtr(int32(1048576)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept rmemDefault set without rmemMax", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreRmemDefault: lo.ToPtr(int32(1048576)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+	Context("LinuxOSConfig netIPv4IPLocalPortRange CEL validation", func() {
+		It("should accept valid port range", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("32768 60999"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept minimum valid port range", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("1024 32768"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject first port below 1024", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("500 65535"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject last port above 65535", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("1024 70000"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject first port above 60999", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("61000 65535"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject last port below 32768", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("1024 30000"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject first port > last port", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("60000 32768"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept when port range is not set", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreSomaxconn: lo.ToPtr(int32(8192)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+	Context("LinuxOSConfig gcThresh cross-field validation", func() {
+		It("should reject gcThresh1 > gcThresh2", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(80000)),
+							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(512)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject gcThresh2 > gcThresh3", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(90000)),
+							NetIPv4NeighDefaultGcThresh3: lo.ToPtr(int32(1024)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept gcThresh1 <= gcThresh2 <= gcThresh3", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(128)),
+							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(512)),
+							NetIPv4NeighDefaultGcThresh3: lo.ToPtr(int32(1024)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gcThresh1 set without gcThresh2", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(80000)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept equal gcThresh values", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(1024)),
+							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(1024)),
+							NetIPv4NeighDefaultGcThresh3: lo.ToPtr(int32(1024)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+	Context("failSwapOn cross-validation with swapFileSize", func() {
+		It("should reject swapFileSize when failSwapOn is not set", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						SwapFileSize: lo.ToPtr("1500Mi"),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject swapFileSize when failSwapOn is true", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{
+						FailSwapOn: lo.ToPtr(true),
+					},
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						SwapFileSize: lo.ToPtr("1500Mi"),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept swapFileSize when failSwapOn is false", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{
+						FailSwapOn: lo.ToPtr(false),
+					},
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						SwapFileSize: lo.ToPtr("1500Mi"),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept linuxOSConfig without swapFileSize regardless of failSwapOn", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreSomaxconn: lo.ToPtr(int32(8192)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept failSwapOn=false without linuxOSConfig", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{
+						FailSwapOn: lo.ToPtr(false),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+})

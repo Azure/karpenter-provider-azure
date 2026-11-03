@@ -20,67 +20,55 @@ package main
 
 import (
 	"context"
+	"time"
 
-	"github.com/samber/lo"
-	"go.uber.org/zap"
-	"knative.dev/pkg/logging"
-
-	// Injection stuff
-	kubeclientinjection "knative.dev/pkg/client/injection/kube/client"
-	"knative.dev/pkg/configmap"
-	"knative.dev/pkg/controller"
-	knativeinjection "knative.dev/pkg/injection"
-	secretinformer "knative.dev/pkg/injection/clients/namespacedkube/informers/core/v1/secret"
-	kubeinformerfactory "knative.dev/pkg/injection/clients/namespacedkube/informers/factory"
-	"knative.dev/pkg/webhook/certificates"
-
-	altOperator "github.com/Azure/karpenter-provider-azure/pkg/alt/karpenter-core/pkg/operator"
-	altwebhooks "github.com/Azure/karpenter-provider-azure/pkg/alt/karpenter-core/pkg/webhooks"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
-	controllers "github.com/Azure/karpenter-provider-azure/pkg/controllers"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator"
+	"github.com/go-logr/zapr"
+	"github.com/samber/lo"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider/overlay"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
+	"sigs.k8s.io/karpenter/pkg/controllers/node/health"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
+	coreoperator "sigs.k8s.io/karpenter/pkg/operator"
+	"sigs.k8s.io/karpenter/pkg/operator/injection"
+	"sigs.k8s.io/karpenter/pkg/operator/logging"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 )
 
-func newWebhooks(ctx context.Context) []knativeinjection.ControllerConstructor {
-	client := altOperator.GetCCPClient(ctx)
-	ccpInformerFactory := kubeinformerfactory.Get(ctx)
-
-	secretInformer := ccpInformerFactory.Core().V1().Secrets()
-	ctx = context.WithValue(ctx, secretinformer.Key{}, secretInformer)
-
-	logging.FromContext(ctx).Info("Starting horrible CCP informer")
-	if err := controller.StartInformers(ctx.Done(), secretInformer.Informer()); err != nil {
-		logging.FromContext(ctx).Fatalw("Failed to start horrible CCP informer", zap.Error(err))
-	}
-
-	return []knativeinjection.ControllerConstructor{
-		func(ctx context.Context, watcher configmap.Watcher) *controller.Impl {
-			ctx = context.WithValue(ctx, secretinformer.Key{}, secretInformer)
-			ctx = context.WithValue(ctx, kubeclientinjection.Key{}, client)
-			return certificates.NewController(ctx, watcher)
-		},
-		func(ctx context.Context, watcher configmap.Watcher) *controller.Impl {
-			ctx = context.WithValue(ctx, secretinformer.Key{}, secretInformer)
-			return altwebhooks.NewCRDConversionWebhook(ctx, watcher)
-		},
-	}
-}
-
 func main() {
-	//ctx, op := operator.NewOperator(coreoperator.NewOperator())
-	ctx, op := operator.NewOperator(altOperator.NewOperator())
+	ctx := injection.WithOptionsOrDie(context.Background(), coreoptions.Injectables...)
+	logger := zapr.NewLogger(logging.NewLogger(ctx, "controller"))
+	lo.Must0(operator.WaitForCRDs(ctx, 2*time.Minute, ctrl.GetConfigOrDie(), logger), "failed waiting for CRDs")
+
+	ctx, op := operator.NewOperator(coreoperator.NewOperator())
+
+	// TODO: Consider also dumping at least some core options
+	logger.V(0).Info("Initial options", "options", options.FromContext(ctx).String())
+
 	aksCloudProvider := cloudprovider.New(
 		op.InstanceTypesProvider,
-		op.InstanceProvider,
+		op.VMInstanceProvider,
+		op.AKSMachineProvider,
 		op.EventRecorder,
 		op.GetClient(),
 		op.ImageProvider,
+		op.InstanceTypeStore,
+		coreoptions.FromContext(ctx).LegacyNodeRepair,
 	)
 
 	lo.Must0(op.AddHealthzCheck("cloud-provider", aksCloudProvider.LivenessProbe))
-	cloudProvider := metrics.Decorate(aksCloudProvider)
+
+	overlayUndecoratedCloudProvider := metrics.Decorate(aksCloudProvider)
+	cloudProvider := overlay.Decorate(overlayUndecoratedCloudProvider, op.GetClient(), op.InstanceTypeStore)
+	repairPolicyMatcher := lo.Must(health.NewRepairPolicyMatcher(ctx, cloudProvider))
+	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider, state.WithRepairPolicyMatcher(repairPolicyMatcher))
 
 	op.
 		WithControllers(ctx, corecontrollers.NewControllers(
@@ -90,15 +78,38 @@ func main() {
 			op.GetClient(),
 			op.EventRecorder,
 			cloudProvider,
+			overlayUndecoratedCloudProvider,
+			clusterState,
+			op.InstanceTypeStore,
+			op.PredictionStore,
 		)...).
-		WithWebhooks(ctx, newWebhooks(ctx)...).
 		WithControllers(ctx, controllers.NewControllers(
 			ctx,
 			op.Manager,
+			op.Clock,
 			op.GetClient(),
+			op.Location,
+			op.SubscriptionID,
 			op.EventRecorder,
 			aksCloudProvider,
-			op.InstanceProvider,
+			op.VMInstanceProvider,
+			op.AKSMachineProvider,
+			// TODO: still need to refactor ImageProvider side of things.
+			op.KubernetesVersionProvider,
+			op.ImageProvider,
+			op.InstanceTypesProvider,
+			op.UnavailableOfferingsCache,
+			op.QuotaProvider,
+			op.InClusterKubernetesInterface,
+			op.KubernetesInterface,
+			op.ManagedDynamicInterface,
+			op.AZClient.SubnetsClient(),
+			op.AZClient.DiskEncryptionSetsClient(),
+			op.AZClient.CapacityReservationGroupsClient(),
+			op.AZClient.CapacityReservationsClient(),
+			options.FromContext(ctx).ParsedDiskEncryptionSetID,
+			options.FromContext(ctx).NetworkPolicy,
+			options.FromContext(ctx).NetworkPlugin,
 		)...).
-		Start(ctx, cloudProvider)
+		Start(ctx)
 }

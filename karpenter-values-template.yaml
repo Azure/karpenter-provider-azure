@@ -1,9 +1,8 @@
-
 replicas: 1 # for better debugging experience
 controller:
   env:
-    - name: LEADER_ELECT # disable leader election for better debugging / troubleshooting experience
-      value: "false"
+    - name: DISABLE_LEADER_ELECTION # disable leader election for better debugging / troubleshooting experience
+      value: "true"
     # disable HTTP/2 to reduce ARM throttling on large-scale tests;
     # with this in place write (and read) QPS can be increased too
     #- name: GODEBUG
@@ -23,26 +22,42 @@ controller:
       value: ${NETWORK_PLUGIN_MODE}
     - name: NETWORK_POLICY
       value: ${NETWORK_POLICY}
+    - name: NETWORK_DATAPLANE
+      value: ${NETWORK_DATAPLANE}
     - name: VNET_SUBNET_ID
       value: ${VNET_SUBNET_ID}
+    - name: VNET_GUID
+      value: ${VNET_GUID}
     - name: NODE_IDENTITIES
       value: ${NODE_IDENTITIES}
 
     # Azure client settings
-    - name: ARM_SUBSCRIPTION_ID
+    - name: AZURE_SUBSCRIPTION_ID
       value: ${AZURE_SUBSCRIPTION_ID}
     - name: LOCATION
       value: ${AZURE_LOCATION}
     - name: KUBELET_IDENTITY_CLIENT_ID
-      value: ""
+      value: ${KUBELET_IDENTITY_CLIENT_ID}
     - name: AZURE_NODE_RESOURCE_GROUP
       value: ${AZURE_RESOURCE_GROUP_MC}
-    
-    # managed karpenter settings 
+    - name: ENABLE_AZURE_SDK_LOGGING
+      value: ${ENABLE_AZURE_SDK_LOGGING:-false}
+
+    # managed karpenter settings
     - name: USE_SIG
-      value: "false"
+      value: "${USE_SIG}"
+    - name: SIG_ACCESS_TOKEN_SERVER_URL
+      value: ""
+    - name: SIG_ACCESS_TOKEN_SCOPE
+      value: ""
     - name: SIG_SUBSCRIPTION_ID
-      value: "" 
+      value: "${AZURE_SIG_SUBSCRIPTION_ID}"
+    - name: PROVISION_MODE
+      value: "${PROVISION_MODE:-aksscriptless}"
+    - name: AKS_MACHINES_POOL_NAME
+      value: "${AKS_MACHINES_POOL_NAME}"
+    - name: ARM_RESOURCE_GROUP
+      value: "${AZURE_RESOURCE_GROUP}"
 serviceAccount:
   name: ${KARPENTER_SERVICE_ACCOUNT_NAME}
   annotations:
@@ -50,3 +65,7 @@ serviceAccount:
 podLabels:
   azure.workload.identity/use: "true"
 logLevel: ${LOG_LEVEL}
+settings:
+  featureGates:
+    capacityBuffer: false
+    staticCapacity: true

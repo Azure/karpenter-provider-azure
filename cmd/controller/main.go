@@ -19,30 +19,56 @@ limitations under the License.
 package main
 
 import (
-	"github.com/samber/lo"
+	"context"
+	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator"
+	"github.com/go-logr/zapr"
+	"github.com/samber/lo"
 
+	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider/overlay"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
+	"sigs.k8s.io/karpenter/pkg/controllers/node/health"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	coreoperator "sigs.k8s.io/karpenter/pkg/operator"
-	corewebhooks "sigs.k8s.io/karpenter/pkg/webhooks"
+	"sigs.k8s.io/karpenter/pkg/operator/injection"
+	"sigs.k8s.io/karpenter/pkg/operator/logging"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 )
 
 func main() {
+	ctx := injection.WithOptionsOrDie(context.Background(), coreoptions.Injectables...)
+	logger := zapr.NewLogger(logging.NewLogger(ctx, "controller"))
+	lo.Must0(operator.WaitForCRDs(ctx, 2*time.Minute, ctrl.GetConfigOrDie(), logger), "failed waiting for CRDs")
+
 	ctx, op := operator.NewOperator(coreoperator.NewOperator())
+
+	// TODO: Consider also dumping at least some core options
+	logger.V(0).Info("Initial options", "options", options.FromContext(ctx).String())
+
 	aksCloudProvider := cloudprovider.New(
 		op.InstanceTypesProvider,
-		op.InstanceProvider,
+		op.VMInstanceProvider,
+		op.AKSMachineProvider,
 		op.EventRecorder,
 		op.GetClient(),
 		op.ImageProvider,
+		op.InstanceTypeStore,
+		coreoptions.FromContext(ctx).LegacyNodeRepair,
 	)
 
 	lo.Must0(op.AddHealthzCheck("cloud-provider", aksCloudProvider.LivenessProbe))
-	cloudProvider := metrics.Decorate(aksCloudProvider)
+
+	overlayUndecoratedCloudProvider := metrics.Decorate(aksCloudProvider)
+	cloudProvider := overlay.Decorate(overlayUndecoratedCloudProvider, op.GetClient(), op.InstanceTypeStore)
+	repairPolicyMatcher := lo.Must(health.NewRepairPolicyMatcher(ctx, cloudProvider))
+	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider, state.WithRepairPolicyMatcher(repairPolicyMatcher))
 
 	op.
 		WithControllers(ctx, corecontrollers.NewControllers(
@@ -52,16 +78,38 @@ func main() {
 			op.GetClient(),
 			op.EventRecorder,
 			cloudProvider,
+			overlayUndecoratedCloudProvider,
+			clusterState,
+			op.InstanceTypeStore,
+			op.PredictionStore,
 		)...).
-		WithWebhooks(ctx, corewebhooks.NewWebhooks()...).
 		WithControllers(ctx, controllers.NewControllers(
 			ctx,
 			op.Manager,
+			op.Clock,
 			op.GetClient(),
+			op.Location,
+			op.SubscriptionID,
 			op.EventRecorder,
 			aksCloudProvider,
-			op.InstanceProvider,
+			op.VMInstanceProvider,
+			op.AKSMachineProvider,
+			// TODO: still need to refactor ImageProvider side of things.
+			op.KubernetesVersionProvider,
+			op.ImageProvider,
+			op.InstanceTypesProvider,
+			op.UnavailableOfferingsCache,
+			op.QuotaProvider,
+			op.InClusterKubernetesInterface,
+			op.KubernetesInterface,
+			op.ManagedDynamicInterface,
+			op.AZClient.SubnetsClient(),
+			op.AZClient.DiskEncryptionSetsClient(),
+			op.AZClient.CapacityReservationGroupsClient(),
+			op.AZClient.CapacityReservationsClient(),
+			options.FromContext(ctx).ParsedDiskEncryptionSetID,
+			options.FromContext(ctx).NetworkPolicy,
+			options.FromContext(ctx).NetworkPlugin,
 		)...).
-		//WithWebhooks(ctx, webhooks.NewWebhooks()...).
-		Start(ctx, cloudProvider)
+		Start(ctx)
 }

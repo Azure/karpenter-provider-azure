@@ -18,24 +18,51 @@ package options
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"hash/fnv"
-	"math/rand"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"k8s.io/apimachinery/pkg/util/sets"
+	k8sflag "k8s.io/component-base/cli/flag"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/utils/env"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 func init() {
+	overrideCoreOptions(coreoptions.Injectables)
 	coreoptions.Injectables = append(coreoptions.Injectables, &Options{})
+}
+
+func overrideCoreOptions(injectables []coreoptions.Injectable) {
+	found := false
+	for i, injectable := range injectables {
+		if opts, ok := injectable.(*coreoptions.Options); ok {
+			injectables[i] = &CoreOptions{Options: *opts}
+			found = true
+		}
+	}
+	if !found {
+		panic("cannot apply Azure legacy repair defaults: *coreoptions.Options not found in coreoptions.Injectables")
+	}
+}
+
+// CoreOptions preserves Azure's legacy repair default while allowing explicit core flag overrides.
+type CoreOptions struct {
+	coreoptions.Options
+}
+
+func (o *CoreOptions) AddFlags(fs *coreoptions.FlagSet) {
+	o.Options.AddFlags(fs)
+	o.LegacyNodeRepair = env.WithDefaultBool("LEGACY_NODE_REPAIR", true)
 }
 
 type nodeIdentitiesValue []string
@@ -60,49 +87,117 @@ func (s *nodeIdentitiesValue) String() string { return strings.Join(*s, ",") }
 type optionsKey struct{}
 
 type Options struct {
-	ClusterName                    string
-	ClusterEndpoint                string // => APIServerName in bootstrap, except needs to be w/o https/port
-	VMMemoryOverheadPercent        float64
-	ClusterID                      string
-	KubeletClientTLSBootstrapToken string // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
-	SSHPublicKey                   string // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1alpha2.AKSNodeClass?
-	NetworkPlugin                  string // => NetworkPlugin in bootstrap
-	NetworkPolicy                  string // => NetworkPolicy in bootstrap
-	NetworkPluginMode              string // => Network Plugin Mode is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
-	NetworkDataplane               string
-	NodeIdentities                 []string // => Applied onto each VM
+	ClusterName             string  `json:"clusterName,omitempty"`
+	ClusterEndpoint         string  `json:"clusterEndpoint,omitempty"` // => APIServerName in bootstrap, except needs to be w/o https/port
+	VMMemoryOverheadPercent float64 `json:"vmMemoryOverheadPercent,omitempty"`
+	// EnableNodeHardening records the temporary ManagedCluster preview flag, but does not by itself
+	// mean node hardening is active. The bootstrappingclient mode intentionally ignores this flag
+	// because its bootstrap backend does not apply the matching kubelet configuration. Consumers
+	// must use ShouldUseNodeHardening instead of reading this field directly.
+	// Will remove this option when AKS defaults node hardening for new nodes based on Kubernetes version
+	// (expected 1.39+) and removes the corresponding field from the preview API.
+	EnableNodeHardening            bool   `json:"enableNodeHardening,omitempty"`
+	KubeletClientTLSBootstrapToken string `json:"-"` // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
+	LinuxAdminUsername             string `json:"-"`
+	SSHPublicKey                   string `json:"-"` // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1beta1.AKSNodeClass?
 
-	SubnetID string // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
-	setFlags map[string]bool
+	NetworkPlugin     string `json:"networkPlugin,omitempty"`     // => NetworkPlugin in bootstrap
+	NetworkPolicy     string `json:"networkPolicy,omitempty"`     // => NetworkPolicy in bootstrap
+	NetworkPluginMode string `json:"networkPluginMode,omitempty"` // => Network Plugin Mode is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
+	NetworkDataplane  string `json:"networkDataplane,omitempty"`
+	DNSServiceIP      string `json:"dnsServiceIP,omitempty"`
 
-	ProvisionMode              string
-	NodeBootstrappingServerURL string
-	UseSIG                     bool // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
+	NodeIdentities          []string `json:"nodeIdentities,omitempty"`          // => Applied onto each VM
+	KubeletIdentityClientID string   `json:"kubeletIdentityClientID,omitempty"` // => Flows to bootstrap and used in drift
+	VnetGUID                string   `json:"vnetGuid,omitempty"`                // resource guid used by azure cni for identifying the right vnet
+	SubnetID                string   `json:"subnetId,omitempty"`                // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
+	SystemNamespace         string   `json:"systemNamespace,omitempty"`
+	setFlags                map[string]bool
 
-	SIGSubscriptionID string
-	NodeResourceGroup string
+	ProvisionMode              string            `json:"provisionMode,omitempty"`
+	NodeBootstrappingServerURL string            `json:"-"`
+	UseSIG                     bool              `json:"useSIG,omitempty"` // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
+	SIGAccessTokenServerURL    string            `json:"-"`                // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
+	SIGSubscriptionID          string            `json:"sigSubscriptionId,omitempty"`
+	NodeResourceGroup          string            `json:"nodeResourceGroup,omitempty"`
+	AdditionalTags             map[string]string `json:"additionalTags,omitempty"`
+	EnableAzureSDKLogging      bool              `json:"enableAzureSDKLogging,omitempty"` // Controls whether Azure SDK middleware logging is enabled
+	DiskEncryptionSetID        string            `json:"diskEncryptionSetId,omitempty"`
+	EnableFIPS                 bool              `json:"enableFIPS,omitempty"`
+
+	// If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE is already an AKS Machine API mode, as it will behave as if this option is set to true.
+	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
+
+	AKSMachinesPoolName       string        `json:"aksMachinesPoolName,omitempty"`       // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision modes.
+	ProviderBatchIdleDuration time.Duration `json:"providerBatchIdleDuration,omitempty"` // Idle duration for provider batch accumulation (default 1s). Only used on provision mode aksmachineapiheaderbatch.
+	ProviderBatchMaxDuration  time.Duration `json:"providerBatchMaxDuration,omitempty"`  // Maximum duration for provider batch accumulation (default 5s). Only used on provision mode aksmachineapiheaderbatch.
+	ProviderBatchMaxSize      int           `json:"providerBatchMaxSize,omitempty"`      // Maximum number of machines per provider batch (default 50, AKS API limit). Only used on provision mode aksmachineapiheaderbatch.
+
+	ComputeRecommendationMode string `json:"computeRecommendationMode,omitempty"` // Controls compute recommendation API behavior: "disabled", "log-only" (default), or "enabled".
+
+	// computed options; do not set.
+	ParsedDiskEncryptionSetID *arm.ResourceID `json:"-"`
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.ClusterName, "cluster-name", env.WithDefaultString("CLUSTER_NAME", ""), "[REQUIRED] The kubernetes cluster name for resource tags.")
 	fs.StringVar(&o.ClusterEndpoint, "cluster-endpoint", env.WithDefaultString("CLUSTER_ENDPOINT", ""), "[REQUIRED] The external kubernetes cluster endpoint for new nodes to connect with.")
 	fs.Float64Var(&o.VMMemoryOverheadPercent, "vm-memory-overhead-percent", utils.WithDefaultFloat64("VM_MEMORY_OVERHEAD_PERCENT", 0.075), "The VM memory overhead as a percent that will be subtracted from the total memory for all instance types.")
+	fs.BoolVar(&o.EnableNodeHardening, "enable-node-hardening", env.WithDefaultBool("ENABLE_NODE_HARDENING", false), "Requests AKS node hardening reservations and eviction settings where supported. This option is ignored in bootstrappingclient mode.")
 	fs.StringVar(&o.KubeletClientTLSBootstrapToken, "kubelet-bootstrap-token", env.WithDefaultString("KUBELET_BOOTSTRAP_TOKEN", ""), "[REQUIRED] The bootstrap token for new nodes to join the cluster.")
+	fs.StringVar(&o.LinuxAdminUsername, "linux-admin-username", env.WithDefaultString("LINUX_ADMIN_USERNAME", "azureuser"), "The admin username for Linux VMs.")
 	fs.StringVar(&o.SSHPublicKey, "ssh-public-key", env.WithDefaultString("SSH_PUBLIC_KEY", ""), "[REQUIRED] VM SSH public key.")
 	fs.StringVar(&o.NetworkPlugin, "network-plugin", env.WithDefaultString("NETWORK_PLUGIN", consts.NetworkPluginAzure), "The network plugin used by the cluster.")
+	fs.StringVar(&o.DNSServiceIP, "dns-service-ip", env.WithDefaultString("DNS_SERVICE_IP", ""), "The IP address of cluster DNS service.")
 	fs.StringVar(&o.NetworkPluginMode, "network-plugin-mode", env.WithDefaultString("NETWORK_PLUGIN_MODE", consts.NetworkPluginModeOverlay), "network plugin mode of the cluster.")
 	fs.StringVar(&o.NetworkPolicy, "network-policy", env.WithDefaultString("NETWORK_POLICY", ""), "The network policy used by the cluster.")
 	fs.StringVar(&o.NetworkDataplane, "network-dataplane", env.WithDefaultString("NETWORK_DATAPLANE", "cilium"), "The network dataplane used by the cluster.")
-	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR.")
+	fs.StringVar(&o.VnetGUID, "vnet-guid", env.WithDefaultString("VNET_GUID", ""), "The vnet guid of the clusters vnet, only required by azure cni with overlay + byo vnet")
+	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "[REQUIRED] The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR.")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
 	fs.StringVar(&o.ProvisionMode, "provision-mode", env.WithDefaultString("PROVISION_MODE", consts.ProvisionModeAKSScriptless), "[UNSUPPORTED] The provision mode for the cluster.")
 	fs.StringVar(&o.NodeBootstrappingServerURL, "nodebootstrapping-server-url", env.WithDefaultString("NODEBOOTSTRAPPING_SERVER_URL", ""), "[UNSUPPORTED] The url for the node bootstrapping provider server.")
 	fs.StringVar(&o.NodeResourceGroup, "node-resource-group", env.WithDefaultString("AZURE_NODE_RESOURCE_GROUP", ""), "[REQUIRED] the resource group created and managed by AKS where the nodes live")
+	fs.StringVar(&o.KubeletIdentityClientID, "kubelet-identity-client-id", env.WithDefaultString("KUBELET_IDENTITY_CLIENT_ID", ""), "The client ID of the kubelet identity.")
 	fs.BoolVar(&o.UseSIG, "use-sig", env.WithDefaultBool("USE_SIG", false), "If set to true karpenter will use the AKS managed shared image galleries and the node image versions api. If set to false karpenter will use community image galleries. Only a subset of image features will be available in the community image galleries and this flag is only for the managed node provisioning addon.")
+	fs.StringVar(&o.SIGAccessTokenServerURL, "sig-access-token-server-url", env.WithDefaultString("SIG_ACCESS_TOKEN_SERVER_URL", ""), "The URL for the SIG access token server. Only used for AKS managed karpenter. UseSIG must be set tot true for this to take effect.")
 	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
+	fs.StringVar(&o.DiskEncryptionSetID, "node-osdisk-diskencryptionset-id", env.WithDefaultString("NODE_OSDISK_DISKENCRYPTIONSET_ID", ""), "The ARM resource ID of the disk encryption set to use for customer-managed key (BYOK) encryption.")
+	fs.BoolVar(&o.EnableFIPS, "enable-fips", env.WithDefaultBool("ENABLE_FIPS", false), "If set to true, AKSNodeClasses must explicitly enable FIPS mode. This setting mirrors the AKS cluster-level FIPS configuration.")
+	fs.BoolVar(&o.ManageExistingAKSMachines, "manage-existing-aks-machines", env.WithDefaultBool("MANAGE_EXISTING_AKS_MACHINES", false), "If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect when already on an AKS Machine API mode.")
+	fs.StringVar(&o.AKSMachinesPoolName, "aks-machines-pool-name", env.WithDefaultString("AKS_MACHINES_POOL_NAME", ""), "The name of the agent pool that the AKS machines are/will be in with AKS machine API provision modes. Existing AKS machines outside of this pool will be ignored. Required when PROVISION_MODE is an AKS machine API mode. Must be <= 6 characters if the pool will host Windows nodes, because the AKS RP composes the Windows computer name from the pool and machine names and that is bounded by the NetBIOS limit.")
+	fs.DurationVar(&o.ProviderBatchIdleDuration, "provider-batch-idle-duration", env.WithDefaultDuration("PROVIDER_BATCH_IDLE_DURATION", time.Second), "Idle duration for provider batch accumulation. Use Go duration format such as `1s`. Only used on provision mode aksmachineapiheaderbatch.")
+	fs.DurationVar(&o.ProviderBatchMaxDuration, "provider-batch-max-duration", env.WithDefaultDuration("PROVIDER_BATCH_MAX_DURATION", 5*time.Second), "Maximum duration for provider batch accumulation. Use Go duration format such as `1s`. Only used on provision mode aksmachineapiheaderbatch.")
+	fs.IntVar(&o.ProviderBatchMaxSize, "provider-batch-max-size", env.WithDefaultInt("PROVIDER_BATCH_MAX_SIZE", consts.AKSMachineAPIHeaderBatchMaxSize), fmt.Sprintf("Maximum number of machines per provider batch (AKS API limit is %d). Only used on provision mode aksmachineapiheaderbatch.", consts.AKSMachineAPIHeaderBatchMaxSize))
+	fs.StringVar(&o.ComputeRecommendationMode, "compute-recommendation-mode", env.WithDefaultString("COMPUTE_RECOMMENDATION_MODE", consts.ComputeRecommendationModeLog), "Controls compute recommendation API behavior: 'disabled' (no API calls), 'log-only' (call and log only), or 'enabled' (use for allocation).")
+
+	additionalTagsFlag := k8sflag.NewMapStringString(&o.AdditionalTags)
+	if err := additionalTagsFlag.Set(env.WithDefaultString("ADDITIONAL_TAGS", "")); err != nil {
+		panic(fmt.Sprintf("failed to parse ADDITIONAL_TAGS from string %q: %s", env.WithDefaultString("ADDITIONAL_TAGS", ""), err))
+	}
+	// See https://github.com/Azure/karpenter-provider-azure/issues/1042 for issue discussing improvements around this
+	fs.Var(additionalTagsFlag, "additional-tags", "Additional tags to apply to the resources in Azure. Format is key1=value1,key2=value2. These tags will be merged with the tags specified on the NodePool. In the case of a tag collision, the NodePool tag wins. These tags only apply to new nodes and do not trigger drift, which means that adding tags to this collection will not update existing nodes until drift triggers for some other reason.")
+	fs.BoolVar(&o.EnableAzureSDKLogging, "enable-azure-sdk-logging", env.WithDefaultBool("ENABLE_AZURE_SDK_LOGGING", true), "If set to false then Azure SDK middleware logging is disabled for debugging, and won't be logging all HTTP requests/responses to Azure APIs.")
 }
 
-func (o Options) GetAPIServerName() string {
+// LoadFromEnvironment loads options that are intentionally not exposed as command-line flags.
+func (o *Options) LoadFromEnvironment() {
+	o.SystemNamespace = strings.TrimSpace(os.Getenv("SYSTEM_NAMESPACE"))
+}
+
+// IsAKSMachineAPIMode returns true if the current provision mode creates instances via the AKS Machine API.
+func (o *Options) IsAKSMachineAPIMode() bool {
+	return o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+}
+
+// ShouldUseNodeHardening returns the effective node hardening setting. Scriptless and AKS Machine
+// API modes apply matching kubelet configuration; bootstrappingclient does not and is excluded.
+func (o *Options) ShouldUseNodeHardening() bool {
+	return o.EnableNodeHardening &&
+		(o.ProvisionMode == consts.ProvisionModeAKSScriptless || o.IsAKSMachineAPIMode())
+}
+
+func (o *Options) GetAPIServerName() string {
 	endpoint, _ := url.Parse(o.ClusterEndpoint) // assume to already validated
 	return endpoint.Hostname()
 }
@@ -114,6 +209,8 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 		}
 		return fmt.Errorf("parsing flags, %w", err)
 	}
+
+	o.LoadFromEnvironment()
 
 	// Check if each option has been set. This is a little brute force and better options might exist,
 	// but this only needs to be here for one version
@@ -132,10 +229,16 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 		return fmt.Errorf("validating options, %w", err)
 	}
 
-	// ClusterID is generated from cluster endpoint
-	o.ClusterID = getAKSClusterID(o.GetAPIServerName())
-
 	return nil
+}
+
+func (o *Options) String() string {
+	json, err := json.Marshal(o)
+	if err != nil {
+		return "couldn't marshal options JSON"
+	}
+
+	return string(json)
 }
 
 func (o *Options) ToContext(ctx context.Context) context.Context {
@@ -152,15 +255,4 @@ func FromContext(ctx context.Context) *Options {
 		return nil
 	}
 	return retval.(*Options)
-}
-
-// getAKSClusterID returns cluster ID based on the DNS prefix of the cluster.
-// The logic comes from AgentBaker and other places, originally from aks-engine
-// with the additional assumption of DNS prefix being the first 33 chars of FQDN
-func getAKSClusterID(apiServerFQDN string) string {
-	dnsPrefix := apiServerFQDN[:33]
-	h := fnv.New64a()
-	h.Write([]byte(dnsPrefix))
-	r := rand.New(rand.NewSource(int64(h.Sum64()))) //nolint:gosec
-	return fmt.Sprintf("%08d", r.Uint32())[:8]
 }

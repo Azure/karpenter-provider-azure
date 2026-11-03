@@ -23,10 +23,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
-	"knative.dev/pkg/logging"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -61,11 +62,37 @@ type Provider struct {
 	resourceGroup    string
 	cache            *cache.Cache
 	mu               sync.Mutex
+
+	// generation is incremented each time we refresh the LB list from Azure.
+	// It is used to prevent multiple callers from refreshing the LB list at the same time
+	generation uint64
 }
 
 type BackendAddressPools struct {
 	IPv4PoolIDs []string
 	IPv6PoolIDs []string // TODO: This is always empty currently
+
+	// generation is the generation of the LB list that was used to build this pool collection.
+	generation uint64
+}
+
+// WithoutKubernetesInboundPools returns a copy without the well-known Kubernetes inbound pools.
+// Outbound pools are retained.
+func (p *BackendAddressPools) WithoutKubernetesInboundPools() *BackendAddressPools {
+	return &BackendAddressPools{
+		IPv4PoolIDs: lo.Reject(p.IPv4PoolIDs, isKubernetesInboundBackendPoolID),
+		IPv6PoolIDs: lo.Reject(p.IPv6PoolIDs, isKubernetesInboundBackendPoolID),
+		generation:  p.generation,
+	}
+}
+
+func isKubernetesInboundBackendPoolID(poolID string, _ int) bool {
+	resourceID, err := arm.ParseResourceID(poolID)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(resourceID.Name, SLBInboundBackendPoolName) ||
+		strings.EqualFold(resourceID.Name, SLBInboundBackendPoolNameIPv6)
 }
 
 // NewProvider creates a new LoadBalancer provider
@@ -81,35 +108,39 @@ func NewProvider(loadBalancersAPI LoadBalancersAPI, cache *cache.Cache, resource
 // This collection is collected from Azure periodically but usually served from a cache to reduce
 // Azure request load.
 func (p *Provider) LoadBalancerBackendPools(ctx context.Context) (*BackendAddressPools, error) {
-	loadBalancers, err := p.getLoadBalancers(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	backendAddressPools := lo.FlatMap(loadBalancers, extractBackendAddressPools)
-	ipv4PoolIDs := lo.FilterMap(backendAddressPools, func(backendPool *armnetwork.BackendAddressPool, idx int) (string, bool) {
-		if !isBackendAddressPoolApplicable(backendPool, idx) {
-			return "", false
-		}
-
-		return lo.FromPtr(backendPool.ID), true
-	})
-
-	logging.FromContext(ctx).Debugf("Returning %d IPv4 backend pools: %s", len(ipv4PoolIDs), ipv4PoolIDs)
-
-	// RP only actually assigns the LB backend pools to VMs if OutboundType is LoadBalancer,
-	// but that's also the only OutboundType which creates the LoadBalancer, so as long as we're not allowing
-	// OutboundType changes, we can just infer that if the LBs exist we should assign them.
-	return &BackendAddressPools{
-		IPv4PoolIDs: ipv4PoolIDs,
-		// TODO: IPv6 deferred for now. When they're used they must be put onto a non-primary NIC.
-	}, nil
-}
-
-func (p *Provider) getLoadBalancers(ctx context.Context) ([]*armnetwork.LoadBalancer, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	return p.loadBalancerBackendPoolsLocked(ctx)
+}
+
+// RefreshBackendPools refreshes the LB cache if the provided pools came from
+// the same generation that is currently cached (meaning no other caller has refreshed
+// since). If a newer generation already exists, it returns pools from that generation
+// without calling Azure.
+func (p *Provider) RefreshBackendPools(ctx context.Context, observedPools *BackendAddressPools) (*BackendAddressPools, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if observedPools.generation == p.generation {
+		// Cache holds stale data. Delete so getLoadBalancersLocked re-fetches from Azure.
+		p.cache.Delete(loadBalancersCacheKey)
+	}
+
+	return p.loadBalancerBackendPoolsLocked(ctx)
+}
+
+// loadBalancerBackendPoolsLocked must be called with p.mu held.
+func (p *Provider) loadBalancerBackendPoolsLocked(ctx context.Context) (*BackendAddressPools, error) {
+	lbs, err := p.getLoadBalancersLocked(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return p.newPoolsLocked(ctx, lbs), nil
+}
+
+// getLoadBalancersLocked returns cached LBs or fetches from Azure. Must be called with p.mu held.
+func (p *Provider) getLoadBalancersLocked(ctx context.Context) ([]*armnetwork.LoadBalancer, error) {
 	if cached, ok := p.cache.Get(loadBalancersCacheKey); ok {
 		return cached.([]*armnetwork.LoadBalancer), nil
 	}
@@ -119,15 +150,41 @@ func (p *Provider) getLoadBalancers(ctx context.Context) ([]*armnetwork.LoadBala
 		return nil, err
 	}
 
-	// If we wanted to hyper-optimize, we could set a much longer timeout once we find the -internal LB, as at that point we're "done" and
-	// aren't particularly interested in LB changes anymore.
+	p.generation++
 	p.cache.SetDefault(loadBalancersCacheKey, lbs)
 
 	return lbs, nil
 }
 
+// newPoolsLocked extracts pool IDs from LBs and tags the result with the current generation.
+// Must be called with p.mu held (reads p.generation).
+func (p *Provider) newPoolsLocked(ctx context.Context, loadBalancers []*armnetwork.LoadBalancer) *BackendAddressPools {
+	backendAddressPools := lo.FlatMap(loadBalancers, extractBackendAddressPools)
+	ipv4PoolIDs := lo.FilterMap(backendAddressPools, func(backendPool *armnetwork.BackendAddressPool, idx int) (string, bool) {
+		if !isBackendAddressPoolApplicable(backendPool, idx) {
+			return "", false
+		}
+		id := lo.FromPtr(backendPool.ID)
+		if id == "" {
+			return "", false
+		}
+		return id, true
+	})
+
+	log.FromContext(ctx).V(1).Info("returning IPv4 backend pools", "ipv4PoolCount", len(ipv4PoolIDs), "ipv4PoolIDs", ipv4PoolIDs)
+
+	// RP only actually assigns the LB backend pools to VMs if OutboundType is LoadBalancer,
+	// but that's also the only OutboundType which creates the LoadBalancer, so as long as we're not allowing
+	// OutboundType changes, we can just infer that if the LBs exist we should assign them.
+	return &BackendAddressPools{
+		IPv4PoolIDs: ipv4PoolIDs,
+		// TODO: IPv6 deferred for now. When they're used they must be put onto a non-primary NIC.
+		generation: p.generation,
+	}
+}
+
 func (p *Provider) loadFromAzure(ctx context.Context) ([]*armnetwork.LoadBalancer, error) {
-	logging.FromContext(ctx).Infof("Querying load balancers in resource group %s", p.resourceGroup)
+	log.FromContext(ctx).Info("querying load balancers in resource group", "resourceGroup", p.resourceGroup)
 
 	pager := p.loadBalancersAPI.NewListPager(p.resourceGroup, nil)
 
@@ -142,7 +199,7 @@ func (p *Provider) loadFromAzure(ctx context.Context) ([]*armnetwork.LoadBalance
 
 	// Only return the LBs we actually care about
 	result := lo.Filter(lbs, isClusterLoadBalancer)
-	logging.FromContext(ctx).Infof("Found %d load balancers of interest", len(result))
+	log.FromContext(ctx).Info("found load balancers of interest", "loadBalancerCount", len(result))
 	return result, nil
 }
 

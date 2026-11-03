@@ -19,14 +19,16 @@ package fake
 import (
 	"context"
 	"fmt"
-	"sync"
+	"maps"
+	"net/http"
 
-	"github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/samber/lo"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	fakesync "github.com/Azure/karpenter-provider-azure/pkg/fake/sync"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 )
 
 type NetworkInterfaceCreateOrUpdateInput struct {
@@ -40,27 +42,34 @@ type NetworkInterfaceDeleteInput struct {
 	ResourceGroupName, InterfaceName string
 }
 
+type NetworkInterfaceUpdateTagsInput struct {
+	ResourceGroupName string
+	InterfaceName     string
+	Tags              armnetwork.TagsObject
+	Options           *armnetwork.InterfacesClientUpdateTagsOptions
+}
+
 type NetworkInterfacesBehavior struct {
 	NetworkInterfacesCreateOrUpdateBehavior MockedLRO[NetworkInterfaceCreateOrUpdateInput, armnetwork.InterfacesClientCreateOrUpdateResponse]
 	NetworkInterfacesDeleteBehavior         MockedLRO[NetworkInterfaceDeleteInput, armnetwork.InterfacesClientDeleteResponse]
-	NetworkInterfaces                       sync.Map
+	NetworkInterfacesUpdateTagsBehavior     MockedFunction[NetworkInterfaceUpdateTagsInput, armnetwork.InterfacesClientUpdateTagsResponse]
+	NetworkInterfaces                       fakesync.Map[string, armnetwork.Interface]
 }
 
 // assert that the fake implements the interface
-var _ instance.NetworkInterfacesAPI = &NetworkInterfacesAPI{}
+var _ azapi.NetworkInterfacesAPI = &NetworkInterfacesAPI{}
 
 type NetworkInterfacesAPI struct {
-	// instance.NetworkInterfacesAPI
+	// azapi.NetworkInterfacesAPI
 	NetworkInterfacesBehavior
 }
 
 // Reset must be called between tests otherwise tests will pollute each other.
 func (c *NetworkInterfacesAPI) Reset() {
 	c.NetworkInterfacesCreateOrUpdateBehavior.Reset()
-	c.NetworkInterfaces.Range(func(k, v any) bool {
-		c.NetworkInterfaces.Delete(k)
-		return true
-	})
+	c.NetworkInterfacesDeleteBehavior.Reset()
+	c.NetworkInterfacesUpdateTagsBehavior.Reset()
+	c.NetworkInterfaces.Clear()
 }
 
 func (c *NetworkInterfacesAPI) BeginCreateOrUpdate(_ context.Context, resourceGroupName string, interfaceName string, iface armnetwork.Interface, options *armnetwork.InterfacesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armnetwork.InterfacesClientCreateOrUpdateResponse], error) {
@@ -73,8 +82,9 @@ func (c *NetworkInterfacesAPI) BeginCreateOrUpdate(_ context.Context, resourceGr
 
 	return c.NetworkInterfacesCreateOrUpdateBehavior.Invoke(input, func(input *NetworkInterfaceCreateOrUpdateInput) (*armnetwork.InterfacesClientCreateOrUpdateResponse, error) {
 		iface := input.Interface
-		id := mkNetworkInterfaceID(input.ResourceGroupName, input.InterfaceName)
-		iface.ID = to.StringPtr(id)
+		iface.Name = lo.ToPtr(input.InterfaceName)
+		id := MakeNetworkInterfaceID(input.ResourceGroupName, input.InterfaceName)
+		iface.ID = lo.ToPtr(id)
 		c.NetworkInterfaces.Store(id, iface)
 		return &armnetwork.InterfacesClientCreateOrUpdateResponse{
 			Interface: iface,
@@ -83,13 +93,13 @@ func (c *NetworkInterfacesAPI) BeginCreateOrUpdate(_ context.Context, resourceGr
 }
 
 func (c *NetworkInterfacesAPI) Get(_ context.Context, resourceGroupName string, interfaceName string, _ *armnetwork.InterfacesClientGetOptions) (armnetwork.InterfacesClientGetResponse, error) {
-	id := mkNetworkInterfaceID(resourceGroupName, interfaceName)
+	id := MakeNetworkInterfaceID(resourceGroupName, interfaceName)
 	iface, ok := c.NetworkInterfaces.Load(id)
 	if !ok {
-		return armnetwork.InterfacesClientGetResponse{}, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
+		return armnetwork.InterfacesClientGetResponse{}, &azcore.ResponseError{StatusCode: http.StatusNotFound}
 	}
 	return armnetwork.InterfacesClientGetResponse{
-		Interface: iface.(armnetwork.Interface),
+		Interface: iface,
 	}, nil
 }
 
@@ -99,13 +109,48 @@ func (c *NetworkInterfacesAPI) BeginDelete(_ context.Context, resourceGroupName 
 		InterfaceName:     interfaceName,
 	}
 	return c.NetworkInterfacesDeleteBehavior.Invoke(input, func(input *NetworkInterfaceDeleteInput) (*armnetwork.InterfacesClientDeleteResponse, error) {
-		id := mkNetworkInterfaceID(resourceGroupName, interfaceName)
+		id := MakeNetworkInterfaceID(input.ResourceGroupName, input.InterfaceName)
 		c.NetworkInterfaces.Delete(id)
 		return &armnetwork.InterfacesClientDeleteResponse{}, nil
 	})
 }
 
-func mkNetworkInterfaceID(resourceGroupName, interfaceName string) string {
+func (c *NetworkInterfacesAPI) UpdateTags(
+	ctx context.Context,
+	resourceGroupName string,
+	interfaceName string,
+	tags armnetwork.TagsObject,
+	options *armnetwork.InterfacesClientUpdateTagsOptions,
+) (armnetwork.InterfacesClientUpdateTagsResponse, error) {
+	input := &NetworkInterfaceUpdateTagsInput{
+		ResourceGroupName: resourceGroupName,
+		InterfaceName:     interfaceName,
+		Tags:              tags,
+		Options:           options,
+	}
+	return c.NetworkInterfacesUpdateTagsBehavior.Invoke(input, func(input *NetworkInterfaceUpdateTagsInput) (armnetwork.InterfacesClientUpdateTagsResponse, error) {
+		id := MakeNetworkInterfaceID(resourceGroupName, interfaceName)
+		instance, ok := c.NetworkInterfaces.Load(id)
+		if !ok {
+			return armnetwork.InterfacesClientUpdateTagsResponse{}, &azcore.ResponseError{StatusCode: http.StatusNotFound}
+		}
+
+		iface := instance
+
+		if input.Tags.Tags != nil {
+			// Tags are full-replace if they're specified
+			iface.Tags = maps.Clone(input.Tags.Tags)
+		}
+
+		c.NetworkInterfaces.Store(id, iface)
+
+		return armnetwork.InterfacesClientUpdateTagsResponse{
+			Interface: iface,
+		}, nil
+	})
+}
+
+func MakeNetworkInterfaceID(resourceGroupName, interfaceName string) string {
 	const subscriptionID = "subscriptionID" // not important for fake
 	const idFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkInterfaces/%s"
 	return fmt.Sprintf(idFormat, subscriptionID, resourceGroupName, interfaceName)

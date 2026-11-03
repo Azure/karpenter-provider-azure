@@ -18,31 +18,29 @@ package customscriptsbootstrap
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"math"
-	"strings"
-	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/samber/lo"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
-	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
-	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client/operations"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+)
 
-	httptransport "github.com/go-openapi/runtime/client"
-	"github.com/go-openapi/strfmt"
-	"github.com/samber/lo"
-
-	"k8s.io/apimachinery/pkg/api/resource"
+const (
+	ImageFamilyOSSKUUbuntu2004  = "Ubuntu2004"
+	ImageFamilyOSSKUUbuntu2204  = "Ubuntu2204"
+	ImageFamilyOSSKUUbuntu2404  = "Ubuntu2404"
+	ImageFamilyOSSKUAzureLinux2 = "AzureLinux2"
+	ImageFamilyOSSKUAzureLinux3 = "AzureLinux3"
 )
 
 type ProvisionClientBootstrap struct {
@@ -62,20 +60,59 @@ type ProvisionClientBootstrap struct {
 	IsWindows                      bool
 	InstanceType                   *cloudprovider.InstanceType
 	StorageProfile                 string
-	ImageFamily                    string
+	OSSKU                          string
+	NodeBootstrappingProvider      types.NodeBootstrappingAPI
+	GPUDriverInstallationEnabled   bool
+	FIPSMode                       *v1beta1.FIPSMode
+	WorkloadRuntime                *v1beta1.WorkloadRuntime
+	LocalDNSProfile                *v1beta1.LocalDNS
+	ArtifactStreaming              *v1beta1.ArtifactStreaming
+	LinuxOSConfig                  *v1beta1.LinuxOSConfiguration
+	VTPMEnabled                    *bool
+	SecureBootEnabled              *bool
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
 
-// nolint gocyclo - will be refactored later
 func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (string, string, error) {
-	if p.IsWindows {
-		// TODO(Windows)
-		return "", "", fmt.Errorf("windows is not supported")
+	provisionValues, err := p.ConstructProvisionValues(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("constructProvisionValues failed with error: %w", err)
 	}
 
-	labels := lo.Assign(map[string]string{}, p.Labels)
-	getAgentbakerGeneratedLabels(p.ResourceGroup, labels)
+	if p.NodeBootstrappingProvider == nil {
+		return "", "", fmt.Errorf("nodeBootstrapping provider is not initialized")
+	}
+	nodeBootstrapping, err := p.NodeBootstrappingProvider.Get(ctx, provisionValues)
+	if err != nil {
+		// As of now we just fail the provisioning given the unlikely scenario of retriable error, but could be revisited along with retriable status on the server side.
+		return "", "", fmt.Errorf("nodeBootstrapping.Get failed with error: %w", err)
+	}
+
+	customDataHydrated, cseHydrated, err := hydrateBootstrapTokenIfNeeded(nodeBootstrapping.CustomDataEncodedDehydratable, nodeBootstrapping.CSEDehydratable, p.KubeletClientTLSBootstrapToken)
+	if err != nil {
+		return "", "", fmt.Errorf("hydrateBootstrapTokenIfNeeded failed with error: %w", err)
+	}
+
+	return customDataHydrated, cseHydrated, nil
+}
+
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
+//
+//nolint:gocyclo
+func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context) (*models.ProvisionValues, error) {
+	if p.IsWindows {
+		// TODO(Windows)
+		return nil, fmt.Errorf("windows is not supported")
+	}
+
+	nodeLabels := lo.Assign(map[string]string{}, p.Labels)
+
+	enableArtifactStreaming := p.ArtifactStreaming.IsEnabled(p.Arch)
+
+	// unspecified FIPSMode is effectively no FIPS for now
+	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS
 
 	provisionProfile := &models.ProvisionProfile{
 		Name:                     lo.ToPtr(""),
@@ -83,16 +120,16 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		OsType:                   lo.ToPtr(lo.Ternary(p.IsWindows, models.OSTypeWindows, models.OSTypeLinux)),
 		VMSize:                   lo.ToPtr(p.InstanceType.Name),
 		Distro:                   lo.ToPtr(p.ImageDistro),
-		CustomNodeLabels:         labels,
+		CustomNodeLabels:         nodeLabels,
 		OrchestratorVersion:      lo.ToPtr(p.KubernetesVersion),
 		VnetSubnetID:             lo.ToPtr(p.SubnetID),
 		StorageProfile:           lo.ToPtr(p.StorageProfile),
 		NodeInitializationTaints: lo.Map(p.StartupTaints, func(taint v1.Taint, _ int) string { return taint.ToString() }),
 		NodeTaints:               lo.Map(p.Taints, func(taint v1.Taint, _ int) string { return taint.ToString() }),
 		SecurityProfile: &models.AgentPoolSecurityProfile{
-			SSHAccess: lo.ToPtr(models.SSHAccessLocalUser),
-			// EnableVTPM:       lo.ToPtr(false), // Unsupported as of now (Trusted launch)
-			// EnableSecureBoot: lo.ToPtr(false), // Unsupported as of now (Trusted launch)
+			SSHAccess:        lo.ToPtr(models.SSHAccessLocalUser),
+			EnableVTPM:       p.VTPMEnabled,
+			EnableSecureBoot: p.SecureBootEnabled,
 		},
 		MaxPods: lo.ToPtr(p.KubeletConfig.MaxPods),
 
@@ -101,49 +138,60 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		// AgentPoolWindowsProfile: &models.AgentPoolWindowsProfile{},               // Unsupported as of now; TODO(Windows)
 		// KubeletDiskType:         lo.ToPtr(models.KubeletDiskTypeUnspecified),    // Unsupported as of now
 		// CustomLinuxOSConfig:     &models.CustomLinuxOSConfig{},                   // Unsupported as of now (sysctl)
-		// EnableFIPS:              lo.ToPtr(false),                                 // Unsupported as of now
+		CustomLinuxOSConfig: convertLinuxOSConfigToModel(p.LinuxOSConfig),
+		EnableFIPS:          lo.ToPtr(enableFIPS),
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
-		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
-		// ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
-		// Enabled: lo.ToPtr(false), // Unsupported as of now
-		// },
+		// WorkloadRuntime is left unset for the default OCIContainer case so existing payloads are
+		// unchanged; it is only sent when Pod Sandboxing (Kata) is requested.
+		WorkloadRuntime: convertWorkloadRuntimeToModel(p.WorkloadRuntime),
+		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
+			Enabled: lo.ToPtr(enableArtifactStreaming),
+		},
+		LocalDNSProfile: convertLocalDNSToModel(p.LocalDNSProfile),
 	}
 
-	switch p.ImageFamily {
-	case v1alpha2.Ubuntu2204ImageFamily:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
-	case v1alpha2.AzureLinuxImageFamily:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
+	// Map OS SKU to AKS provision client's expectation
+	// Note that the direction forward is to be more specific with OS versions. Be careful when supporting new ones.
+	switch p.OSSKU {
+	// https://go.dev/wiki/Switch#multiple-cases
+	case ImageFamilyOSSKUUbuntu2004, ImageFamilyOSSKUUbuntu2204, ImageFamilyOSSKUUbuntu2404:
+		provisionProfile.OsSku = lo.ToPtr(models.OSSKUUbuntu)
+	case ImageFamilyOSSKUAzureLinux2, ImageFamilyOSSKUAzureLinux3:
+		provisionProfile.OsSku = lo.ToPtr(models.OSSKUAzureLinux)
 	default:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
+		return nil, fmt.Errorf("unsupported OSSKU %s", p.OSSKU)
 	}
 
 	if p.KubeletConfig != nil {
 		provisionProfile.CustomKubeletConfig = &models.CustomKubeletConfig{
-			CPUCfsQuota:           p.KubeletConfig.CPUCFSQuota,
-			ImageGcHighThreshold:  p.KubeletConfig.ImageGCHighThresholdPercent,
-			ImageGcLowThreshold:   p.KubeletConfig.ImageGCLowThresholdPercent,
-			ContainerLogMaxSizeMB: convertContainerLogMaxSizeToMB(p.KubeletConfig.ContainerLogMaxSize),
-			ContainerLogMaxFiles:  p.KubeletConfig.ContainerLogMaxFiles,
-			PodMaxPids:            convertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+			CPUCfsQuota:          p.KubeletConfig.CPUCFSQuota,
+			ImageGcHighThreshold: p.KubeletConfig.ImageGCHighThresholdPercent,
+			ImageGcLowThreshold:  p.KubeletConfig.ImageGCLowThresholdPercent,
+			ContainerLogMaxFiles: p.KubeletConfig.ContainerLogMaxFiles,
+			PodMaxPids:           ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+			FailSwapOn:           p.KubeletConfig.FailSwapOn,
+		}
+
+		if p.KubeletConfig.ContainerLogMaxSize != nil {
+			provisionProfile.CustomKubeletConfig.ContainerLogMaxSizeMB = ConvertContainerLogMaxSizeToMB(*p.KubeletConfig.ContainerLogMaxSize)
 		}
 
 		// NodeClaim defaults don't work somehow and keep giving invalid values. Can be improved later.
 		if p.KubeletConfig.CPUCFSQuotaPeriod.Duration.String() != "0s" {
 			provisionProfile.CustomKubeletConfig.CPUCfsQuotaPeriod = lo.ToPtr(p.KubeletConfig.CPUCFSQuotaPeriod.Duration.String())
 		}
-		if p.KubeletConfig.CPUManagerPolicy != "" {
-			provisionProfile.CustomKubeletConfig.CPUManagerPolicy = lo.ToPtr(p.KubeletConfig.CPUManagerPolicy)
+		if p.KubeletConfig.CPUManagerPolicy != nil && *p.KubeletConfig.CPUManagerPolicy != "" {
+			provisionProfile.CustomKubeletConfig.CPUManagerPolicy = p.KubeletConfig.CPUManagerPolicy
 		}
-		if p.KubeletConfig.TopologyManagerPolicy != "" {
-			provisionProfile.CustomKubeletConfig.TopologyManagerPolicy = lo.ToPtr(p.KubeletConfig.TopologyManagerPolicy)
+		if p.KubeletConfig.TopologyManagerPolicy != nil && *p.KubeletConfig.TopologyManagerPolicy != "" {
+			provisionProfile.CustomKubeletConfig.TopologyManagerPolicy = p.KubeletConfig.TopologyManagerPolicy
 		}
 		if len(p.KubeletConfig.AllowedUnsafeSysctls) > 0 {
 			provisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls = p.KubeletConfig.AllowedUnsafeSysctls
 		}
 	}
 
-	if modeString, ok := p.Labels["kubernetes.azure.com/mode"]; ok && modeString == "system" {
+	if modeString, ok := p.Labels[v1beta1.AKSLabelMode]; ok && modeString == v1beta1.ModeSystem {
 		provisionProfile.Mode = lo.ToPtr(models.AgentPoolModeSystem)
 	} else {
 		provisionProfile.Mode = lo.ToPtr(models.AgentPoolModeUser)
@@ -152,7 +200,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	if utils.IsNvidiaEnabledSKU(p.InstanceType.Name) {
 		provisionProfile.GpuProfile = &models.GPUProfile{
 			DriverType:       lo.ToPtr(lo.Ternary(utils.UseGridDrivers(p.InstanceType.Name), models.DriverTypeGRID, models.DriverTypeCUDA)),
-			InstallGPUDriver: lo.ToPtr(true),
+			InstallGPUDriver: lo.ToPtr(p.GPUDriverInstallationEnabled),
 		}
 	}
 
@@ -161,110 +209,18 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		SkuMemory: lo.ToPtr(math.Ceil(reverseVMMemoryOverhead(options.FromContext(ctx).VMMemoryOverheadPercent, p.InstanceType.Capacity.Memory().AsApproximateFloat64()) / 1024 / 1024 / 1024)),
 	}
 
-	return p.getNodeBootstrappingFromClient(ctx, provisionProfile, provisionHelperValues, p.KubeletClientTLSBootstrapToken)
-}
-
-func (p *ProvisionClientBootstrap) getNodeBootstrappingFromClient(ctx context.Context, provisionProfile *models.ProvisionProfile, provisionHelperValues *models.ProvisionHelperValues, bootstrapToken string) (string, string, error) {
-	transport := httptransport.New(options.FromContext(ctx).NodeBootstrappingServerURL, "/", []string{"http"})
-	client := client.New(transport, strfmt.Default)
-
-	params := operations.NewNodeBootstrappingGetParams()
-	params.ResourceGroupName = p.ClusterResourceGroup
-	params.ResourceName = p.ClusterName
-	params.SubscriptionID = p.SubscriptionID
-	provisionValues := &models.ProvisionValues{
+	return &models.ProvisionValues{
 		ProvisionProfile:      provisionProfile,
 		ProvisionHelperValues: provisionHelperValues,
-	}
-	params.Parameters = provisionValues
-
-	params.WithTimeout(30 * time.Second)
-	params.Context = ctx
-
-	resp, err := client.Operations.NodeBootstrappingGet(params)
-	if err != nil {
-		// As of now we just fail the provisioning given the unlikely scenario of retriable error, but could be revisted along with retriable status on the server side.
-		return "", "", err
-	}
-
-	if resp.Payload == nil {
-		return "", "", fmt.Errorf("no payload in response")
-	}
-	if resp.Payload.Cse == nil || *resp.Payload.Cse == "" {
-		return "", "", fmt.Errorf("no CSE in response")
-	}
-	if resp.Payload.CustomData == nil || *resp.Payload.CustomData == "" {
-		return "", "", fmt.Errorf("no CustomData in response")
-	}
-
-	cseWithoutBootstrapToken := *resp.Payload.Cse
-	customDataWithoutBootstrapToken := *resp.Payload.CustomData
-
-	cseWithBootstrapToken := strings.ReplaceAll(cseWithoutBootstrapToken, "{{.TokenID}}.{{.TokenSecret}}", bootstrapToken)
-
-	decodedCustomDataWithoutBootstrapTokenInBytes, err := base64.StdEncoding.DecodeString(customDataWithoutBootstrapToken)
-	if err != nil {
-		return "", "", err
-	}
-	decodedCustomDataWithBootstrapToken := strings.ReplaceAll(string(decodedCustomDataWithoutBootstrapTokenInBytes), "{{.TokenID}}.{{.TokenSecret}}", bootstrapToken)
-	customDataWithBootstrapToken := base64.StdEncoding.EncodeToString([]byte(decodedCustomDataWithBootstrapToken))
-
-	return customDataWithBootstrapToken, cseWithBootstrapToken, nil
+	}, nil
 }
 
-func getAgentbakerGeneratedLabels(nodeResourceGroup string, nodeLabels map[string]string) {
-	// Delegatable defaulting?
-	nodeLabels["kubernetes.azure.com/role"] = "agent"
-	nodeLabels["kubernetes.azure.com/cluster"] = normalizeResourceGroupNameForLabel(nodeResourceGroup)
-}
-
-func normalizeResourceGroupNameForLabel(resourceGroupName string) string {
-	truncated := resourceGroupName
-	truncated = strings.ReplaceAll(truncated, "(", "-")
-	truncated = strings.ReplaceAll(truncated, ")", "-")
-	const maxLen = 63
-	if len(truncated) > maxLen {
-		truncated = truncated[0:maxLen]
-	}
-
-	if strings.HasSuffix(truncated, "-") ||
-		strings.HasSuffix(truncated, "_") ||
-		strings.HasSuffix(truncated, ".") {
-		if len(truncated) > 62 {
-			return truncated[0:len(truncated)-1] + "z"
-		}
-		return truncated + "z"
-	}
-	return truncated
-}
-
-func reverseVMMemoryOverhead(vmMemoryOverheadPercent float64, adjustedMemory float64) float64 {
-	// This is not the best way to do it... But will be refactored later, given that retreiving the original memory properly might involves some restructure.
-	// Due to the fact that it is abstracted behind the cloudprovider interface.
-	return adjustedMemory / (1 - vmMemoryOverheadPercent)
-}
-
-func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
-	q, err := resource.ParseQuantity(containerLogMaxSize)
-	if err == nil {
-		// This could be improved later
-		return lo.ToPtr(int32(math.Round(q.AsApproximateFloat64() / 1024 / 1024)))
-	}
-	return nil
-}
-
-func convertPodMaxPids(podPidsLimit *int64) *int32 {
-	if podPidsLimit != nil {
-		podPidsLimitInt64 := *podPidsLimit
-		if podPidsLimitInt64 > int64(math.MaxInt32) {
-			// This could be improved later
-			return lo.ToPtr(int32(math.MaxInt32))
-		} else if podPidsLimitInt64 < 0 {
-			// This as well
-			return lo.ToPtr(int32(-1))
-		} else {
-			return lo.ToPtr(int32(podPidsLimitInt64)) // golint:ignore G115 already check overflow
-		}
+// convertWorkloadRuntimeToModel maps the AKSNodeClass workloadRuntime onto the node bootstrapping
+// contract's WorkloadRuntime enum. It returns nil for the default OCIContainer case so non-Kata
+// NodeClasses keep their existing wire payload.
+func convertWorkloadRuntimeToModel(workloadRuntime *v1beta1.WorkloadRuntime) *int32 {
+	if lo.FromPtr(workloadRuntime) == v1beta1.WorkloadRuntimeKataVMIsolation {
+		return lo.ToPtr(models.WorkloadRuntimeKataVMIsolation)
 	}
 	return nil
 }

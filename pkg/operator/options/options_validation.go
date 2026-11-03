@@ -18,28 +18,65 @@ package options
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
+	"regexp"
+	"strings"
 
+	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
+	"go.uber.org/multierr"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/go-playground/validator/v10"
-	"go.uber.org/multierr"
 )
 
-func (o Options) Validate() error {
+func (o *Options) Validate() error {
 	validate := validator.New()
 	return multierr.Combine(
 		o.validateRequiredFields(),
+		o.validateVNETGUID(),
+		o.validateKubeletIdentityClientID(),
 		o.validateEndpoint(),
 		o.validateNetworkingOptions(),
 		o.validateVMMemoryOverheadPercent(),
 		o.validateVnetSubnetID(),
 		o.validateProvisionMode(),
+		o.validateUseSIG(),
+		o.validateAdminUsername(),
+		o.validateAdditionalTags(),
+		o.validateDiskEncryptionSetID(),
+		o.validateClusterDNSIP(),
+		o.validateComputeRecommendationMode(),
 		validate.Struct(o),
 	)
 }
 
-func (o Options) validateNetworkingOptions() error {
+func (o *Options) validateClusterDNSIP() error {
+	if o.DNSServiceIP != "" {
+		if _, err := netip.ParseAddr(o.DNSServiceIP); err != nil {
+			return fmt.Errorf("dns-service-ip is invalid %w", err)
+		}
+	}
+	return nil
+}
+
+func (o *Options) validateVNETGUID() error {
+	if o.VnetGUID != "" && uuid.Validate(o.VnetGUID) != nil {
+		return fmt.Errorf("vnet-guid %s is malformed", o.VnetGUID)
+	}
+	return nil
+}
+
+func (o *Options) validateKubeletIdentityClientID() error {
+	if o.KubeletIdentityClientID != "" && uuid.Validate(o.KubeletIdentityClientID) != nil {
+		return fmt.Errorf("kubelet-identity-client-id %s is malformed", o.KubeletIdentityClientID)
+	}
+	return nil
+}
+
+func (o *Options) validateNetworkingOptions() error {
 	if o.NetworkPlugin != consts.NetworkPluginAzure && o.NetworkPlugin != consts.NetworkPluginNone {
 		return fmt.Errorf("network-plugin %v is invalid. network-plugin must equal 'azure' or 'none'", o.NetworkPlugin)
 	}
@@ -56,7 +93,7 @@ func (o Options) validateNetworkingOptions() error {
 	return nil
 }
 
-func (o Options) validateVnetSubnetID() error {
+func (o *Options) validateVnetSubnetID() error {
 	_, err := utils.GetVnetSubnetIDComponents(o.SubnetID)
 	if err != nil {
 		return fmt.Errorf("vnet-subnet-id is invalid: %w", err)
@@ -64,39 +101,65 @@ func (o Options) validateVnetSubnetID() error {
 	return nil
 }
 
-func (o Options) validateEndpoint() error {
+func (o *Options) validateEndpoint() error {
 	if o.ClusterEndpoint == "" {
 		return nil
 	}
-	endpoint, err := url.Parse(o.ClusterEndpoint)
-	// url.Parse() will accept a lot of input without error; make
-	// sure it's a real URL
-	if err != nil || !endpoint.IsAbs() || endpoint.Hostname() == "" {
+	if !isValidURL(o.ClusterEndpoint) {
 		return fmt.Errorf("\"%s\" not a valid clusterEndpoint URL", o.ClusterEndpoint)
 	}
 	return nil
 }
 
-func (o Options) validateVMMemoryOverheadPercent() error {
+func (o *Options) validateVMMemoryOverheadPercent() error {
 	if o.VMMemoryOverheadPercent < 0 {
 		return fmt.Errorf("vm-memory-overhead-percent cannot be negative")
 	}
 	return nil
 }
 
-func (o Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient {
+func (o *Options) validateProvisionMode() error {
+	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && !o.IsAKSMachineAPIMode() {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
-	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
+	switch o.ProvisionMode {
+	case consts.ProvisionModeBootstrappingClient:
 		if o.NodeBootstrappingServerURL == "" {
 			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
+		}
+	case consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch:
+		if o.AKSMachinesPoolName == "" {
+			return fmt.Errorf("aks-machines-pool-name is required when provision-mode is %s", o.ProvisionMode)
+		}
+		if !o.UseSIG {
+			return fmt.Errorf("use-sig is required to be true when provision-mode is %s", o.ProvisionMode)
+		}
+		if o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+			if err := o.validateBatchOptions(); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func (o Options) validateRequiredFields() error {
+func (o *Options) validateBatchOptions() error {
+	if o.ProviderBatchMaxSize < 1 || o.ProviderBatchMaxSize > consts.AKSMachineAPIHeaderBatchMaxSize {
+		return fmt.Errorf("provider-batch-max-size must be between 1 and %d, got %d", consts.AKSMachineAPIHeaderBatchMaxSize, o.ProviderBatchMaxSize)
+	}
+	if o.ProviderBatchIdleDuration < 0 {
+		return fmt.Errorf("provider-batch-idle-duration must be non-negative, got %s", o.ProviderBatchIdleDuration)
+	}
+	if o.ProviderBatchMaxDuration < 0 {
+		return fmt.Errorf("provider-batch-max-duration must be non-negative, got %s", o.ProviderBatchMaxDuration)
+	}
+	if o.ProviderBatchMaxDuration < o.ProviderBatchIdleDuration {
+		return fmt.Errorf("provider-batch-max-duration (%s) must be >= provider-batch-idle-duration (%s)", o.ProviderBatchMaxDuration, o.ProviderBatchIdleDuration)
+	}
+	return nil
+}
+
+func (o *Options) validateRequiredFields() error {
 	if o.ClusterEndpoint == "" {
 		return fmt.Errorf("missing field, cluster-endpoint")
 	}
@@ -112,5 +175,121 @@ func (o Options) validateRequiredFields() error {
 	if o.SubnetID == "" {
 		return fmt.Errorf("missing field, vnet-subnet-id")
 	}
+	if o.NodeResourceGroup == "" {
+		return fmt.Errorf("missing field, node-resource-group")
+	}
 	return nil
+}
+
+func (o *Options) validateUseSIG() error {
+	if o.UseSIG {
+		if !o.IsAKSMachineAPIMode() {
+			// For AKS Machine API modes, we don't need SIGAccessTokenServerURL etc. given AKS Machine API would handle it.
+			if o.SIGAccessTokenServerURL == "" {
+				return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
+			}
+			if !isValidURL(o.SIGAccessTokenServerURL) {
+				return fmt.Errorf("sig-access-token-server-url is not a valid URL")
+			}
+		}
+
+		if o.SIGSubscriptionID == "" {
+			return fmt.Errorf("sig-subscription-id is required when use-sig is true")
+		}
+	}
+	return nil
+}
+
+func (o *Options) validateAdminUsername() error {
+	if len(o.LinuxAdminUsername) > 32 {
+		return fmt.Errorf("linux-admin-username cannot be longer than 32 characters")
+	}
+
+	// Must start with a letter and only contain letters, numbers, hyphens, and underscores
+	match, err := regexp.MatchString("^[A-Za-z][-A-Za-z0-9_]*$", o.LinuxAdminUsername)
+	if err != nil {
+		return fmt.Errorf("error validating linux-admin-username: %w", err)
+	}
+	if !match {
+		return fmt.Errorf("linux-admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")
+	}
+
+	return nil
+}
+
+// validateAdditionalTags checks that additional tags are valid according to Azure's tag rules.
+// - Keys must be unique (case-insensitive)
+// - Keys must not exceed 512 characters
+// - Values must not exceed 256 characters
+// - Keys must not contain invalid characters: <, >, %, &, \, ?, /
+func (o *Options) validateAdditionalTags() error {
+	seen := make(map[string]struct{}, len(o.AdditionalTags))
+	for key, value := range o.AdditionalTags {
+		if len(key) > 512 {
+			return fmt.Errorf("additional-tags key %q exceeds maximum length of 512 characters", key)
+		}
+		if len(value) > 256 {
+			return fmt.Errorf("additional-tags value for key %q exceeds maximum length of 256 characters", key)
+		}
+		if strings.ContainsAny(key, `<>%&\?/`) {
+			return fmt.Errorf("additional-tags key %q contains invalid characters. <, >, %%, &, \\, ?, / are not allowed", key)
+		}
+		if _, exists := seen[strings.ToLower(key)]; exists {
+			return fmt.Errorf("additional-tags key %q is not unique (case-insensitive). Duplicate key found", key)
+		}
+		seen[strings.ToLower(key)] = struct{}{}
+	}
+
+	return nil
+}
+
+func isValidURL(u string) bool {
+	endpoint, err := url.Parse(u)
+	// url.Parse() will accept a lot of input without error; make
+	// sure it's a real URL
+	return err == nil && endpoint.IsAbs() && endpoint.Hostname() != ""
+}
+
+func (o *Options) validateDiskEncryptionSetID() error {
+	if o.DiskEncryptionSetID == "" {
+		return nil
+	}
+
+	// Parse with Azure SDK for validation
+	// arm.ParseResourceID will validate the format of the resource ID and extract its components
+	parsedID, err := arm.ParseResourceID(o.DiskEncryptionSetID)
+	if err != nil {
+		return fmt.Errorf("invalid DiskEncryptionSet ID: %w", err)
+	}
+
+	// Validate resource type is Microsoft.Compute/diskEncryptionSets
+	expectedResourceType := "Microsoft.Compute/diskEncryptionSets"
+	if !strings.EqualFold(parsedID.ResourceType.String(), expectedResourceType) {
+		return fmt.Errorf("disk-encryption-set-id is invalid: expected resource type '%s' but got '%s'", expectedResourceType, parsedID.ResourceType.String())
+	}
+
+	// Validate required fields are not empty
+	if parsedID.SubscriptionID == "" {
+		return fmt.Errorf("disk-encryption-set-id is invalid: subscription ID must not be empty")
+	}
+	if parsedID.ResourceGroupName == "" {
+		return fmt.Errorf("disk-encryption-set-id is invalid: resource group name must not be empty")
+	}
+	if parsedID.Name == "" {
+		return fmt.Errorf("disk-encryption-set-id is invalid: disk encryption set name must not be empty")
+	}
+
+	o.ParsedDiskEncryptionSetID = parsedID
+	return nil
+}
+
+func (o *Options) validateComputeRecommendationMode() error {
+	switch o.ComputeRecommendationMode {
+	case consts.ComputeRecommendationModeDisabled,
+		consts.ComputeRecommendationModeLog,
+		consts.ComputeRecommendationModeEnabled:
+		return nil
+	default:
+		return fmt.Errorf("compute-recommendation-mode %q is invalid, must be one of 'disabled', 'log-only', or 'enabled'", o.ComputeRecommendationMode)
+	}
 }

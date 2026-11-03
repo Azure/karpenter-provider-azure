@@ -1,16 +1,27 @@
 AZURE_LOCATION ?= westus2
+AZURE_VM_SIZE ?=
+K8S_VERSION ?=
+# Normalize "default" to empty (for workflow_dispatch compatibility)
+ifeq ($(K8S_VERSION),default)
+  K8S_VERSION :=
+endif
 COMMON_NAME ?= karpenter
+ENABLE_AZURE_SDK_LOGGING ?= false
 ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
   AZURE_ACR_NAME ?= $(subst -,,$(CODESPACE_NAME))
 else
-  AZURE_RESOURCE_GROUP ?= $(COMMON_NAME)
-  AZURE_ACR_NAME ?= $(COMMON_NAME)
+  # generate a unique suffix based on the user's email
+  NAME_SUFFIX ?= $(shell git config user.email | cut -d'@' -f1 | tr -cd '[:alnum:]')
+  AZURE_RESOURCE_GROUP ?= $(COMMON_NAME)$(NAME_SUFFIX)
+  AZURE_ACR_NAME ?= $(COMMON_NAME)$(NAME_SUFFIX)
 endif
 
-AZURE_SIG_SUBSCRIPTION_ID ?= $(AZURE_SUBSCRIPTION_ID)
+AZURE_ACR_SUFFIX ?= azurecr.io
+AZURE_SIG_SUBSCRIPTION_ID ?= 109a5e88-712a-48ae-9078-9ca8b3c81345
 AZURE_CLUSTER_NAME ?= $(COMMON_NAME)
 AZURE_RESOURCE_GROUP_MC = MC_$(AZURE_RESOURCE_GROUP)_$(AZURE_CLUSTER_NAME)_$(AZURE_LOCATION)
+VNET_RESOURCE_GROUP ?= $(AZURE_RESOURCE_GROUP_MC)	# by default, assume the cluster is using managed VNet
 
 KARPENTER_SERVICE_ACCOUNT_NAME ?= karpenter-sa
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME ?= karpentermsi
@@ -19,174 +30,60 @@ KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
 CUSTOM_VNET_NAME ?= $(AZURE_CLUSTER_NAME)-vnet
 CUSTOM_SUBNET_NAME ?= nodesubnet
 
-az-all:              az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+PROVISION_MODE ?= aksscriptless
+AKS_MACHINES_POOL_NAME ?= mpool
+# pre-pull base images for skaffold/ko build, as a workaround for https://github.com/GoogleContainerTools/skaffold/issues/10106
+KO_BASE_IMAGE ?= mcr.microsoft.com/azurelinux/distroless/base:3.0.20261022@sha256:6b85a86416a29cdcfd404e9fbd9c5ef49cc0612882cecc702535dcac39c9446c
+KO_BASE_IMAGE_AMD64 ?= mcr.microsoft.com/azurelinux/distroless/base:3.0.20261022-amd64@sha256:28cdc9c25371b329318d63242084302021b33708c63f59ce72bbc21e50c831fd
+KO_BASE_IMAGE_ARM64 ?= mcr.microsoft.com/azurelinux/distroless/base:3.0.20261022-arm64@sha256:96c7bfde3e1e5c502033f44446f6e1eea7f5ae60200b39025c4a8107cc124170
+export KOCACHE ?= $(or $(RUNNER_TEMP),/tmp)/ko-cache
 
-az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1       az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+# Windows admin credentials, used when creating a Windows-capable test cluster
+# (az-mkaks-windows). The AKS RP sources Windows node admin credentials from the cluster's
+# windowsProfile, so the cluster must be created with these. Override for non-throwaway use.
+WINDOWS_ADMIN_USERNAME ?= azureuser
+WINDOWS_ADMIN_PASSWORD ?= Repl@ceMe-W1ndows-E2E!
 
-az-all-cni-overlay:  az-login az-create-workload-msi az-mkaks-overlay     az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+.DEFAULT_GOAL := help	# make without arguments will show help
 
-az-all-custom-vnet:  az-login az-create-workload-msi az-mkaks-custom-vnet az-create-federated-cred az-perm-subnet-custom az-perm-acr az-configure-values-custom-vnet az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+export KO_GO_PATH ?= hack/go-crossbuild.sh
+
+AZ_ALL_PERMS := az-perm az-perm-acr
+ifneq ($(filter aksmachineapi aksmachineapiheaderbatch,$(PROVISION_MODE)),)
+  $(info PROVISION_MODE is $(PROVISION_MODE) (AKS Machine API mode))
+  AZ_ALL_PERMS += az-perm-aksmachine az-add-aksmachinespool
+endif
+
+# ---------------------------------------------
+# Local targets (intended for local users)
+# ---------------------------------------------
+az-all:              az-login az-create-workload-msi az-mkaks-cilium              az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+
+az-all-userassigned: az-login az-create-workload-msi az-mkaks-cilium-userassigned az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+
+az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1               az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+
+az-all-cni-overlay:  az-login az-create-workload-msi az-mkaks-overlay             az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+az-all-perftest:     az-login az-create-workload-msi az-mkaks-perftest            az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values
+	$(MAKE) az-mon-deploy
+	$(MAKE) az-pprof-enable
+	yq -i '.manifests.helm.releases[0].overrides.controller.resources.requests = {"cpu":4,"memory":"3Gi"}' skaffold.yaml
+	yq -i '.manifests.helm.releases[0].overrides.controller.resources.limits   = {"cpu":4,"memory":"3Gi"}' skaffold.yaml
+	$(MAKE) az-run
+	kubectl apply -f examples/v1/perftest.yaml
+	kubectl apply -f examples/workloads/inflate.yaml
+	# make az-mon-access
+
+az-all-custom-vnet: ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+	$(MAKE) VNET_RESOURCE_GROUP=$(AZURE_RESOURCE_GROUP) az-all-custom-vnet-impl
+
+az-all-custom-vnet-impl: az-login az-create-workload-msi az-mkaks-custom-vnet az-create-federated-cred az-perm-subnet-custom az-perm-acr az-configure-values az-build az-run az-run-sample
 az-all-user:	     az-login                        az-mkaks-user                                                                   az-configure-values             az-helm-install-snapshot az-run-sample ## Provision the cluster and deploy Karpenter snapshot release
 # TODO: az-all-savm case is not currently built to support workload identity, need to re-evaluate
-az-all-savm:         az-login                        az-mkaks-savm                                 az-perm-savm                      az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
-
-az-login: ## Login into Azure
-	az account show -o none || az login
-	az account set --subscription $(AZURE_SUBSCRIPTION_ID)
-
-az-mkrg: ## Create resource group
-	if az group exists --name $(AZURE_RESOURCE_GROUP) | grep -qi "false"; then \
-		az group create --name $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) -o none; \
-	fi
-
-az-mkacr: az-mkrg ## Create test ACR
-	az acr create --name $(AZURE_ACR_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) \
-		--sku Basic --admin-enabled -o none
-	az acr login  --name $(AZURE_ACR_NAME)
-
-az-acrimport: ## Imports an image to an acr registry
-	az acr import --name $(AZURE_ACR_NAME) --source "mcr.microsoft.com/oss/kubernetes/pause:3.6" --image "pause:3.6"
-
-az-cleanenv: az-rmnodeclaims-fin  ## Deletes a few common karpenter testing resources(pods, nodepools, nodeclaims, aksnodeclasses) 
-	kubectl delete deployments -n default --all
-	kubectl delete pods -n default --all
-	kubectl delete nodeclaims --all
-	kubectl delete nodepools --all
-	kubectl delete aksnodeclasses --all
-
-az-mkaks: az-mkacr ## Create test AKS cluster (with --vm-set-type AvailabilitySet for compatibility with standalone VMs)
-	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) --location $(AZURE_LOCATION) \
-		--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet -o none
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
-
-az-mkaks-cniv1: az-mkacr ## Create test AKS cluster (with --network-plugin azure)
-	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-plugin azure \
-		--enable-oidc-issuer --enable-workload-identity
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
-
-
-az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane cilium, --network-plugin cilium, and --network-plugin-mode overlay)
-	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-		--enable-oidc-issuer --enable-workload-identity
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
-
-az-mkaks-overlay: az-mkacr ## Create test AKS cluster (with --network-plugin-mode overlay)
-	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-plugin azure --network-plugin-mode overlay \
-		--enable-oidc-issuer --enable-workload-identity
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
-
-
-az-mkvnet: ## Create a VNet with address range of 10.1.0.0/16
-	az network vnet create --name $(CUSTOM_VNET_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) --address-prefixes "10.1.0.0/16"
-
-az-mksubnet:  ## Create a subnet with address range of 10.1.0.0/24
-	az network vnet subnet create --name $(CUSTOM_SUBNET_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --vnet-name $(CUSTOM_VNET_NAME) --address-prefixes "10.1.0.0/24"
-
-az-mkaks-custom-vnet: az-mkacr az-mkvnet az-mksubnet ## Create test AKS cluster with custom VNet
-	az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-		--enable-oidc-issuer --enable-workload-identity \
-		--vnet-subnet-id "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)/providers/Microsoft.Network/virtualNetworks/$(CUSTOM_VNET_NAME)/subnets/$(CUSTOM_SUBNET_NAME)"
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
-
-az-create-workload-msi: az-mkrg
-	# create the workload MSI that is the backing for the karpenter pod auth
-	az identity create --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --location "${AZURE_LOCATION}"
-
-az-create-federated-cred:
-	$(eval AKS_OIDC_ISSUER=$(shell az aks show -n "${AZURE_CLUSTER_NAME}" -g "${AZURE_RESOURCE_GROUP}" --query "oidcIssuerProfile.issuerUrl" -otsv))
-
-	# create federated credential linked to the karpenter service account for auth usage
-	az identity federated-credential create --name ${KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME} --identity-name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --issuer "${AKS_OIDC_ISSUER}" --subject system:serviceaccount:"${KARPENTER_NAMESPACE}":"${KARPENTER_SERVICE_ACCOUNT_NAME}" --audience api://AzureADTokenExchange
-
-az-mkaks-savm: az-mkrg ## Create experimental cluster with standalone VMs (+ ACR)
-	az deployment group create --resource-group $(AZURE_RESOURCE_GROUP) --template-file hack/azure/aks-savm.bicep --parameters aksname=$(AZURE_CLUSTER_NAME) acrname=$(AZURE_ACR_NAME)
-	az aks get-credentials --resource-group $(AZURE_RESOURCE_GROUP) --name $(AZURE_CLUSTER_NAME) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
+az-all-savm:         az-login                        az-mkaks-savm                                 az-perm-savm                      az-configure-values             az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
 
 az-rmrg: ## Destroy test ACR and AKS cluster by deleting the resource group (use with care!)
 	az group delete --name $(AZURE_RESOURCE_GROUP)
-
-az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart
-	hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME)
-
-az-configure-values-custom-vnet:  ## Generate cluster-related values for Karpenter Helm chart (take custom subnet ID from first agentpool)
-	VNET_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId") \
-	$(MAKE) az-configure-values
-
-az-mkvmssflex: ## Create VMSS Flex (optional, only if creating VMs referencing this VMSS)
-	az vmss create --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --location $(AZURE_LOCATION) \
-		--instance-count 0 --orchestration-mode Flexible --platform-fault-domain-count 1 --zones 1 2 3
-
-az-rmvmss-vms: ## Delete all VMs in VMSS Flex (use with care!)
-	az vmss delete-instances --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --instance-ids '*'
-
-az-perm: ## Create role assignments to let Karpenter manage VMs and Network
-	# Note: need to be principalId for E2E workflow as the pipeline identity doesn't have permissions to "query Graph API"
-	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -otsv))
-	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Virtual Machine Contributor"
-	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
-	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Managed Identity Operator"
-	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)    --role "Network Contributor" # in some case we create vnet here
-	@echo Consider "make az-configure-values"!
-
-az-perm-sig: ## Create role assignments when testing with SIG images 
-	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -otsv))
-	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --role "Reader" --scope /subscriptions/$(AZURE_SIG_SUBSCRIPTION_ID)/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu
-	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --role "Reader" --scope /subscriptions/$(AZURE_SIG_SUBSCRIPTION_ID)/resourceGroups/AKS-AzureLinux/providers/Microsoft.Compute/galleries/AKSAzureLinux
-
-az-perm-subnet-custom: az-perm ## Create role assignments to let Karpenter manage VMs and Network (custom VNet)
-	$(eval VNET_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
-	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -otsv))
-	$(eval SUBNET_RESOURCE_GROUP=$(shell az network vnet subnet show --id $(VNET_SUBNET_ID) | jq -r ".resourceGroup"))
-	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(SUBNET_RESOURCE_GROUP) --role "Network Contributor"
-
-az-perm-savm: ## Create role assignments to let Karpenter manage VMs and Network
-	# Note: savm has not been converted over to use a workload identity
-	$(eval AZURE_OBJECT_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq  -r ".identityProfile.kubeletidentity.objectId"))
-	az role assignment create --assignee $(AZURE_OBJECT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Virtual Machine Contributor"
-	az role assignment create --assignee $(AZURE_OBJECT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
-	az role assignment create --assignee $(AZURE_OBJECT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Managed Identity Operator"
-	az role assignment create --assignee $(AZURE_OBJECT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)    --role "Network Contributor" # in some case we create vnet here
-	@echo Consider "make az-configure-values"!
-
-az-perm-acr:
-	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -otsv))
-	$(eval AZURE_ACR_ID=$(shell    az acr show --name $(AZURE_ACR_NAME)     --resource-group $(AZURE_RESOURCE_GROUP) | jq  -r ".id"))
-	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope $(AZURE_ACR_ID) --role "AcrPull"
-
-az-aks-check-acr:
-	az aks check-acr --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --acr $(AZURE_ACR_NAME)
-
-az-build: ## Build the Karpenter controller and webhook images using skaffold build (which uses ko build)
-	az acr login -n $(AZURE_ACR_NAME)
-	skaffold build
-
-az-creds: ## Get cluster credentials
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP)
-
-az-run: ## Deploy the controller from the current state of your git repository into your ~/.kube/config cluster using skaffold run
-	az acr login -n $(AZURE_ACR_NAME)
-	skaffold run
-
-az-run-sample: ## Deploy sample Provisioner and workload (with 0 replicas, to be scaled manually)
-	kubectl apply -f examples/v1/general-purpose.yaml
-	kubectl apply -f examples/workloads/inflate.yaml
-
-az-mc-show: ## show managed cluster
-	az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP)
-
-az-mc-upgrade: ## upgrade managed cluster
-	$(eval UPGRADE_K8S_VERSION=$(shell az aks get-upgrades --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".controlPlaneProfile.upgrades[0].kubernetesVersion"))
-	az aks upgrade --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --kubernetes-version $(UPGRADE_K8S_VERSION)
 
 az-dev: ## Deploy and develop using skaffold dev
 	skaffold dev
@@ -202,13 +99,312 @@ az-debug-bootstrap: ## Debug bootstrap (target first privateIP of the first NIC 
 	kubectl wait --for=condition=Ready pod/$(JUMP_POD)
 	kubectl cp ~/.ssh/id_rsa $(JUMP_POD):/root/.ssh/id_rsa
 	$(eval NODE_IP=$(shell az network nic list -g $(AZURE_RESOURCE_GROUP_MC) \
-		--query '[?tags."karpenter.azure.com_cluster"]|[0].ipConfigurations[0].privateIPAddress'))
+		--query '[?tags."karpenter.azure.com_cluster"]|[0].ipConfigurations[0].privateIPAddress' --output tsv))
 	kubectl exec $(JUMP_POD) -it -- ssh -o StrictHostKeyChecking=accept-new azureuser@$(NODE_IP)
 
 az-cleanup: ## Delete the deployment
 	skaffold delete || true
 
-az-deploy-goldpinger: ## Deploy goldpinger for testing networking 
+az-e2etests: az-cleanenv ## Run e2etests
+	AZURE_SUBSCRIPTION_ID=$(AZURE_SUBSCRIPTION_ID) \
+	AZURE_CLUSTER_NAME=$(AZURE_CLUSTER_NAME) \
+	AZURE_RESOURCE_GROUP=$(AZURE_RESOURCE_GROUP) \
+	AZURE_ACR_NAME=$(AZURE_ACR_NAME) \
+	$(MAKE) e2etests
+
+az-upstream-e2etests: az-cleanenv ## Run upstream e2etests
+	AZURE_SUBSCRIPTION_ID=$(AZURE_SUBSCRIPTION_ID) \
+	AZURE_CLUSTER_NAME=$(AZURE_CLUSTER_NAME) \
+	AZURE_RESOURCE_GROUP=$(AZURE_RESOURCE_GROUP) \
+	AZURE_ACR_NAME=$(AZURE_ACR_NAME) \
+	$(MAKE) upstream-e2etests
+
+# ---------------------------------------------
+# CI targets (intended for use in CI pipelines)
+# ---------------------------------------------
+
+ci-mkcluster-all:              az-create-workload-msi az-mkaks-cilium              az-create-federated-cred $(AZ_ALL_PERMS)
+
+ci-mkcluster-all-userassigned: az-create-workload-msi az-mkaks-cilium-userassigned az-create-federated-cred $(AZ_ALL_PERMS)
+
+# Windows e2e needs a dedicated cluster: Windows does not support the Cilium dataplane used by the
+# default CI cluster, so this uses az-mkaks-windows (Azure CNI overlay + windowsProfile). The Windows
+# suite only provisions via the AKS Machine API, so invoke with PROVISION_MODE=aksmachineapi (which
+# pulls the machine perms + machines pool into AZ_ALL_PERMS) and AKS_MACHINES_POOL_NAME set to a name
+# <= 6 chars (Windows machine-name budget for a custom pool).
+ci-mkcluster-all-windows:      az-create-workload-msi az-mkaks-windows             az-create-federated-cred $(AZ_ALL_PERMS)
+
+ci-install: az-configure-values az-build az-run
+
+# ---------------------------------------------
+# Helper targets (often composed together above, but can be run by themselves too)
+# ---------------------------------------------
+
+az-login: ## Login into Azure
+	az config set core.login_experience_v2=off # disable interactive subscription selection in favor of scripted
+	az account show --output none || CODESPACES=false az login --output none
+	az account set --subscription $(AZURE_SUBSCRIPTION_ID)
+
+az-mkrg: ## Create resource group
+	if az group exists --name $(AZURE_RESOURCE_GROUP) | grep -qi "false"; then \
+		az group create --name $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) --output none; \
+	fi
+
+az-mkacr: az-mkrg ## Create test ACR
+	az acr create --name $(AZURE_ACR_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) \
+		--sku Basic --admin-enabled --output none
+	az acr login  --name $(AZURE_ACR_NAME)
+
+az-acrimport: ## Imports an image to an acr registry
+	az acr import --name $(AZURE_ACR_NAME) --source "mcr.microsoft.com/oss/kubernetes/pause:3.6" --image "pause:3.6" --force
+
+az-cleanenv: az-rmnodeclaims-fin az-rmnodeclasses-fin ## Deletes a few common karpenter testing resources(pods, nodepools, nodeclaims, aksnodeclasses)
+	kubectl delete deployments -n default --all
+	kubectl delete pods -n default --all
+	kubectl delete nodeclaims --all
+	kubectl delete nodepools --all
+	kubectl delete aksnodeclasses --all
+
+az-mkaks: az-mkacr ## Create test AKS cluster (with --vm-set-type AvailabilitySet for compatibility with standalone VMs)
+	@hack/deploy/check-cluster-exists.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) az-mkaks; \
+	EXIT_CODE=$$?; \
+	if [ $$EXIT_CODE -eq 1 ]; then \
+		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) --location $(AZURE_LOCATION) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
+			--tags "make-command=az-mkaks"; \
+	elif [ $$EXIT_CODE -eq 2 ]; then \
+		exit 1; \
+	fi
+	$(MAKE) az-creds
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
+
+az-mkaks-cniv1: az-mkacr ## Create test AKS cluster (with --network-plugin azure)
+	@hack/deploy/check-cluster-exists.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) az-mkaks-cniv1; \
+	EXIT_CODE=$$?; \
+	if [ $$EXIT_CODE -eq 1 ]; then \
+		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys --network-plugin azure \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
+			--tags "make-command=az-mkaks-cniv1"; \
+	elif [ $$EXIT_CODE -eq 2 ]; then \
+		exit 1; \
+	fi
+	$(MAKE) az-creds
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
+
+az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane cilium, --network-plugin azure, and --network-plugin-mode overlay)
+	@hack/deploy/check-cluster-exists.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) az-mkaks-cilium; \
+	EXIT_CODE=$$?; \
+	if [ $$EXIT_CODE -eq 1 ]; then \
+		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys \
+			--network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
+			--tags "make-command=az-mkaks-cilium"; \
+	elif [ $$EXIT_CODE -eq 2 ]; then \
+		exit 1; \
+	fi
+	$(MAKE) az-creds
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
+
+az-mkaks-cilium-userassigned: az-mkacr az-create-workload-msi ## Create test AKS cluster with user-assigned identity (supports custom kubelet identity)
+	@hack/deploy/check-cluster-exists.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) az-mkaks-cilium-userassigned; \
+	EXIT_CODE=$$?; \
+	if [ $$EXIT_CODE -eq 1 ]; then \
+		KARPENTER_USER_ASSIGNED_IDENTITY_ID=$$(az identity show --resource-group $(AZURE_RESOURCE_GROUP) --name $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) --query 'id' --output tsv); \
+		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+			--assign-identity $$KARPENTER_USER_ASSIGNED_IDENTITY_ID --node-count 3 --generate-ssh-keys --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
+			--tags "make-command=az-mkaks-cilium-userassigned"; \
+	elif [ $$EXIT_CODE -eq 2 ]; then \
+		exit 1; \
+	fi
+	$(MAKE) az-creds
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
+
+az-mkaks-overlay: az-mkacr ## Create test AKS cluster (with --network-plugin-mode overlay)
+	@hack/deploy/check-cluster-exists.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) az-mkaks-overlay; \
+	EXIT_CODE=$$?; \
+	if [ $$EXIT_CODE -eq 1 ]; then \
+		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys \
+			--network-plugin azure --network-plugin-mode overlay \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
+			--tags "make-command=az-mkaks-overlay"; \
+	elif [ $$EXIT_CODE -eq 2 ]; then \
+		exit 1; \
+	fi
+	$(MAKE) az-creds
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
+
+az-mkaks-windows: az-mkacr ## Create a Windows-capable test AKS cluster (Azure CNI overlay + windowsProfile) for the Windows e2e suite
+	@hack/deploy/check-cluster-exists.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) az-mkaks-windows; \
+	EXIT_CODE=$$?; \
+	if [ $$EXIT_CODE -eq 1 ]; then \
+		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys \
+			--network-plugin azure --network-plugin-mode overlay \
+			--windows-admin-username $(WINDOWS_ADMIN_USERNAME) --windows-admin-password '$(WINDOWS_ADMIN_PASSWORD)' \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
+			--tags "make-command=az-mkaks-windows"; \
+	elif [ $$EXIT_CODE -eq 2 ]; then \
+		exit 1; \
+	fi
+	$(MAKE) az-creds
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
+
+az-mkaks-perftest: az-mkacr ## Create test AKS cluster (with Azure Overlay, larger system pool VMs and larger pod-cidr)
+	@hack/deploy/check-cluster-exists.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) az-mkaks-perftest; \
+	EXIT_CODE=$$?; \
+	if [ $$EXIT_CODE -eq 1 ]; then \
+		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+			--enable-managed-identity --node-count 2 --generate-ssh-keys \
+			--network-plugin azure --network-plugin-mode overlay \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
+			--node-vm-size $(if $(AZURE_VM_SIZE),$(AZURE_VM_SIZE),Standard_D16s_v6) --pod-cidr "10.128.0.0/11" \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
+			--tags "make-command=az-mkaks-perftest"; \
+	elif [ $$EXIT_CODE -eq 2 ]; then \
+		exit 1; \
+	fi
+	$(MAKE) az-creds
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
+
+az-mkvnet: ## Create a VNet with address range of 10.224.0.0/12 (matches managed VNet default)
+	az network vnet create --name $(CUSTOM_VNET_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) --address-prefixes "10.224.0.0/12"
+
+az-mksubnet:  ## Create a subnet with address range of 10.224.0.0/16 (matches aks-subnet in managed VNet)
+	az network vnet subnet create --name $(CUSTOM_SUBNET_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --vnet-name $(CUSTOM_VNET_NAME) --address-prefixes "10.224.0.0/16"
+
+az-mkaks-custom-vnet: az-mkacr az-mkvnet az-mksubnet ## Create test AKS cluster with custom VNet
+	@hack/deploy/check-cluster-exists.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) az-mkaks-custom-vnet; \
+	EXIT_CODE=$$?; \
+	if [ $$EXIT_CODE -eq 1 ]; then \
+		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys \
+			--network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
+			--vnet-subnet-id "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)/providers/Microsoft.Network/virtualNetworks/$(CUSTOM_VNET_NAME)/subnets/$(CUSTOM_SUBNET_NAME)" \
+			--tags "make-command=az-mkaks-custom-vnet"; \
+	elif [ $$EXIT_CODE -eq 2 ]; then \
+		exit 1; \
+	fi
+	$(MAKE) az-creds
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
+
+az-create-workload-msi: az-mkrg
+	# create the workload MSI that is the backing for the karpenter pod auth
+	az identity create --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --location "${AZURE_LOCATION}"
+
+az-create-federated-cred:
+	$(eval AKS_OIDC_ISSUER=$(shell az aks show -n "${AZURE_CLUSTER_NAME}" -g "${AZURE_RESOURCE_GROUP}" --query "oidcIssuerProfile.issuerUrl" --output tsv))
+
+	# create federated credential linked to the karpenter service account for auth usage
+	az identity federated-credential create --name ${KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME} --identity-name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --issuer "${AKS_OIDC_ISSUER}" --subject system:serviceaccount:"${KARPENTER_NAMESPACE}":"${KARPENTER_SERVICE_ACCOUNT_NAME}" --audience api://AzureADTokenExchange
+
+az-mkaks-savm: az-mkrg ## Create experimental cluster with standalone VMs (+ ACR)
+	az deployment group create --resource-group $(AZURE_RESOURCE_GROUP) --template-file hack/azure/aks-savm.bicep --parameters aksname=$(AZURE_CLUSTER_NAME) acrname=$(AZURE_ACR_NAME)
+	az aks get-credentials --resource-group $(AZURE_RESOURCE_GROUP) --name $(AZURE_CLUSTER_NAME) --overwrite-existing
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
+
+az-add-aksmachinespool:
+	hack/deploy/add-aks-machines-pool.sh $(AZURE_SUBSCRIPTION_ID) $(AZURE_RESOURCE_GROUP) $(AZURE_CLUSTER_NAME) $(AKS_MACHINES_POOL_NAME)
+
+az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart. Use PROVISION_MODE=aksmachineapi or aksmachineapiheaderbatch for AKS machine API modes.
+	LOG_LEVEL=debug hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) $(ENABLE_AZURE_SDK_LOGGING) $(PROVISION_MODE) $(AKS_MACHINES_POOL_NAME)
+
+az-mkvmssflex: ## Create VMSS Flex (optional, only if creating VMs referencing this VMSS)
+	az vmss create --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --location $(AZURE_LOCATION) \
+		--instance-count 0 --orchestration-mode Flexible --platform-fault-domain-count 1 --zones 1 2 3
+
+az-rmvmss-vms: ## Delete all VMs in VMSS Flex (use with care!)
+	az vmss delete-instances --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --instance-ids '*'
+
+az-perm: ## Create role assignments to let Karpenter manage VMs and Network
+	# Note: need to be principalId for E2E workflow as the pipeline identity doesn't have permissions to "query Graph API"
+	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' --output tsv))
+	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Virtual Machine Contributor"
+	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
+	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Managed Identity Operator"
+	@echo Consider "make az-configure-values"!
+
+az-perm-aksmachine: ## Create role assignments for AKS machine API operations
+	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' --output tsv))
+	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP) --role "Azure Kubernetes Service Contributor Role"
+
+az-perm-sig: ## Create role assignments when testing with SIG images
+	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' --output tsv))
+	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --role "Reader" --scope /subscriptions/$(AZURE_SIG_SUBSCRIPTION_ID)/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu
+	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --role "Reader" --scope /subscriptions/$(AZURE_SIG_SUBSCRIPTION_ID)/resourceGroups/AKS-AzureLinux/providers/Microsoft.Compute/galleries/AKSAzureLinux
+	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --role "Reader" --scope /subscriptions/$(AZURE_SIG_SUBSCRIPTION_ID)/resourceGroups/AKS-Windows/providers/Microsoft.Compute/galleries/AKSWindows
+
+az-perm-subnet-custom: az-perm ## Create role assignments to let Karpenter manage VMs and Network (custom VNet)
+	$(eval VNET_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --query "agentPoolProfiles[0].vnetSubnetId" --output tsv))
+	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' --output tsv))
+	$(eval SUBNET_RESOURCE_GROUP=$(shell az network vnet subnet show --id $(VNET_SUBNET_ID) --query "resourceGroup" --output tsv))
+	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(SUBNET_RESOURCE_GROUP) --role "Network Contributor"
+
+az-perm-savm: ## Create role assignments to let Karpenter manage VMs and Network
+	# Note: savm has not been converted over to use a workload identity
+	$(eval AZURE_OBJECT_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --query "identityProfile.kubeletidentity.objectId" --output tsv))
+	az role assignment create --assignee-object-id $(AZURE_OBJECT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Virtual Machine Contributor"
+	az role assignment create --assignee-object-id $(AZURE_OBJECT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
+	az role assignment create --assignee-object-id $(AZURE_OBJECT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Managed Identity Operator"
+	az role assignment create --assignee-object-id $(AZURE_OBJECT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)    --role "Network Contributor" # in some case we create vnet here
+	@echo Consider "make az-configure-values"!
+
+az-perm-acr:
+	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' --output tsv))
+	$(eval AZURE_ACR_ID=$(shell    az acr show --name $(AZURE_ACR_NAME)     --resource-group $(AZURE_RESOURCE_GROUP) --query "id" --output tsv))
+	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope $(AZURE_ACR_ID) --role "AcrPull"
+
+az-aks-check-acr:
+	az aks check-acr --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --acr $(AZURE_ACR_NAME)
+
+az-build: ## Build the Karpenter controller and webhook images using skaffold build (which uses ko build)
+	az acr login -n $(AZURE_ACR_NAME)
+	$(MAKE) az-ko-prewarm-base
+	skaffold build
+
+az-ko-prewarm-base: ## Prewarm ko's base image cache for skaffold/ko builds
+	mkdir -p $(KOCACHE)
+	crane pull --format=oci $(KO_BASE_IMAGE) $(KOCACHE)/img
+	crane pull --format=oci $(KO_BASE_IMAGE_AMD64) $(KOCACHE)/img
+	crane pull --format=oci $(KO_BASE_IMAGE_ARM64) $(KOCACHE)/img
+
+az-creds: ## Get cluster credentials
+	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
+
+az-run: ## Deploy the controller from the current state of your git repository into your ~/.kube/config cluster using skaffold run
+	az acr login -n $(AZURE_ACR_NAME)
+	skaffold run
+
+az-run-sample: ## Deploy sample Provisioner and workload (with 0 replicas, to be scaled manually)
+	kubectl apply -f examples/v1/general-purpose.yaml
+	kubectl apply -f examples/workloads/inflate.yaml
+
+az-mc-show: ## show managed cluster
+	az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP)
+
+az-mc-upgrade: ## upgrade managed cluster
+	$(eval UPGRADE_K8S_VERSION=$(shell az aks get-upgrades --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --query "controlPlaneProfile.upgrades[0].kubernetesVersion" --output tsv))
+	az aks upgrade --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --kubernetes-version $(UPGRADE_K8S_VERSION)
+
+az-deploy-goldpinger: ## Deploy goldpinger for testing networking
 	kubectl apply -f https://gist.githubusercontent.com/paulgmiller/084bd4605f1661a329e5ab891a826ae0/raw/94a32d259e137bb300ac8af3ef71caa471463f23/goldpinger-daemon.yaml
 	kubectl apply -f https://gist.githubusercontent.com/paulgmiller/7bca68cd08cccb4e9bc72b0a08485edf/raw/d6a103fb79a65083f6555e4d822554ed64f510f8/goldpinger-deploy.yaml
 
@@ -216,27 +412,33 @@ az-mon-deploy: ## Deploy monitoring stack (w/o node-exporter)
 	helm repo add grafana-charts https://grafana.github.io/helm-charts
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	helm repo update
-	kubectl create namespace monitoring || true
-	helm install --namespace monitoring prometheus prometheus-community/prometheus \
+	# Create the namespace if not extant; NOP otherwise
+	kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+	# We use `helm upgrade --install` to avoid errors if the release already exists, and to allow for upgrades of the release if it does exist.
+	helm upgrade --install --namespace monitoring prometheus prometheus-community/prometheus \
 		--values hack/monitoring/prometheus-values.yaml
-	helm install --namespace monitoring grafana grafana-charts/grafana \
-		--values hack/monitoring/grafana-values.yaml
+	helm upgrade --install --namespace monitoring pyroscope grafana-charts/pyroscope \
+		--set pyroscope.extraArgs.'usage-stats\.enabled'=false
+	helm upgrade --install --namespace monitoring grafana grafana-charts/grafana \
+		--values hack/monitoring/grafana-values.yaml \
+		--set env.GF_AUTH_ANONYMOUS_ENABLED=true \
+		--set env.GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
 
 az-mon-access: ## Get Grafana admin password and forward port
-	kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode; echo
-	@echo Consider running port forward outside of codespace ...
+	@echo "Consider running port forward outside of codespace ..."
 	$(eval POD_NAME=$(shell kubectl get pods --namespace monitoring -l "app.kubernetes.io/name=grafana,app.kubernetes.io/instance=grafana" -o jsonpath="{.items[0].metadata.name}"))
 	kubectl port-forward --namespace monitoring $(POD_NAME) 3000
 
 az-mon-cleanup: ## Delete monitoring stack
 	helm delete --namespace monitoring grafana
+	helm delete --namespace monitoring pyroscope
 	helm delete --namespace monitoring prometheus
 
 az-mkgohelper: ## Build and configure custom go-helper-image for skaffold
-	cd hack/go-helper-image; docker build . --tag $(AZURE_ACR_NAME).azurecr.io/skaffold-debug-support/go # --platform=linux/arm64
+	cd hack/go-helper-image; docker build . --tag $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/skaffold-debug-support/go # --platform=linux/arm64
 	az acr login -n $(AZURE_ACR_NAME)
-	docker push $(AZURE_ACR_NAME).azurecr.io/skaffold-debug-support/go
-	skaffold config set --global debug-helpers-registry $(AZURE_ACR_NAME).azurecr.io/skaffold-debug-support
+	docker push $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/skaffold-debug-support/go
+	skaffold config set --global debug-helpers-registry $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/skaffold-debug-support
 
 az-rmnodes-fin: ## Remove Karpenter finalizer from all nodes (use with care!)
 	for node in $$(kubectl get nodes -l karpenter.sh/nodepool --output=jsonpath={.items..metadata.name}); do \
@@ -252,19 +454,13 @@ az-rmnodeclaims-fin: ## Remove Karpenter finalizer from all nodeclaims (use with
 		kubectl patch nodeclaim $$nodeclaim --type=json -p '[{"op": "remove", "path": "/metadata/finalizers"}]'; \
 	done
 
+az-rmnodeclasses-fin: ## Remove Karpenter finalizer from all nodeclasses (use with care!)
+	for nodeclass in $$(kubectl get aksnodeclasses --output=jsonpath={.items..metadata.name}); do \
+		kubectl patch aksnodeclass $$nodeclass --type=json -p '[{"op": "remove", "path": "/metadata/finalizers"}]'; \
+	done
+
 az-rmnodeclaims: ## kubectl delete all nodeclaims; don't wait for finalizers (use with care!)
 	kubectl delete --wait=false nodeclaims --all
-
-az-taintsystemnodes: ## Taint all system nodepool nodes
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --selector='kubernetes.azure.com/mode=system' --overwrite
-
-az-taintnodes:
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
-
-az-e2etests: ## Run e2etests
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
-	TEST_SUITE=Utilization make e2etests
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule- --all
 
 az-perftest1: ## Test scaling out/in (1 VM)
 	hack/azure/perftest.sh 1
@@ -291,17 +487,17 @@ az-perftest1000: ## Test scaling out/in (1000 VMs)
 	hack/azure/perftest.sh 1000
 
 az-resg: ## List resources in MC rg
-	az resource list -o table -g $(AZURE_RESOURCE_GROUP_MC)
+	az resource list --output table -g $(AZURE_RESOURCE_GROUP_MC)
 
 RESK=az resource list --tag=karpenter.sh_nodepool --query "[?resourceGroup=='$(AZURE_RESOURCE_GROUP_MC)']"
 az-res: ## List resources created by Karpenter
-	$(RESK) -o table
+	$(RESK) --output table
 
 az-resc: ## Count resources created by Karpenter
-	$(RESK) -o tsv | wc -l
+	$(RESK) --output tsv | wc -l
 
 az-rmres: ## Delete (az resource delete) all resources created by Karpenter. Use with extra care!
-	$(RESK) -o yaml | yq eval '.[]|.id' | xargs --verbose -r -n 5 az resource delete --ids
+	$(RESK) --output yaml | yq eval '.[]|.id' | xargs --verbose -r -n 5 az resource delete --ids
 
 az-rmcluster:
 	az aks delete --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --yes
@@ -311,16 +507,16 @@ az-portal: ## Get Azure Portal links for relevant resource groups
 	@echo https://ms.portal.azure.com/#@microsoft.onmicrosoft.com/asset/HubsExtension/ResourceGroups/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC)
 
 az-list-skus-ubuntu:
-	az sig image-definition list-community --public-gallery-name "AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2"  --location $(AZURE_LOCATION) -o table
+	az sig image-definition list-community --public-gallery-name "AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2"  --location $(AZURE_LOCATION) --output table
 
 az-list-skus-azlinux:
-	az sig image-definition list-community --public-gallery-name "AKSAzureLinux-f7c7cda5-1c9a-4bdc-a222-9614c968580b"  --location $(AZURE_LOCATION) -o table
+	az sig image-definition list-community --public-gallery-name "AKSAzureLinux-f7c7cda5-1c9a-4bdc-a222-9614c968580b"  --location $(AZURE_LOCATION) --output table
 
 az-list-skus: ## List all public VM images from microsoft-aks
-	az vm image list-skus --publisher microsoft-aks --location $(AZURE_LOCATION) --offer aks -o table
+	az vm image list-skus --publisher microsoft-aks --location $(AZURE_LOCATION) --offer aks --output table
 
 az-list-usage: ## List VM usage/quotas
-	az vm list-usage --location $(AZURE_LOCATION) -o table | grep "Family vCPU"
+	az vm list-usage --location $(AZURE_LOCATION) --output table | grep "Family vCPU"
 
 az-ratelimits: ## Show remaining ARM requests for subscription
 	@az group create --name $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) --debug 2>&1 | grep x-ms-ratelimit-remaining-subscription-writes
@@ -339,7 +535,7 @@ az-klogs-pretty: ## Pretty Print Karpenter logs
 	kubectl logs -n "${KARPENTER_NAMESPACE}" $(POD) | jq "."
 
 az-kevents: ## Karpenter events
-	kubectl get events -A --field-selector source=karpenter
+	kubectl get events -A --field-selector source=karpenter --watch
 
 az-node-viewer: ## Watch nodes using aks-node-viewer
 	aks-node-viewer # --node-selector "karpenter.sh/nodepool" --resources cpu,memory
@@ -347,14 +543,18 @@ az-node-viewer: ## Watch nodes using aks-node-viewer
 az-argvmlist: ## List current VMs owned by Karpenter
 	az graph query -q "Resources | where type =~ 'microsoft.compute/virtualmachines' | where resourceGroup == tolower('$(AZURE_RESOURCE_GROUP_MC)') | where tags has_cs 'karpenter.sh_nodepool'" \
 	--subscriptions $(AZURE_SUBSCRIPTION_ID) \
-	| jq '.data[] | .id'
+	--output json | jq '.data[] | .id'
 
 az-pprof-enable: ## Enable profiling
-	yq -i '.manifests.helm.releases[0].overrides.controller.env += [{"name":"ENABLE_PROFILING","value":"true"}]' skaffold.yaml
+	yq -i '.controller.env += [{"name":"ENABLE_PROFILING","value":"true"}]' karpenter-values.yaml
 
+# remove -source_path=/go/pkg/mod to focus source on provider
+SOURCE=-source_path=/go/pkg/mod -trim_path=github.com/Azure/karpenter-provider-azure
 az-pprof: ## Profile
-	kubectl port-forward service/karpenter -n "${KARPENTER_NAMESPACE}" 8000 &
-	sleep 2 && go tool pprof -http 0.0.0.0:9000 localhost:8000/debug/pprof/heap
+	kubectl port-forward service/karpenter -n "${KARPENTER_NAMESPACE}" 8080 &
+	sleep 2
+	go tool pprof $(SOURCE) -http 0.0.0.0:9000 localhost:8080/debug/pprof/heap
+	#go tool pprof $(SOURCE) -http 0.0.0.0:9001 localhost:8080/debug/pprof/profile?seconds=30
 
 az-mkaks-user: az-mkrg ## Create compatible AKS cluster, the way we tell users to
 	hack/deploy/create-cluster.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) "${KARPENTER_NAMESPACE}"
@@ -380,4 +580,10 @@ az-swagger-generate-clients-raw:
 
 az-swagger-generate-clients: az-swagger-generate-clients-raw
 	hack/boilerplate.sh
-	make tidy
+	$(MAKE) tidy
+
+az-codegen-nodeimageversions: ## List node image versions (to be used in fake/nodeimageversionsapi.go)
+	az rest --method get \
+		--url "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/providers/Microsoft.ContainerService/locations/$(AZURE_LOCATION)/nodeImageVersions?api-version=2025-10-02-preview" \
+		--output json \
+		| jq -r '.value[] | "{\n\tFullName: \"\(.fullName)\",\n\tOS:       \"\(.os)\",\n\tSKU:      \"\(.sku)\",\n\tVersion:  \"\(.version)\",\n},"'

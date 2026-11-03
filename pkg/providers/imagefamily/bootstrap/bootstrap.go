@@ -17,16 +17,18 @@ limitations under the License.
 package bootstrap
 
 import (
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type KubeletConfiguration struct {
-	v1alpha2.KubeletConfiguration
+	v1beta1.KubeletConfiguration
 
 	// MaxPods is the maximum number of pods that can run on a worker node instance.
 	MaxPods int32
+	// The IP address of cluster DNS (kube-dns service within kube-system namespace) service
+	ClusterDNSServiceIP string
 
 	SystemReserved map[string]string
 	// KubeReserved contains resources reserved for Kubernetes system components.
@@ -40,21 +42,26 @@ type KubeletConfiguration struct {
 	// EvictionMaxPodGracePeriod is the maximum allowed grace period (in seconds) to use when terminating pods in
 	// response to soft eviction thresholds being met.
 	EvictionMaxPodGracePeriod *int32
+	// EnforceNodeAllocatable is the list of node-allocatable enforcement scopes passed to
+	// --enforce-node-allocatable (e.g. pods, kube-reserved, system-reserved). When empty the
+	// default is the kubelet default ("pods")
+	EnforceNodeAllocatable []string
 }
 
 // Options is the node bootstrapping parameters passed from Karpenter to the provisioning node
 type Options struct {
-	ClusterName      string
-	ClusterEndpoint  string
-	KubeletConfig    *KubeletConfiguration
-	Taints           []core.Taint      `hash:"set"`
-	Labels           map[string]string `hash:"set"`
-	CABundle         *string
-	GPUNode          bool
-	GPUDriverVersion string
-	GPUDriverType    string
-	GPUImageSHA      string
-	SubnetID         string
+	ClusterName                  string
+	ClusterEndpoint              string
+	KubeletConfig                *KubeletConfiguration
+	Taints                       []core.Taint      `hash:"set"`
+	Labels                       map[string]string `hash:"set"`
+	CABundle                     *string
+	GPUNode                      bool
+	GPUDriverVersion             string
+	GPUDriverType                string
+	GPUImageSHA                  string
+	GPUDriverInstallationEnabled bool
+	SubnetID                     string
 }
 
 // Bootstrapper can be implemented to generate a bootstrap script

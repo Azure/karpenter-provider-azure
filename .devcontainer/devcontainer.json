@@ -3,12 +3,14 @@
 {
 	"name": "Go-karpenter",
 	"build": {
-		"dockerfile": "Dockerfile",
-		"args": {
-			"VARIANT": "1.23-bullseye"
-		}
+		"dockerfile": "Dockerfile"
 	},
 	"runArgs": [ "--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined" ],
+	"containerEnv": {
+		// Workaround for "client version X is too new. Maximum supported API version is 1.43"
+		"DOCKER_API_VERSION": "1.43",
+		"COPILOT_CLI_KEEPALIVE": "true"
+	},
 
 	// Configure tool-specific properties.
 	"customizations": {
@@ -18,7 +20,12 @@
 			"settings": {
 				"go.toolsManagement.checkForUpdates": "local",
 				"go.useLanguageServer": true,
-				"go.gopath": "/go"
+				"go.gopath": "/go",
+				"github.copilot.chat.githubMcpServer.enabled": true,
+				"github.copilot.chat.githubMcpServer.toolsets": [
+					"default", // https://github.com/github/github-mcp-server/blob/main/README.md#default-toolset
+					"actions"
+				]
 			},
 
 			// Add the IDs of extensions you want installed when the container is created.
@@ -33,8 +40,21 @@
 				"GitHub.vscode-pull-request-github",
 				"jinliming2.vscode-go-template",
 				"tekumara.typos-vscode",
-				"github.vscode-github-actions"
-			]
+				"github.vscode-github-actions",
+				"GitHub.copilot-chat",
+				"ms-azuretools.vscode-azure-github-copilot" // also adds MCP server and Azure resources
+			],
+			"mcp": {
+				"servers": {
+					// Azure MCP server - installed via extension
+					// GitHub MCP server - via GitHub Copilot Chat built-in
+					"deepwiki": {
+						"type": "http",
+						"url": "https://mcp.deepwiki.com/mcp"
+					}
+					// codewiki.google does not have MCP server, can just use web access
+				}
+			}
 		}
 	},
 
@@ -52,11 +72,34 @@
 	"remoteUser": "vscode",
 
 	"features": {
-        "ghcr.io/devcontainers/features/sshd:1": {},
-	"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
-        "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {},
-        "ghcr.io/devcontainers/features/azure-cli:1": {},
-        "ghcr.io/devcontainers-contrib/features/pre-commit:2": {},
-        "ghcr.io/marcozac/devcontainer-features/shellcheck:1": {}
+		// https://github.com/devcontainers/images/blob/main/src/go/.devcontainer/devcontainer.json
+		"ghcr.io/devcontainers/features/common-utils:2": {
+			"installZsh": "true",
+			"username": "vscode",
+			"userUid": "1000",
+			"userGid": "1000",
+			"upgradePackages": "true"
+		},
+		"ghcr.io/devcontainers/features/go:1": {
+			"version": "none"
+		},
+		"ghcr.io/devcontainers/features/node:2": {
+			"version": "latest"	// mostly for MCP servers
+		},
+		"ghcr.io/devcontainers/features/git:1": {
+			"version": "latest",
+			"ppa": "false"
+		},
+		// custom
+		"ghcr.io/devcontainers/features/sshd:1": {},
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+		"ghcr.io/devcontainers/features/kubectl-helm-minikube:1": { "version": "v1.33.2", "helm": "v3.19.2" }, // sometimes fails to determine the stable version, so just specify it. For Helm, specify 3.x to avoid installing Helm 4.
+		"ghcr.io/devcontainers/features/azure-cli:1": {},
+		"ghcr.io/devcontainers-extra/features/pre-commit:2": {},
+		"ghcr.io/CargoSense/devcontainer-features/shellcheck:1": {},
+		"ghcr.io/rio/features/skaffold:2": { "version": "v2.14.2" },
+		// agent tools
+		"ghcr.io/devcontainers-extra/features/ripgrep:1": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {}
 	}
 }

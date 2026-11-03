@@ -80,7 +80,7 @@ NodeBootstrappingGet gets node bootstrapping values for a specified provisioning
 Gets NodeBootstrapping values for a specified provisioning configuration, with secrets redacted.
 */
 func (a *Client) NodeBootstrappingGet(params *NodeBootstrappingGetParams, opts ...ClientOption) (*NodeBootstrappingGetOK, error) {
-	// TODO: Validate the params before sending
+	// NOTE: parameters are not validated before sending
 	if params == nil {
 		params = NewNodeBootstrappingGetParams()
 	}
@@ -99,17 +99,22 @@ func (a *Client) NodeBootstrappingGet(params *NodeBootstrappingGetParams, opts .
 	for _, opt := range opts {
 		opt(op)
 	}
-
 	result, err := a.transport.Submit(op)
 	if err != nil {
 		return nil, err
 	}
+
+	// only one success response has to be checked
 	success, ok := result.(*NodeBootstrappingGetOK)
 	if ok {
 		return success, nil
 	}
-	// unexpected success response
+
+	// unexpected success response.
+	//
+	// a default response is provided: fill this and return an error
 	unexpectedSuccess := result.(*NodeBootstrappingGetDefault)
+
 	return nil, runtime.NewAPIError("unexpected success response: content available as default response in error", unexpectedSuccess, unexpectedSuccess.Code())
 }
 
