@@ -63,7 +63,7 @@ var kubernetesVersionPinnedImageFamilies = map[string]kubernetesVersionPolicy{
 		minimumVersion: semver.MustParse("1.25.2"),
 		maximumVersion: lo.ToPtr(semver.MustParse("1.37.0")),
 	},
-	// Technically this should have an upper bound of v1.38 as documented, but we need to first add both
+	// Technically this should have an inclusive upper bound of v1.38 as documented, but we need to first add both
 	// Ubuntu2604 and v1.39 support first before adding that.
 	// See https://learn.microsoft.com/en-us/azure/aks/upgrade-os-version#supported-os-versions
 	v1beta1.Ubuntu2404ImageFamily: {
@@ -77,7 +77,6 @@ var kubernetesFIPSVersionPinnedImageFamilies = map[string]kubernetesVersionPolic
 	v1beta1.Ubuntu2204ImageFamily: {
 		description:    "Ubuntu2204 FIPS",
 		minimumVersion: semver.MustParse("1.25.2"),
-		maximumVersion: lo.ToPtr(semver.MustParse("1.39.0")),
 	},
 }
 

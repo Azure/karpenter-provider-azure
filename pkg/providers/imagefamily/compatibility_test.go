@@ -81,31 +81,6 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
 			kubernetesVersion: "1.38.9",
 		},
-		"explicit ubuntu2204 with fips rejects extended upper bound": {
-			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
-			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
-			kubernetesVersion: "1.39.0",
-			wantErr: []string{
-				"requested image family",
-				"Ubuntu2204",
-				"1.39.0",
-				"FIPS",
-				"supported range is >= 1.25.2 and < 1.39.0",
-			},
-		},
-		"explicit ubuntu2204 with fips and trusted launch rejects extended upper bound": {
-			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
-			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
-			trustedLaunch:     true,
-			kubernetesVersion: "1.39.0",
-			wantErr: []string{
-				"requested image family",
-				"Ubuntu2204",
-				"1.39.0",
-				"FIPS",
-				"supported range is >= 1.25.2 and < 1.39.0",
-			},
-		},
 
 		// Explicitly pinned Ubuntu2404.
 		"explicit ubuntu2404 rejects versions below lower bound": {
@@ -211,12 +186,6 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
 			kubernetesVersion: "1.32.0-aks.1",
 		},
-		"aks suffix does not bypass the fips upper bound": {
-			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
-			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
-			kubernetesVersion: "1.39.0-aks.1",
-			wantErr:           []string{"supported range is >= 1.25.2 and < 1.39.0"},
-		},
 	}
 
 	for name, tc := range cases {
@@ -263,39 +232,66 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 	t.Run("reports the applied bounds on the typed incompatibility error", func(t *testing.T) {
 		t.Parallel()
 
-		g := NewWithT(t)
-		nodeClass := &v1beta1.AKSNodeClass{
-			Spec: v1beta1.AKSNodeClassSpec{
-				ImageFamily: lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
-				FIPSMode:    lo.ToPtr(v1beta1.FIPSModeFIPS),
+		cases := map[string]struct {
+			imageFamily       string
+			fipsMode          *v1beta1.FIPSMode
+			kubernetesVersion string
+			minimumVersion    string
+			maximumVersion    *string
+		}{
+			"ubuntu2204 below lower bound": {
+				imageFamily:       v1beta1.Ubuntu2204ImageFamily,
+				kubernetesVersion: "1.25.1",
+				minimumVersion:    "1.25.2",
+				maximumVersion:    lo.ToPtr("1.37.0"),
 			},
-			Status: v1beta1.AKSNodeClassStatus{
-				KubernetesVersion: lo.ToPtr("1.39.0"),
+			"ubuntu2204 at upper bound": {
+				imageFamily:       v1beta1.Ubuntu2204ImageFamily,
+				kubernetesVersion: "1.37.0",
+				minimumVersion:    "1.25.2",
+				maximumVersion:    lo.ToPtr("1.37.0"),
+			},
+			"ubuntu2204 with fips below lower bound": {
+				imageFamily:       v1beta1.Ubuntu2204ImageFamily,
+				fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
+				kubernetesVersion: "1.25.1",
+				minimumVersion:    "1.25.2",
+			},
+			"ubuntu2404 below lower bound": {
+				imageFamily:       v1beta1.Ubuntu2404ImageFamily,
+				kubernetesVersion: "1.31.9",
+				minimumVersion:    "1.32.0",
 			},
 		}
-		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
-		err := ValidateImageFamilyCompatibility(nodeClass)
-		var incompatibleErr *ImageFamilyKubernetesVersionIncompatibleError
-		g.Expect(errors.As(err, &incompatibleErr)).To(BeTrue())
-		g.Expect(incompatibleErr.policy.minimumVersion.String()).To(Equal("1.25.2"))
-		g.Expect(incompatibleErr.policy.maximumVersion).ToNot(BeNil())
-		g.Expect(incompatibleErr.policy.maximumVersion.String()).To(Equal("1.39.0"))
+		for name, tc := range cases {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
 
-		nodeClass = &v1beta1.AKSNodeClass{
-			Spec: v1beta1.AKSNodeClassSpec{
-				ImageFamily: lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
-			},
-			Status: v1beta1.AKSNodeClassStatus{
-				KubernetesVersion: lo.ToPtr("1.31.0"),
-			},
+				g := NewWithT(t)
+				nodeClass := &v1beta1.AKSNodeClass{
+					Spec: v1beta1.AKSNodeClassSpec{
+						ImageFamily: lo.ToPtr(tc.imageFamily),
+						FIPSMode:    tc.fipsMode,
+					},
+					Status: v1beta1.AKSNodeClassStatus{
+						KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
+					},
+				}
+				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+
+				err := ValidateImageFamilyCompatibility(nodeClass)
+				var incompatibleErr *ImageFamilyKubernetesVersionIncompatibleError
+				g.Expect(errors.As(err, &incompatibleErr)).To(BeTrue())
+				g.Expect(incompatibleErr.policy.minimumVersion.String()).To(Equal(tc.minimumVersion))
+				if tc.maximumVersion == nil {
+					g.Expect(incompatibleErr.policy.maximumVersion).To(BeNil())
+				} else {
+					g.Expect(incompatibleErr.policy.maximumVersion).ToNot(BeNil())
+					g.Expect(incompatibleErr.policy.maximumVersion.String()).To(Equal(*tc.maximumVersion))
+				}
+			})
 		}
-		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
-
-		err = ValidateImageFamilyCompatibility(nodeClass)
-		g.Expect(errors.As(err, &incompatibleErr)).To(BeTrue())
-		g.Expect(incompatibleErr.policy.minimumVersion.String()).To(Equal("1.32.0"))
-		g.Expect(incompatibleErr.policy.maximumVersion).To(BeNil())
 	})
 
 	t.Run("returns an error for a nil node class", func(t *testing.T) {
