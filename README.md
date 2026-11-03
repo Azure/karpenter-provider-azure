@@ -1,5 +1,5 @@
 
-[![GitHub License](https://img.shields.io/badge/License-Apache%202.0-ff69b4.svg)](https://github.com/Azure/karpenter-provider-azure/blob/main/LICENSE.txt)
+[![GitHub License](https://img.shields.io/badge/License-Apache%202.0-ff69b4.svg)](https://github.com/Azure/karpenter-provider-azure/blob/main/LICENSE)
 [![CI](https://github.com/Azure/karpenter-provider-azure/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Azure/karpenter-provider-azure/actions/workflows/ci.yml)
 ![GitHub stars](https://img.shields.io/github/stars/Azure/karpenter-provider-azure)
 ![GitHub forks](https://img.shields.io/github/forks/Azure/karpenter-provider-azure)
@@ -7,11 +7,12 @@
 [![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/Azure/karpenter-provider-azure/issues)
 
 Table of contents:
+
 - [Features Overview](#features-overview)
-- [Node Auto Provisioning (NAP) vs. Self-hosted](#node-auto-provisioning-nap-vs-self-hosted)
+- [Node Auto Provisioning (NAP) vs. Self-hosted Karpenter](#node-auto-provisioning-nap-vs-self-hosted-karpenter)
 - [Node memory reservations](#node-memory-reservations)
 - [Known limitations](#known-limitations)
-- [Installation (self-hosted)](#installation-self-hosted)
+- [Installation (self-hosted)](#installation-self-hosted-karpenter)
   - [Install utilities](#install-utilities)
   - [Create a cluster](#create-a-cluster)
   - [Configure Helm chart values](#configure-helm-chart-values)
@@ -386,6 +387,7 @@ Many thanks to @ellistarn, @jonathan-innis, @tzneal, @bwagner5, @njtran, and man
 Many thanks to @Bryce-Soghigian, @rakechill, @charliedmcb, @jackfrancis, @comtalyst, @aagusuab, @matthchr, @gandhipr, @dtzar for contributing to AKS Karpenter Provider!
 
 ---
+
 ### Community, discussion, contribution, and support
 
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
