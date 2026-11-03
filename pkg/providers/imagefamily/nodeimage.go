@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -36,13 +37,13 @@ import (
 )
 
 const (
-	ImageExpirationInterval       = time.Hour * 24 * 3
-	ImageCacheCleaningInterval    = time.Hour * 1
-	LatestImageExpirationInterval = 15 * time.Minute
+	ImageExpirationInterval    = time.Hour * 24 * 3
+	ImageCacheCleaningInterval = time.Hour * 1
+	LatestImageRefreshInterval = 15 * time.Minute
+	LatestImageGracePeriod     = 4 * time.Hour
 
 	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
 	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
-	latestImagesCacheKeyPrefix      = "latest:"
 )
 
 type NodeImage struct {
@@ -62,8 +63,11 @@ type provider struct {
 	imageVersionsClient types.CommunityGalleryImageVersionsAPI
 	nodeImageVersions   types.NodeImageVersionsAPI
 
-	nodeImagesCache *cache.Cache
-	cm              *pretty.ChangeMonitor
+	nodeImagesCache       *cache.Cache
+	latestImageMu         sync.Mutex
+	latestImageSuffix     string
+	latestImageLastUpdate time.Time
+	cm                    *pretty.ChangeMonitor
 }
 
 func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, nodeImagesCache *cache.Cache) *provider {
@@ -79,26 +83,59 @@ func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location
 
 // Returns the list of available NodeImages for the given AKSNodeClass sorted in priority ordering
 func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
-	return p.listWithCache(ctx, nodeClass, "", cache.DefaultExpiration)
+	return p.listWithCache(ctx, nodeClass)
 }
 
 // GetLatestVersion returns the latest image version available for the NodeClass.
-// It returns an error if no node images are available.
-// All node images in a region share the same version, so the first image is representative.
 func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (string, error) {
-	nodeImages, err := p.listWithCache(ctx, nodeClass, latestImagesCacheKeyPrefix, LatestImageExpirationInterval)
+	p.latestImageMu.Lock()
+	defer p.latestImageMu.Unlock()
+
+	now := time.Now()
+	if !p.latestImageLastUpdate.IsZero() && now.Sub(p.latestImageLastUpdate) < LatestImageRefreshInterval {
+		return p.latestImageSuffix, nil
+	}
+
+	nodeImages, err := p.listNodeImages(ctx, nodeClass)
 	if err != nil {
+		if !p.latestImageLastUpdate.IsZero() && now.Sub(p.latestImageLastUpdate) < LatestImageGracePeriod {
+			log.FromContext(ctx).Error(err, "failed to refresh latest node image version, using last successfully observed version",
+				"lastUpdated", p.latestImageLastUpdate)
+			return p.latestImageSuffix, nil
+		}
 		return "", err
 	}
-	if len(nodeImages) == 0 {
-		return "", fmt.Errorf("no node images available to resolve the latest image version")
-	}
 
-	imageIDParts := strings.Split(nodeImages[0].ID, "/")
-	return imageIDParts[len(imageIDParts)-1], nil
+	p.latestImageSuffix = ""
+	if len(nodeImages) > 0 {
+		// All node images in a region share the same version, so the first image is representative.
+		imageIDParts := strings.Split(nodeImages[0].ID, "/")
+		p.latestImageSuffix = imageIDParts[len(imageIDParts)-1]
+	}
+	p.latestImageLastUpdate = now
+
+	return p.latestImageSuffix, nil
 }
 
-func (p *provider) listWithCache(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, keyPrefix string, expiration time.Duration) ([]NodeImage, error) {
+func (p *provider) listNodeImages(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
+	useSIG := options.FromContext(ctx).UseSIG
+	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS && !useSIG {
+		return []NodeImage{}, nil
+	}
+
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return []NodeImage{}, err
+	}
+	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.Windows2025ImageFamily && !SupportsWindows2025(kubernetesVersion) {
+		return []NodeImage{}, nil
+	}
+
+	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled())
+	return p.listImages(ctx, useSIG, supportedImages)
+}
+
+func (p *provider) listWithCache(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
 	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.
 	useSIG := options.FromContext(ctx).UseSIG
 
@@ -121,13 +158,23 @@ func (p *provider) listWithCache(ctx context.Context, nodeClass *v1beta1.AKSNode
 	if err != nil {
 		return []NodeImage{}, err
 	}
-	key = keyPrefix + key
 
 	if nodeImages, ok := p.nodeImagesCache.Get(key); ok {
 		return nodeImages.([]NodeImage), nil
 	}
 
+	nodeImages, err := p.listImages(ctx, useSIG, supportedImages)
+	if err != nil {
+		return []NodeImage{}, err
+	}
+	p.nodeImagesCache.Set(key, nodeImages, cache.DefaultExpiration)
+
+	return nodeImages, nil
+}
+
+func (p *provider) listImages(ctx context.Context, useSIG bool, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	var nodeImages []NodeImage
+	var err error
 	if useSIG {
 		log.FromContext(ctx).V(1).Info("using SIG to list node images")
 		nodeImages, err = p.listSIG(ctx, supportedImages)
@@ -140,7 +187,6 @@ func (p *provider) listWithCache(ctx context.Context, nodeClass *v1beta1.AKSNode
 			return []NodeImage{}, err
 		}
 	}
-	p.nodeImagesCache.Set(key, nodeImages, expiration)
 
 	return nodeImages, nil
 }
