@@ -7,13 +7,13 @@
 [![Coverage Status](https://coveralls.io/repos/github/Azure/karpenter-provider-azure/badge.svg?branch=main)](https://coveralls.io/github/Azure/karpenter-provider-azure?branch=main)
 [![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/Azure/karpenter-provider-azure/issues)
 
-To handle your compute workloads efficiently, [Azure Kubernetes Services (AKS)](https://azure.microsoft.com/products/kubernetes-service) + Karpenter takes away your responsibility of managing machine provisioning and their lifecycle, while optimizing for your **compute infrastructure cost** and **utilization rate of compute resources**.
+## Overview
 
-Azure Karpenter implements [Karpenter core](https://github.com/kubernetes-sigs/karpenter), integrating with Azure infrastructure and AKS-specific features.
+To handle your compute workloads efficiently, Karpenter takes away your responsibility of managing machines orchestration and lifecycle, optimizing for compute resources utilization rate and overall cost.
 
-## Features Overview
+## How It Works
 
-Once configured, Karpenter enables automatic node provisioning and management on your cluster by:
+Once configured, Karpenter enables automatic node provisioning and management on your Kubernetes cluster by:
 
 - **Watching** for pods that the Kubernetes scheduler has marked as unschedulable
 - **Evaluating** scheduling constraints (resource requests, node selectors, affinities, tolerations, and topology-spread constraints) requested by the pods
@@ -21,15 +21,15 @@ Once configured, Karpenter enables automatic node provisioning and management on
 - **Removing** the nodes when they are no longer needed
 - **Consolidating** existing nodes arrangement onto a cheaper arrangement with higher utilization per node
 
-See more details on functionality in [Karpenter documentation](https://karpenter.sh/docs/concepts/).
+See more details on functionality and configuration options in [Karpenter documentation](https://karpenter.sh/docs/concepts/).
 
 ## Installation
 
-Karpenter on AKS comes with several deployment options:
+Azure Karpenter works with an [Azure Kubernetes Services (AKS)](https://azure.microsoft.com/products/kubernetes-service) cluster through several deployment options:
 
 ### Node Auto Provisioning (NAP)
 
-Karpenter is deployed by AKS as a managed service, similar to [managed Cluster Autoscaler](https://learn.microsoft.com/azure/aks/cluster-autoscaler?tabs=azure-cli). This is the recommended option for most users, coming with perks such as:
+Karpenter is deployed by AKS as a managed service, similar to managed Cluster Autoscaler. This is the recommended option for most users, coming with perks such as:
 
 - Hands-free management. Examples of duties relieved include:
   - Token rotations
@@ -69,36 +69,37 @@ See [Microsoft Learn documentation](https://learn.microsoft.com/azure/aks/automa
 
 Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment, use custom Helm charts, or integrate non-standard workflows. Self-hosted mode requires users to directly manage upgrades, token rotation, and helm charts.
 
-See [documentation](docs/self-hosted-karpenter.md) for more installation instructions.
+See [installation instructions](docs/self-hosted-karpenter.md).
 <!-- TODO: Makefile stuff. -->
-Self-hosted Kubernetes on non-AKS Azure infrastructures may work with additional modifications, but not yet a maintained path.
 
-## Known Limitations
+#### Non-AKS Kubernetes on Azure
 
-See [limitations and unsupported features](https://learn.microsoft.com/azure/aks/node-auto-provisioning?tabs=azure-cli#limitations-and-unsupported-features).
+Karpenter may work on it with additional modifications, but it is not yet a maintained path.
 
-## Source Attribution
+## Community, Discussion, and Support
 
-Many thanks to @ellistarn, @jonathan-innis, @tzneal, @bwagner5, @njtran, and many other developers active in the Karpenter community for laying the foundations of a Karpenter provider ecosystem!
+- [Karpenter documentation](https://karpenter.sh/docs/concepts/) — more on Karpenter's concepts and functionalities
+- [Microsoft Learn documentation](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) — more on AKS Node Auto Provisioning (NAP)
+  - [Known limitations and unsupported features](https://learn.microsoft.com/azure/aks/node-auto-provisioning?tabs=azure-cli#limitations-and-unsupported-features)
+- [#karpenter](https://kubernetes.slack.com/archives/C02SFFZSA2K) channel in the [Kubernetes slack](https://slack.k8s.io/)
+- [Adopters list](https://github.com/Azure/karpenter-provider-azure/blob/main/ADOPTERS.md) — for wider discussion opportunities, consider adding your organization or subdivision
 
-Many thanks to @tallaxes, @Bryce-Soghigian, @rakechill, @charliedmcb, @jackfrancis, @comtalyst, @aagusuab, @matthchr, @gandhipr, @dtzar for laying the foundations of Azure Karpenter Provider!
+This open-source project is subject to best-effort support by project maintainers and not covered by Microsoft support channels. [File an issue](https://github.com/Azure/karpenter-provider-azure/issues) in this project for any questions, feature requests, or issues.
 
 ## Contribution
 
-Check out our [contributions guide](https://github.com/Azure/karpenter-provider-azure/blob/main/CONTRIBUTING.md).
+Check out [contributions guide](https://github.com/Azure/karpenter-provider-azure/blob/main/CONTRIBUTING.md) and [open source maintainship in the age of AI](https://kubernetes.io/blog/2026/06/26/open-source-maintainership-in-the-age-of-ai/) (new).
+
+Azure Karpenter (this project) implements [kubernetes-sigs/karpenter](https://github.com/kubernetes-sigs/karpenter) ("Karpenter Core"), integrating it with Azure infrastructure and AKS-specific features. Capabilities that can be shared with other cloud providers should be contributed to the core project.
+
+### Code of Conduct
 
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/)
 or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
-## Learn More
+### Source Attribution
 
-Check out the [Karpenter documentation](https://karpenter.sh/docs/concepts/) and [Microsoft Learn documentation for NAP on AKS](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) to learn more.
+Many thanks to @ellistarn, @jonathan-innis, @tzneal, @bwagner5, @njtran, and many other developers active in the Karpenter community for laying the foundations of a Karpenter provider ecosystem!
 
-### Community, Discussion, and Support
-
-Come discuss Karpenter in the [#karpenter](https://kubernetes.slack.com/archives/C02SFFZSA2K) channel in the [Kubernetes slack](https://slack.k8s.io/)!
-
-Check out our [adopters list](https://github.com/Azure/karpenter-provider-azure/blob/main/ADOPTERS.md) to see other users. Please consider adding your organization or subdivision if you are using the project.
-
-This open-source project is subject to best-effort support by project maintainers and not covered by Microsoft support channels. [File an issue](https://github.com/Azure/karpenter-provider-azure/issues) in this project for any questions, feature requests, or issues.
+Many thanks to @tallaxes, @Bryce-Soghigian, @rakechill, @charliedmcb, @jackfrancis, @comtalyst, @aagusuab, @matthchr, @gandhipr, @dtzar for laying the foundations of Azure Karpenter Provider!
