@@ -740,7 +740,7 @@ var _ = Describe("CloudProvider", func() {
 			It("should return a NodeClassNotReadyError before instance creation when validation marks the NodeClass incompatible with the Kubernetes version", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
 				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.31")
-				message := `requested image family Ubuntu2404 is not supported with discovered Kubernetes version "1.31"; supported range is >= 1.32.0`
+				message := `requested image family Ubuntu2404 is not supported with Kubernetes version "1.31"; supported range is >= 1.32.0`
 				_, validationErr := status.NewStaticValidationReconciler(azureEnv.DiskEncryptionSetsAPI, nil).Reconcile(ctx, nodeClass)
 				Expect(validationErr).ToNot(HaveOccurred())
 				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
