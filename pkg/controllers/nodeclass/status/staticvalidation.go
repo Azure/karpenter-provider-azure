@@ -60,6 +60,10 @@ const (
 	// KataRequiresAzureLinux3 is the condition reason set when the Kubernetes version resolves
 	// imageFamily AzureLinux to Azure Linux 2, which does not publish a Kata image.
 	KataRequiresAzureLinux3 = "KataRequiresAzureLinux3"
+	// KubernetesVersionNotReady is the condition reason set when the Kubernetes version is not available because the NodeClass is not ready.
+	KubernetesVersionNotReady = "KubernetesVersionNotReady"
+	// MalformedKubernetesVersion is the condition reason set when the Kubernetes version is not in a valid format.
+	MalformedKubernetesVersion = "MalformedKubernetesVersion"
 	// ManagedGPUUnsupportedProvisionMode is the condition reason set when a NodeClass requests
 	// the managed GPU experience but the provision mode cannot express the NVIDIA GPU profile.
 	ManagedGPUUnsupportedProvisionMode = "ManagedGPUUnsupportedProvisionMode"
@@ -175,7 +179,7 @@ func (r *StaticValidationReconciler) validateKubernetesVersion(
 		// We couldn't get the Kubernetes version, which may be because it's not ready yet.
 		// Fail validation instead of returning an error
 		return fail(
-			"KubernetesVersionNotReady",
+			KubernetesVersionNotReady,
 			fmt.Sprintf("getting kubernetes version: %v", err),
 		), nil
 	}
@@ -183,7 +187,7 @@ func (r *StaticValidationReconciler) validateKubernetesVersion(
 	_, err = semver.ParseTolerant(kubernetesVersion)
 	if err != nil {
 		return fail(
-			"MalformedKubernetesVersion",
+			MalformedKubernetesVersion,
 			fmt.Sprintf("malformed Kubernetes version %q: %v", kubernetesVersion, err),
 		), nil
 	}
