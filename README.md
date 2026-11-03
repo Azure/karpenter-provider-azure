@@ -42,6 +42,7 @@ Karpenter improves the efficiency and cost of running workloads on Kubernetes cl
 ## Node Auto Provisioning (NAP) vs. Self-hosted Karpenter
 
 Karpenter provider for AKS can be used in two modes:
+
 * **[Node Auto Provisioning (NAP)](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) mode**: Karpenter is run by AKS as a managed addon similar to managed Cluster Autoscaler. This is the recommended mode for most users as it has more test coverage, improved scale-up speed, automatic maintenance window integration, support for some additional SKUs, and various other improvements over self-hosted Karpenter. NAP also leverages Node Provisioning Service for optimized performance and scalability. Follow the instructions in Node Auto Provisioning [documentation](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) to use Karpenter in that mode. NAP manages:
   * Token rotation
   * Helm charts
@@ -71,6 +72,7 @@ and the separate `VM_MEMORY_OVERHEAD_PERCENT` safety margin remain unchanged.
 ## Known limitations
 
 The following AKS features are not supported:
+
 * Windows nodes require the AKS Machine API provision mode. This mode is used by Node Auto Provisioning and can also be used with self-hosted Karpenter; the scriptless and bootstrapping-client provision modes do not support Windows. Windows2025 requires Kubernetes 1.32 or newer and AKS Windows2025 availability for the subscription and region.
 * Kubenet and Calico.
 * IPv6 clusters.
@@ -91,6 +93,7 @@ This guide shows how to get started with Karpenter by creating an AKS cluster an
 ### Install utilities
 
 Install these tools before proceeding:
+
 * [Azure CLI](https://docs.microsoft.com/cli/azure/install-azure-cli)
 * [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
 * [Helm](https://helm.sh/docs/intro/install/)
@@ -165,6 +168,7 @@ done
 ```
 
 > Note: If you experience any issues creating the role assignments, but should have the given ownership to do so, try going through the Azure portal:
+>
 > 1. Navigate to your MSI.
 > 2. Give it the following roles "Virtual Machine Contributor", "Network Contributor", and "Managed Identity Operator" at the scope of the node resource group.
 
@@ -300,6 +304,7 @@ spec:
   imageFamily: Ubuntu
 EOF
 ```
+
 Karpenter is now active and ready to begin provisioning nodes.
 
 By default, Azure NodePools can use both zonal and regional VM placement when the selected SKU supports it. Add a `karpenter.azure.com/placement-scope` requirement with `zonal` or `regional` to choose one explicitly; regional nodes are represented with `topology.kubernetes.io/zone=0`.
@@ -382,6 +387,7 @@ Many thanks to @Bryce-Soghigian, @rakechill, @charliedmcb, @jackfrancis, @comtal
 
 ---
 ### Community, discussion, contribution, and support
+
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/)
 or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
