@@ -116,7 +116,7 @@ func (e *ImageFamilyKubernetesVersionIncompatibleError) Error() string {
 		supportedRange = fmt.Sprintf("%s and < %s", supportedRange, e.policy.maximumVersion)
 	}
 	return fmt.Sprintf(
-		"requested image family %s is not supported with discovered Kubernetes version %q; supported range is %s",
+		"requested image family %s is not supported with Kubernetes version %q; supported range is %s",
 		e.policy.description,
 		e.RequestedKubernetesVersion,
 		supportedRange,
