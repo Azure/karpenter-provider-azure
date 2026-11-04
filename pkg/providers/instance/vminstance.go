@@ -223,7 +223,7 @@ func NewDefaultVMProvider(
 		env:                          env,
 
 		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
-		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
+		nicListQuery: GetNICListQueryBuilder(resourceGroup, provisionMode).String(),
 
 		errorHandling:  offerings.NewResponseErrorHandler(offeringsCache),
 		deletingVMs:    sets.New[string](),

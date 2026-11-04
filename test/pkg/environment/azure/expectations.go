@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -34,6 +35,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
 
 func (env *Environment) EventuallyExpectKarpenterNicsToBeDeleted() {
@@ -56,6 +58,45 @@ func (env *Environment) EventuallyExpectKarpenterNicsToBeDeleted() {
 		}
 		return true
 	}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(BeTrue(), "Expected all orphan NICs to be deleted")
+}
+
+func (env *Environment) EventuallyExpectInterfaceToBeDeleted(nicName string) {
+	GinkgoHelper()
+	Eventually(func() bool {
+		_, err := env.interfacesClient.Get(env.Context, env.NodeResourceGroup, nicName, nil)
+		return sdkerrors.IsNotFoundErr(err)
+	}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(BeTrue(), "Expected NIC %q to be deleted", nicName)
+}
+
+func (env *Environment) ExpectInterfaceToExist(nicName string) *armnetwork.Interface {
+	GinkgoHelper()
+	resp, err := env.interfacesClient.Get(env.Context, env.NodeResourceGroup, nicName, nil)
+	Expect(err).ToNot(HaveOccurred())
+	return &resp.Interface
+}
+
+func (env *Environment) EventuallyExpectAttachedAKSMachineInterface(nodeClaimName string) *armnetwork.Interface {
+	GinkgoHelper()
+	var found *armnetwork.Interface
+	Eventually(func() bool {
+		pager := env.interfacesClient.NewListPager(env.NodeResourceGroup, nil)
+		for pager.More() {
+			resp, err := pager.NextPage(env.Context)
+			if err != nil {
+				return false
+			}
+			for _, nic := range resp.Value {
+				if lo.FromPtr(nic.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]) == nodeClaimName &&
+					nic.Properties != nil && nic.Properties.VirtualMachine != nil &&
+					lo.FromPtr(nic.Properties.VirtualMachine.ID) != "" {
+					found = nic
+					return true
+				}
+			}
+		}
+		return false
+	}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(BeTrue(), "Expected an attached NIC for NodeClaim %q", nodeClaimName)
+	return found
 }
 
 func (env *Environment) ExpectCreatedInterface(networkInterface armnetwork.Interface) {

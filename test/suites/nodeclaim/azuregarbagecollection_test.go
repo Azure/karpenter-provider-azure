@@ -22,6 +22,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
 
 var _ = Describe("gc", func() {
@@ -44,5 +45,39 @@ var _ = Describe("gc", func() {
 			},
 		})
 		env.EventuallyExpectKarpenterNicsToBeDeleted()
+	})
+
+	It("should garbage collect a detached Machine NIC without deleting an attached Machine NIC", func() {
+		if !env.IsAKSMachineAPIMode() {
+			Skip("this E2E requires an AKS Machine API provision mode")
+		}
+
+		pod := coretest.UnschedulablePod()
+		env.ExpectCreated(nodeClass, nodePool, pod)
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		env.EventuallyExpectNodeClaimsReady(nodeClaim)
+		attachedNIC := env.EventuallyExpectAttachedAKSMachineInterface(nodeClaim.Name)
+
+		orphanedNIC := armnetwork.Interface{
+			Name:     lo.ToPtr("orphaned-machine-nic"),
+			Location: lo.ToPtr(env.Region),
+			Tags:     azkarptest.ManagedTagsAKSMachine(nodePool.Name, "deleted-nodeclaim"),
+			Properties: &armnetwork.InterfacePropertiesFormat{
+				IPConfigurations: []*armnetwork.InterfaceIPConfiguration{{
+					Name: lo.ToPtr("ip-config"),
+					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+						Primary:                   lo.ToPtr(true),
+						Subnet:                    env.GetClusterSubnet(),
+						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
+					},
+				}},
+			},
+		}
+		env.ExpectCreatedInterface(orphanedNIC)
+
+		env.EventuallyExpectInterfaceToBeDeleted(lo.FromPtr(orphanedNIC.Name))
+		env.ExpectInterfaceToExist(lo.FromPtr(attachedNIC.Name))
+		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 	})
 })

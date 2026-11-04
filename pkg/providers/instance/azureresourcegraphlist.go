@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-kusto-go/kusto/kql"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/samber/lo"
 )
@@ -33,24 +34,34 @@ const (
 	nicResourceType = "microsoft.network/networkinterfaces"
 )
 
-// getResourceListQueryBuilder returns a KQL query builder for listing resources with nodepool tags
-// but excluding AKS machine-created resources
-func getResourceListQueryBuilder(rg string, resourceType string) *kql.Builder {
-	return kql.New(`Resources`).
+// getResourceListQueryBuilder returns a KQL query builder for listing resources with nodepool tags.
+func getResourceListQueryBuilder(rg string, resourceType string, excludeAKSMachineResources bool) *kql.Builder {
+	query := kql.New(`Resources`).
 		AddLiteral(` | where type == `).AddString(resourceType).
 		AddLiteral(` | where resourceGroup == `).AddString(strings.ToLower(rg)). // ARG resources appear to have lowercase RG
-		AddLiteral(` | where tags has_cs `).AddString(launchtemplate.NodePoolTagKey).
-		AddLiteral(` | where not(tags has_cs `).AddString(launchtemplate.KarpenterAKSMachineNodeClaimTagKey).AddLiteral(`)`)
+		AddLiteral(` | where tags has_cs `).AddString(launchtemplate.NodePoolTagKey)
+	if excludeAKSMachineResources {
+		query.AddLiteral(` | where not(tags has_cs `).AddString(launchtemplate.KarpenterAKSMachineNodeClaimTagKey).AddLiteral(`)`)
+	}
+	return query
 }
 
-// GetVMListQueryBuilder returns a KQL query builder for listing VMs with nodepool tags
+// GetVMListQueryBuilder returns a KQL query builder for listing VM-based Karpenter VMs.
 func GetVMListQueryBuilder(rg string) *kql.Builder {
-	return getResourceListQueryBuilder(rg, vmResourceType)
+	return getResourceListQueryBuilder(rg, vmResourceType, true)
 }
 
-// GetNICListQueryBuilder returns a KQL query builder for listing NICs with nodepool tags
-func GetNICListQueryBuilder(rg string) *kql.Builder {
-	return getResourceListQueryBuilder(rg, nicResourceType)
+// GetNICListQueryBuilder returns the NIC candidates for the selected provisioning mode.
+func GetNICListQueryBuilder(rg string, provisionMode string) *kql.Builder {
+	machineMode := provisionMode == consts.ProvisionModeAKSMachineAPI ||
+		provisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+	query := getResourceListQueryBuilder(rg, nicResourceType, !machineMode)
+	if machineMode {
+		// Temporary mitigation until https://github.com/kubernetes-sigs/cloud-provider-azure/pull/11267
+		// is released broadly and stale NIC updates can no longer recreate deleted NICs.
+		query.AddLiteral(` | where isempty(tostring(properties.virtualMachine.id))`)
+	}
+	return query
 }
 
 // createVMFromQueryResponseData converts ARG query response data into a VirtualMachine object

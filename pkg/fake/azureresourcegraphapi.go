@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -46,15 +47,17 @@ type AzureResourceGraphBehavior struct {
 var _ azapi.AzureResourceGraphAPI = &AzureResourceGraphAPI{}
 
 type AzureResourceGraphAPI struct {
-	vmListQuery  string
-	nicListQuery string
+	vmListQuery            string
+	nicListQuery           string
+	aksMachineNICListQuery string
 	AzureResourceGraphBehavior
 }
 
 func NewAzureResourceGraphAPI(resourceGroup string, virtualMachinesAPI *VirtualMachinesAPI, networkInterfacesAPI *NetworkInterfacesAPI) *AzureResourceGraphAPI {
 	return &AzureResourceGraphAPI{
-		vmListQuery:  instance.GetVMListQueryBuilder(resourceGroup).String(),
-		nicListQuery: instance.GetNICListQueryBuilder(resourceGroup).String(),
+		vmListQuery:            instance.GetVMListQueryBuilder(resourceGroup).String(),
+		nicListQuery:           instance.GetNICListQueryBuilder(resourceGroup, consts.ProvisionModeAKSScriptless).String(),
+		aksMachineNICListQuery: instance.GetNICListQueryBuilder(resourceGroup, consts.ProvisionModeAKSMachineAPI).String(),
 		AzureResourceGraphBehavior: AzureResourceGraphBehavior{
 			VirtualMachinesAPI:   virtualMachinesAPI,
 			NetworkInterfacesAPI: networkInterfacesAPI,
@@ -82,6 +85,7 @@ func (c *AzureResourceGraphAPI) Resources(_ context.Context, query armresourcegr
 	})
 }
 
+//nolint:gocyclo // Mirrors the VM, legacy NIC, and Machine API NIC query branches.
 func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 	switch query {
 	case c.vmListQuery:
@@ -98,6 +102,16 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 		nicList := lo.Filter(c.loadNicObjects(), func(nic armnetwork.Interface, _ int) bool {
 			return nic.Tags != nil && nic.Tags[launchtemplate.NodePoolTagKey] != nil &&
 				nic.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] == nil
+		})
+		resourceList := lo.Map(nicList, func(nic armnetwork.Interface, _ int) interface{} {
+			b, _ := json.Marshal(nic)
+			return convertBytesToInterface(b)
+		})
+		return resourceList
+	case c.aksMachineNICListQuery:
+		nicList := lo.Filter(c.loadNicObjects(), func(nic armnetwork.Interface, _ int) bool {
+			return nic.Tags != nil && nic.Tags[launchtemplate.NodePoolTagKey] != nil &&
+				(nic.Properties == nil || nic.Properties.VirtualMachine == nil || lo.FromPtr(nic.Properties.VirtualMachine.ID) == "")
 		})
 		resourceList := lo.Map(nicList, func(nic armnetwork.Interface, _ int) interface{} {
 			b, _ := json.Marshal(nic)
