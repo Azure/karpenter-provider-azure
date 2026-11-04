@@ -17,6 +17,7 @@ limitations under the License.
 package imagefamily_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -25,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 func TestAzureContainerLinux(t *testing.T) {
@@ -34,40 +36,72 @@ func TestAzureContainerLinux(t *testing.T) {
 		NewWithT(t).Expect(family.Name()).To(Equal(v1beta1.AzureContainerLinuxImageFamily))
 	})
 
-	t.Run("default images", func(t *testing.T) {
-		images := family.DefaultImages(true, nil, true, false)
-		g := NewWithT(t)
-		g.Expect(images).To(HaveLen(2))
-		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.AzureContainerLinuxGen2ImageDefinition))
-		g.Expect(images[0].Distro).To(Equal("aks-acl-gen2-tl"))
-		g.Expect(images[1].ImageDefinition).To(Equal(imagefamily.AzureContainerLinuxGen2ArmImageDefinition))
-		g.Expect(images[1].Distro).To(Equal("aks-acl-arm64-gen2-tl"))
-		g.Expect(images[0].Requirements.Get(v1.LabelArchStable).Values()).To(ConsistOf(karpv1.ArchitectureAmd64))
-		g.Expect(images[1].Requirements.Get(v1.LabelArchStable).Values()).To(ConsistOf(karpv1.ArchitectureArm64))
-		for _, image := range images {
-			g.Expect(image.GalleryName).To(Equal("AKSAzureLinux"))
-			g.Expect(image.GalleryResourceGroup).To(Equal("AKS-AzureLinux"))
-			g.Expect(image.Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV2))
-		}
-	})
-
-	t.Run("FIPS images", func(t *testing.T) {
-		fips := v1beta1.FIPSModeFIPS
-		images := family.DefaultImages(true, &fips, true, false)
-		g := NewWithT(t)
-		g.Expect(images).To(HaveLen(2))
-		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.AzureContainerLinuxGen2FIPSImageDefinition))
-		g.Expect(images[0].Distro).To(Equal("aks-acl-gen2-fips-tl"))
-		g.Expect(images[1].ImageDefinition).To(Equal(imagefamily.AzureContainerLinuxGen2ArmFIPSImageDefinition))
-		g.Expect(images[1].Distro).To(Equal("aks-acl-arm64-gen2-fips-tl"))
-	})
-
-	for _, fips := range []*v1beta1.FIPSMode{nil, &v1beta1.FIPSModeDisabled, &v1beta1.FIPSModeFIPS} {
-		t.Run("requires Trusted Launch", func(t *testing.T) {
-			NewWithT(t).Expect(family.DefaultImages(true, fips, false, false)).To(BeEmpty())
-		})
-		t.Run("does not support Kata", func(t *testing.T) {
-			NewWithT(t).Expect(family.DefaultImages(true, fips, true, true)).To(BeEmpty())
+	type expectedImage struct {
+		definition, distro, architecture, confidentialComputingType string
+	}
+	defaultImages := []expectedImage{
+		{"aclgen2TL", "aks-acl-gen2-tl", karpv1.ArchitectureAmd64, "None"},
+		{"aclgen2arm64TL", "aks-acl-arm64-gen2-tl", karpv1.ArchitectureArm64, "None"},
+		{"aclgen2CVM", "aks-acl-cvm-gen2", karpv1.ArchitectureAmd64, "SNP"},
+	}
+	fipsImages := []expectedImage{
+		{"aclgen2fipsTL", "aks-acl-gen2-fips-tl", karpv1.ArchitectureAmd64, "None"},
+		{"aclgen2arm64fipsTL", "aks-acl-arm64-gen2-fips-tl", karpv1.ArchitectureArm64, "None"},
+		{"aclgen2fipsCVM", "aks-acl-cvm-gen2-fips", karpv1.ArchitectureAmd64, "SNP"},
+	}
+	for _, tc := range []struct {
+		name string
+		fips *v1beta1.FIPSMode
+		kata bool
+		want []expectedImage
+	}{
+		{"default", nil, false, defaultImages},
+		{"FIPS disabled", &v1beta1.FIPSModeDisabled, false, defaultImages},
+		{"FIPS", &v1beta1.FIPSModeFIPS, false, fipsImages},
+		{"Kata", nil, true, nil},
+		{"Kata with FIPS disabled", &v1beta1.FIPSModeDisabled, true, nil},
+		{"Kata with FIPS", &v1beta1.FIPSModeFIPS, true, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			images := family.DefaultImages(true, tc.fips, true, tc.kata)
+			g.Expect(images).To(HaveLen(len(tc.want)))
+			compatibleImages := map[[3]string][]string{}
+			for i, want := range tc.want {
+				compatibleImages[[3]string{want.architecture, v1beta1.HyperVGenerationV2, want.confidentialComputingType}] = []string{want.definition}
+				image := images[i]
+				g.Expect(image.ImageDefinition).To(Equal(want.definition))
+				g.Expect(image.Distro).To(Equal(want.distro))
+				g.Expect(image.GalleryName).To(Equal("AKSAzureLinux"))
+				g.Expect(image.GalleryResourceGroup).To(Equal("AKS-AzureLinux"))
+				g.Expect(image.Requirements.Get(v1.LabelArchStable).Values()).To(ConsistOf(want.architecture))
+				g.Expect(image.Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV2))
+				g.Expect(image.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType).Values()).To(ConsistOf(want.confidentialComputingType))
+			}
+			g.Expect(family.DefaultImages(false, tc.fips, false, tc.kata)).To(BeEmpty())
+			g.Expect(family.DefaultImages(false, tc.fips, true, tc.kata)).To(BeEmpty())
+			g.Expect(family.DefaultImages(true, tc.fips, false, tc.kata)).To(BeEmpty())
+			for _, architecture := range []string{karpv1.ArchitectureAmd64, karpv1.ArchitectureArm64} {
+				for _, generation := range []string{v1beta1.HyperVGenerationV1, v1beta1.HyperVGenerationV2} {
+					for _, confidentialComputingType := range []string{"None", "SNP"} {
+						t.Run(fmt.Sprintf("%s/gen%s/%s", architecture, generation, confidentialComputingType), func(t *testing.T) {
+							requirements := scheduling.NewRequirements(
+								scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, architecture),
+								scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, generation),
+								scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, v1.NodeSelectorOpIn, confidentialComputingType),
+							)
+							var matches []string
+							for _, image := range images {
+								if requirements.Compatible(image.Requirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil {
+									matches = append(matches, image.ImageDefinition)
+								}
+							}
+							expected := compatibleImages[[3]string{architecture, generation, confidentialComputingType}]
+							NewWithT(t).Expect(matches).To(Equal(expected))
+						})
+					}
+				}
+			}
 		})
 	}
 

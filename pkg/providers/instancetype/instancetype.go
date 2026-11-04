@@ -187,6 +187,7 @@ func computeRequirements(
 		scheduling.NewRequirement(v1beta1.LabelSKUStoragePremiumCapable, corev1.NodeSelectorOpIn, fmt.Sprint(sku.IsPremiumIO())),
 		scheduling.NewRequirement(v1beta1.LabelSKUAcceleratedNetworking, corev1.NodeSelectorOpIn, fmt.Sprint(sku.IsAcceleratedNetworkingSupported())),
 		scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, confidentialComputingType(sku)),
 		// all additive feature initialized elsewhere
 	)
 
@@ -254,8 +255,10 @@ func setRequirementsVersion(requirements scheduling.Requirements, vmsize *skewer
 }
 
 func getArchitecture(architecture string) string {
-	if value, ok := v1beta1.AzureToKubeArchitectures[architecture]; ok {
-		return value
+	for azureArchitecture, kubeArchitecture := range v1beta1.AzureToKubeArchitectures {
+		if strings.EqualFold(architecture, azureArchitecture) {
+			return kubeArchitecture
+		}
 	}
 	return architecture // unrecognized
 }

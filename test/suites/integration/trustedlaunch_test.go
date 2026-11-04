@@ -17,12 +17,14 @@ limitations under the License.
 package integration_test
 
 import (
+	"os"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -37,6 +39,10 @@ var _ = Describe("Trusted Launch", func() {
 		}
 		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
 		nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+		// ACL also supports CVM now; keep this case on an ordinary amd64 Gen2 SKU.
+		coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			Key: corev1.LabelInstanceTypeStable, Operator: corev1.NodeSelectorOpIn, Values: []string{"Standard_D4s_v5"},
+		})
 
 		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(nodeClass, nodePool, deployment)
@@ -48,13 +54,70 @@ var _ = Describe("Trusted Launch", func() {
 		Expect(vm.Properties).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
-		Expect(strings.ToLower(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference))).To(ContainSubstring("/images/aclgen2"))
+		Expect(strings.ToLower(lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID))).To(ContainSubstring("/images/aclgen2tl/versions/"))
 		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
 		Expect(vm.Properties.SecurityProfile.SecurityType).To(Equal(lo.ToPtr(armcompute.SecurityTypesTrustedLaunch)))
 		Expect(vm.Properties.SecurityProfile.UefiSettings).ToNot(BeNil())
 		Expect(vm.Properties.SecurityProfile.UefiSettings.VTpmEnabled).To(Equal(lo.ToPtr(true)))
 		Expect(vm.Properties.SecurityProfile.UefiSettings.SecureBootEnabled).To(Equal(lo.ToPtr(true)))
 	})
+
+	DescribeTable("should provision AzureContainerLinux ConfidentialVM", Label("ACL-CVM"), func(fipsMode v1beta1.FIPSMode, imageDefinition string) {
+		if os.Getenv("RUN_ACL_CVM") != "true" {
+			Skip("set RUN_ACL_CVM=true to opt in to ACL SNP provisioning (label ACL-CVM)")
+		}
+		if !env.IsAKSMachineAPIMode() || env.InClusterController {
+			Skip("AzureContainerLinux requires Machine API provisioning with managed SIG access")
+		}
+		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+		nodeClass.Spec.FIPSMode = lo.ToPtr(fipsMode)
+		nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+		nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+		// This SNP SKU needs regional capacity and quota in the dedicated test environment.
+		coretest.ReplaceRequirements(nodePool,
+			karpv1.NodeSelectorRequirementWithMinValues{Key: corev1.LabelInstanceTypeStable, Operator: corev1.NodeSelectorOpIn, Values: []string{"Standard_DC4as_v5"}},
+			karpv1.NodeSelectorRequirementWithMinValues{Key: corev1.LabelArchStable, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.ArchitectureAmd64}},
+		)
+
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.GetNode(pods[0].Spec.NodeName)
+		Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelOSSKU, v1beta1.OSSKUAzureContainerLinux))
+		Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelArchStable, karpv1.ArchitectureAmd64))
+
+		vm := env.GetVM(node.Name)
+		Expect(vm.Properties).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile.SecurityType).To(Equal(lo.ToPtr(armcompute.SecurityTypesConfidentialVM)))
+		Expect(vm.Properties.SecurityProfile.UefiSettings).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile.UefiSettings.VTpmEnabled).To(Equal(lo.ToPtr(true)))
+		Expect(vm.Properties.SecurityProfile.UefiSettings.SecureBootEnabled).To(Equal(lo.ToPtr(true)))
+		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
+		// Require a SIG ID and the exact definition, not just a matching CVM/FIPS substring.
+		Expect(strings.ToLower(lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID))).To(ContainSubstring("/images/" + strings.ToLower(imageDefinition) + "/versions/"))
+		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.SecurityProfile).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.SecurityProfile.SecurityEncryptionType).To(Equal(lo.ToPtr(armcompute.SecurityEncryptionTypesVMGuestStateOnly)))
+
+		if fipsMode == v1beta1.FIPSModeFIPS {
+			// A regular container shares the CVM guest kernel; inspect its runtime FIPS state.
+			probe := env.Pod(coretest.PodOptions{
+				Image:        "mcr.microsoft.com/azurelinux/busybox:1.36",
+				Command:      []string{"sh", "-c", "cat /proc/sys/crypto/fips_enabled && sleep 300"},
+				NodeSelector: map[string]string{corev1.LabelHostname: node.Name},
+			})
+			env.ExpectCreated(probe)
+			env.EventuallyExpectHealthy(probe)
+			Expect(strings.TrimSpace(env.EventuallyGetPodLogs(probe))).To(Equal("1"), "CVM guest kernel must have FIPS enabled")
+		}
+	},
+		Entry("SNP amd64", v1beta1.FIPSModeDisabled, "aclgen2CVM"),
+		Entry("FIPS SNP amd64", Label("ACL-FIPS-CVM"), v1beta1.FIPSModeFIPS, "aclgen2fipsCVM"),
+	)
 
 	It("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu", func() {
 		enabled := true
