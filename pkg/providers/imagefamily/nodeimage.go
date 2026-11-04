@@ -57,6 +57,7 @@ type NodeImage struct {
 
 type NodeImageProvider interface {
 	List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error)
+	// GetLatestVersion returns the latest image version available for the NodeClass.
 	GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (string, error)
 }
 
