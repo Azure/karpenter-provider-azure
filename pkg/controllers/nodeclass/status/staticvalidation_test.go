@@ -254,14 +254,13 @@ var _ = Describe("Validation Reconciler", func() {
 				}
 			},
 			Entry("Ubuntu2404 below lower bound", v1beta1.Ubuntu2404ImageFamily, "1.31", false,
-				`requested image family Ubuntu2404 is not supported with discovered Kubernetes version "1.31"; supported range is >= 1.32.0`),
+				`requested image family Ubuntu2404 is not supported with Kubernetes version "1.31"; supported range is >= 1.32.0`),
 			Entry("Ubuntu2404 lower bound", v1beta1.Ubuntu2404ImageFamily, "1.32.0", false, ""),
 			Entry("Ubuntu2204 lower bound", v1beta1.Ubuntu2204ImageFamily, "1.25.2", false, ""),
 			Entry("Ubuntu2204 upper bound", v1beta1.Ubuntu2204ImageFamily, "1.37.0", false,
-				`requested image family Ubuntu2204 is not supported with discovered Kubernetes version "1.37.0"; supported range is >= 1.25.2 and < 1.37.0`),
+				`requested image family Ubuntu2204 is not supported with Kubernetes version "1.37.0"; supported range is >= 1.25.2 and < 1.37.0`),
 			Entry("Ubuntu2204 FIPS extended range", v1beta1.Ubuntu2204ImageFamily, "1.38.9", true, ""),
-			Entry("Ubuntu2204 FIPS upper bound", v1beta1.Ubuntu2204ImageFamily, "1.39.0", true,
-				`requested image family Ubuntu2204 FIPS is not supported with discovered Kubernetes version "1.39.0"; supported range is >= 1.25.2 and < 1.39.0`),
+			Entry("Ubuntu2204 FIPS has no upper bound", v1beta1.Ubuntu2204ImageFamily, "1.39.0", true, ""),
 		)
 
 		DescribeTable("applies the same policy in every provisioning mode",
