@@ -45,6 +45,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
@@ -379,6 +380,7 @@ func runSharedAKSMachineAPITests() {
 			// Create a fresh nodeClaim with explicit requirements so we know exactly what it will have
 			firstNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:   "nodeclaim-name-exceeding-thirty-four-abcde",
 					Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				},
 				Spec: karpv1.NodeClaimSpec{
@@ -431,7 +433,8 @@ func runSharedAKSMachineAPITests() {
 			}
 
 			// Since no new machine was created, verify the machine in the fake store matches original config.
-			aksMachineName := firstNodeClaim.Name
+			aksMachineName, ok := instance.GetAKSMachineNameFromNodeClaim(createdFirstNodeClaim)
+			Expect(ok).To(BeTrue(), "created NodeClaim should identify its AKS machine")
 
 			// Get the actual machine from the fake store
 			machineID := fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, aksMachineName)
