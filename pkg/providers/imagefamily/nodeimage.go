@@ -98,9 +98,11 @@ func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSN
 	defer p.latestImageMu.Unlock()
 
 	sinceLastUpdate := time.Since(p.latestImageLastUpdate)
+	// If the latest image was successfully retrieved recently, return it to avoid unnecessary API calls.
 	if p.latestImageErr == nil && sinceLastUpdate < LatestImageRefreshInterval {
 		return p.latestImageSuffix, nil
 	}
+	// If the latest image retrieval failed recently, return the cached error to avoid hammering the API.
 	if sinceLastUpdate < LatestImageRetryInterval {
 		return p.latestImageSuffix, p.latestImageErr
 	}
