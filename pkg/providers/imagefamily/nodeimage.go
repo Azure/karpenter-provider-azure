@@ -37,10 +37,14 @@ import (
 )
 
 const (
-	ImageExpirationInterval    = time.Hour * 24 * 3
+	// ImageExpirationInterval controls how often images used for automatic rollout are refreshed.
+	ImageExpirationInterval = time.Hour * 24 * 3
+	// ImageCacheCleaningInterval controls how often expired rollout image entries are removed from memory.
 	ImageCacheCleaningInterval = time.Hour * 1
+	// LatestImageRefreshInterval controls how often the latest available image version is refreshed.
 	LatestImageRefreshInterval = 15 * time.Minute
-	LatestImageGracePeriod     = 4 * time.Hour
+	// LatestImageGracePeriod controls how long the last successful latest image version can be used after refresh failures.
+	LatestImageGracePeriod = 4 * time.Hour
 
 	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
 	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
