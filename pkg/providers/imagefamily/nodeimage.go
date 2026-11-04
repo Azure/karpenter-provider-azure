@@ -45,6 +45,8 @@ const (
 	LatestImageRefreshInterval = 15 * time.Minute
 	// LatestImageRetryInterval controls how often a failed latest image version refresh is retried.
 	LatestImageRetryInterval = 5 * time.Minute
+	// LatestImageGracePeriod controls how long a successfully retrieved image version can be reused after refresh failures.
+	LatestImageGracePeriod = 8 * time.Hour
 
 	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
 	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
@@ -61,6 +63,14 @@ type NodeImageProvider interface {
 	GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (string, error)
 }
 
+type latestImageState struct {
+	mu          sync.Mutex
+	suffix      string
+	err         error
+	lastAttempt time.Time
+	lastUpdate  time.Time
+}
+
 type provider struct {
 	subscription string
 	location     string
@@ -68,12 +78,9 @@ type provider struct {
 	imageVersionsClient types.CommunityGalleryImageVersionsAPI
 	nodeImageVersions   types.NodeImageVersionsAPI
 
-	nodeImagesCache       *cache.Cache
-	latestImageMu         sync.Mutex
-	latestImageSuffix     string
-	latestImageErr        error
-	latestImageLastUpdate time.Time
-	cm                    *pretty.ChangeMonitor
+	nodeImagesCache *cache.Cache
+	latestImage     latestImageState
+	cm              *pretty.ChangeMonitor
 }
 
 func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, nodeImagesCache *cache.Cache) *provider {
@@ -94,30 +101,42 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 
 // GetLatestVersion returns the latest image version available for the NodeClass.
 func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (string, error) {
-	p.latestImageMu.Lock()
-	defer p.latestImageMu.Unlock()
+	p.latestImage.mu.Lock()
+	defer p.latestImage.mu.Unlock()
 
-	sinceLastUpdate := time.Since(p.latestImageLastUpdate)
+	sinceLastUpdate := time.Since(p.latestImage.lastUpdate)
 	// If the latest image was successfully retrieved recently, return it to avoid unnecessary API calls.
-	if p.latestImageErr == nil && sinceLastUpdate < LatestImageRefreshInterval {
-		return p.latestImageSuffix, nil
+	if p.latestImage.err == nil && sinceLastUpdate < LatestImageRefreshInterval {
+		return p.latestImage.suffix, nil
 	}
-	// If the latest image retrieval failed recently, return the cached error to avoid hammering the API.
-	if sinceLastUpdate < LatestImageRetryInterval {
-		return p.latestImageSuffix, p.latestImageErr
+	// If the latest image retrieval was attempted recently, return its cached result to avoid hammering the API.
+	if time.Since(p.latestImage.lastAttempt) < LatestImageRetryInterval {
+		return p.latestImage.suffix, p.latestImage.err
 	}
 
+	p.latestImage.lastAttempt = time.Now()
 	nodeImages, err := p.listNodeImages(ctx, nodeClass, false)
-	p.latestImageSuffix = ""
-	if err == nil && len(nodeImages) > 0 {
+	if err != nil {
+		if sinceLastUpdate < LatestImageGracePeriod {
+			log.FromContext(ctx).Error(err, "failed to refresh latest node image version, using last successfully retrieved version", "lastUpdated", p.latestImage.lastUpdate)
+			p.latestImage.err = nil
+			return p.latestImage.suffix, nil
+		}
+		p.latestImage.suffix = ""
+		p.latestImage.err = err
+		return p.latestImage.suffix, p.latestImage.err
+	}
+
+	p.latestImage.suffix = ""
+	if len(nodeImages) > 0 {
 		// All node images in a region share the same version, so the first image is representative.
 		imageIDParts := strings.Split(nodeImages[0].ID, "/")
-		p.latestImageSuffix = imageIDParts[len(imageIDParts)-1]
+		p.latestImage.suffix = imageIDParts[len(imageIDParts)-1]
 	}
-	p.latestImageErr = err
-	p.latestImageLastUpdate = time.Now()
+	p.latestImage.err = nil
+	p.latestImage.lastUpdate = time.Now()
 
-	return p.latestImageSuffix, p.latestImageErr
+	return p.latestImage.suffix, nil
 }
 
 func (p *provider) listNodeImages(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, useCache bool) ([]NodeImage, error) {
