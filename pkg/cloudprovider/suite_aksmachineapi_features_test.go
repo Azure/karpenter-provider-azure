@@ -39,6 +39,7 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
+	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -130,7 +131,7 @@ var _ = Describe("CloudProvider", func() {
 		// Note: AKS Machine API does not support Community Image Gallery (CIG)
 		Context("Create - ImageReference and ImageProvider + Image Family", func() {
 			DescribeTable("should provision AzureContainerLinux with explicit Trusted Launch",
-				func(provisionMode string, fipsMode *v1beta1.FIPSMode, definition string, withOverrides bool) {
+				func(provisionMode string, fipsMode *v1beta1.FIPSMode, definition string, withOverrides bool, instanceType string) {
 					testOptions.ProvisionMode = provisionMode
 					// Dispatch mode is captured when the provider is constructed, not read on each create.
 					azureEnv.Reset(ctx)
@@ -140,6 +141,48 @@ var _ = Describe("CloudProvider", func() {
 					coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
 					statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, testOptions.NetworkPolicy, testOptions.NetworkPlugin,
 						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace)
+					// Keep new image variants local until they appear in the generated feed snapshot.
+					versions, err := azureEnv.NodeImageVersionsAPI.List(ctx, fake.Region)
+					Expect(err).ToNot(HaveOccurred())
+					azureEnv.NodeImageVersionsAPI.OverrideNodeImageVersions = append([]*armcontainerservice.NodeImageVersion{}, versions...)
+					for _, imageDefinition := range []string{
+						imagefamily.AzureContainerLinuxGen2CVMImageDefinition,
+						imagefamily.AzureContainerLinuxGen2FIPSCVMImageDefinition,
+						imagefamily.AzureContainerLinuxGen2ArmImageDefinition,
+						imagefamily.AzureContainerLinuxGen2ArmFIPSImageDefinition,
+					} {
+						if !lo.ContainsBy(versions, func(version *armcontainerservice.NodeImageVersion) bool {
+							return lo.FromPtr(version.OS) == "AKSAzureLinux" && lo.FromPtr(version.SKU) == imageDefinition
+						}) {
+							azureEnv.NodeImageVersionsAPI.OverrideNodeImageVersions = append(azureEnv.NodeImageVersionsAPI.OverrideNodeImageVersions, &armcontainerservice.NodeImageVersion{
+								FullName: lo.ToPtr("AKSAzureLinux-" + imageDefinition + "-202608.26.0"),
+								OS:       lo.ToPtr("AKSAzureLinux"),
+								SKU:      lo.ToPtr(imageDefinition),
+								Version:  lo.ToPtr("202608.26.0"),
+							})
+						}
+					}
+					for _, fixture := range []struct {
+						name, size, confidentialType, architecture string
+					}{
+						{"Standard_ACLSNP", "DC4as_v5", "SNP", "x64"},
+						{"Standard_ACLArm", "D2s_v3", "None", "Arm64"},
+					} {
+						azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+							Name: lo.ToPtr(fixture.name), Size: lo.ToPtr(fixture.size),
+							Family: lo.ToPtr("standardACLTestFamily"), ResourceType: lo.ToPtr("virtualMachines"),
+							Locations: &[]string{fake.Region},
+							Capabilities: &[]compute.ResourceSkuCapabilities{
+								{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("4")},
+								{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("16")},
+								{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr(fixture.architecture)},
+								{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V2")},
+								{Name: lo.ToPtr("TrustedLaunchDisabled"), Value: lo.ToPtr("False")},
+								{Name: lo.ToPtr("ConfidentialComputingType"), Value: lo.ToPtr(fixture.confidentialType)},
+							},
+						})
+					}
+					Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 					nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
 					nodeClass.Spec.FIPSMode = fipsMode
 					nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
@@ -153,7 +196,7 @@ var _ = Describe("CloudProvider", func() {
 						}
 					}
 					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-						Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{"Standard_D2_v5"},
+						Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{instanceType},
 					})
 					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -162,12 +205,15 @@ var _ = Describe("CloudProvider", func() {
 					ExpectScheduled(ctx, env.Client, pod)
 
 					Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 					machine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
 					Expect(machine.Properties.NodeImageVersion).To(Equal(lo.ToPtr("AKSAzureLinux-" + definition + "-202608.26.0")))
+					Expect(machine.Properties.Hardware.VMSize).To(Equal(lo.ToPtr(instanceType)))
 					Expect(machine.Properties.OperatingSystem.OSSKU).To(Equal(lo.ToPtr(armcontainerservice.OSSKUAzureContainerLinux)))
 					Expect(machine.Properties.OperatingSystem.EnableFIPS).To(Equal(lo.ToPtr(lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS)))
 					Expect(machine.Properties.Security.EnableVTPM).To(Equal(lo.ToPtr(true)))
 					Expect(machine.Properties.Security.EnableSecureBoot).To(Equal(lo.ToPtr(true)))
+					Expect(machine.Properties.Kubernetes.WorkloadRuntime).To(BeNil())
 					if withOverrides {
 						kubeletConfig := machine.Properties.Kubernetes.KubeletConfig
 						Expect(kubeletConfig).ToNot(BeNil())
@@ -182,15 +228,53 @@ var _ = Describe("CloudProvider", func() {
 						Expect(kubeletConfig.SoftEvictionGracePeriod.MemoryAvailable).To(Equal(lo.ToPtr("90s")))
 						Expect(kubeletConfig.EvictionMaxPodGracePeriodInSeconds).To(Equal(lo.ToPtr(int32(120))))
 					}
+					if instanceType == "Standard_ACLSNP" {
+						By("including the running SNP instance type while CVM images are ready")
+						instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(instanceTypes).To(ContainElement(HaveField("Name", instanceType)))
+						for _, staleGeneration := range []bool{false, true} {
+							By(fmt.Sprintf("returning an inventory error during image reconciliation (stale generation=%t)", staleGeneration))
+							nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+							if staleGeneration {
+								for i := range nodeClass.Status.Conditions {
+									if nodeClass.Status.Conditions[i].Type == v1beta1.ConditionTypeImagesReady {
+										nodeClass.Status.Conditions[i].ObservedGeneration--
+									}
+								}
+							} else {
+								nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesReconciling", "refreshing CVM images")
+							}
+							Expect(env.Client.Status().Update(ctx, nodeClass)).To(Succeed())
+							// A successful inventory missing SNP would make core drift report InstanceTypeNotFound.
+							instanceTypes, err = cloudProvider.GetInstanceTypes(ctx, nodePool)
+							Expect(err).To(MatchError(ContainSubstring("resolving AzureContainerLinux images")))
+							Expect(instanceTypes).To(BeNil())
+
+							By("restoring the SNP inventory after image status reconciliation")
+							ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+							instanceTypes, err = cloudProvider.GetInstanceTypes(ctx, nodePool)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(instanceTypes).To(ContainElement(HaveField("Name", instanceType)))
+						}
+					}
 				},
-				Entry("Machine API default", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2TL", false),
-				Entry("Machine API FIPS", consts.ProvisionModeAKSMachineAPI, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", false),
-				Entry("batched Machine API default", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2TL", false),
-				Entry("batched Machine API FIPS", consts.ProvisionModeAKSMachineAPIHeaderBatch, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", false),
-				Entry("Machine API default with kubelet overrides", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2TL", true),
-				Entry("Machine API FIPS with kubelet overrides", consts.ProvisionModeAKSMachineAPI, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", true),
-				Entry("batched Machine API default with kubelet overrides", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2TL", true),
-				Entry("batched Machine API FIPS with kubelet overrides", consts.ProvisionModeAKSMachineAPIHeaderBatch, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", true),
+				Entry("Machine API default", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2TL", false, "Standard_D2_v5"),
+				Entry("Machine API FIPS", consts.ProvisionModeAKSMachineAPI, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", false, "Standard_D2_v5"),
+				Entry("batched Machine API default", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2TL", false, "Standard_D2_v5"),
+				Entry("batched Machine API FIPS", consts.ProvisionModeAKSMachineAPIHeaderBatch, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", false, "Standard_D2_v5"),
+				Entry("Machine API default with kubelet overrides", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2TL", true, "Standard_D2_v5"),
+				Entry("Machine API FIPS with kubelet overrides", consts.ProvisionModeAKSMachineAPI, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", true, "Standard_D2_v5"),
+				Entry("batched Machine API default with kubelet overrides", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2TL", true, "Standard_D2_v5"),
+				Entry("batched Machine API FIPS with kubelet overrides", consts.ProvisionModeAKSMachineAPIHeaderBatch, &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", true, "Standard_D2_v5"),
+				Entry("Machine API CVM", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2CVM", false, "Standard_ACLSNP"),
+				Entry("Machine API FIPS CVM", consts.ProvisionModeAKSMachineAPI, &v1beta1.FIPSModeFIPS, "aclgen2fipsCVM", false, "Standard_ACLSNP"),
+				Entry("batched Machine API CVM", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2CVM", false, "Standard_ACLSNP"),
+				Entry("batched Machine API FIPS CVM", consts.ProvisionModeAKSMachineAPIHeaderBatch, &v1beta1.FIPSModeFIPS, "aclgen2fipsCVM", false, "Standard_ACLSNP"),
+				Entry("Machine API ARM64", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2arm64TL", false, "Standard_ACLArm"),
+				Entry("Machine API ARM64 FIPS", consts.ProvisionModeAKSMachineAPI, &v1beta1.FIPSModeFIPS, "aclgen2arm64fipsTL", false, "Standard_ACLArm"),
+				Entry("batched Machine API ARM64", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2arm64TL", false, "Standard_ACLArm"),
+				Entry("batched Machine API ARM64 FIPS", consts.ProvisionModeAKSMachineAPIHeaderBatch, &v1beta1.FIPSModeFIPS, "aclgen2arm64fipsTL", false, "Standard_ACLArm"),
 			)
 
 			// Ported from VM test: "should use shared image gallery images when options are set to UseSIG"

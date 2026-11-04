@@ -28,6 +28,7 @@ import (
 
 func init() {
 	karpv1.RestrictedLabelDomains = karpv1.RestrictedLabelDomains.Insert(RestrictedLabelDomains...)
+	karpv1.RestrictedLabels.Insert(LabelSKUConfidentialComputingType)
 	// TODO: Uncomment this after Sept 30, see: https://github.com/Azure/karpenter-provider-azure/issues/1707
 	// karpv1.RestrictedLabels = karpv1.RestrictedLabels.Union(RestrictedLabels)
 	// Note that adding to WellKnownLabels here requires a corresponding update to
@@ -65,6 +66,7 @@ var (
 
 	RestrictedLabels = sets.New(
 		LabelSKUHyperVGeneration,
+		LabelSKUConfidentialComputingType,
 
 		// TODO: Uncomment these label restrictions after Sept 30, see: https://github.com/Azure/karpenter-provider-azure/issues/1707
 		// Legacy labels
@@ -152,7 +154,8 @@ var (
 	LabelPlacementScope = Group + "/placement-scope"
 
 	// Internal/restricted labels
-	LabelSKUHyperVGeneration = Group + "/sku-hyperv-generation" // sku.HyperVGenerations
+	LabelSKUHyperVGeneration          = Group + "/sku-hyperv-generation"           // sku.HyperVGenerations
+	LabelSKUConfidentialComputingType = Group + "/sku-confidential-computing-type" // sku.ConfidentialComputingType
 
 	// AKS labels
 	AKSLabelDomain = "kubernetes.azure.com"
