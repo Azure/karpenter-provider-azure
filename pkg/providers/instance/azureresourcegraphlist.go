@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/azure-kusto-go/kusto/kql"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/samber/lo"
 )
@@ -46,22 +45,29 @@ func getResourceListQueryBuilder(rg string, resourceType string, excludeAKSMachi
 	return query
 }
 
-// GetVMListQueryBuilder returns a KQL query builder for listing VM-based Karpenter VMs.
+// GetVMListQueryBuilder returns a KQL query builder for listing VMs with nodepool tags
 func GetVMListQueryBuilder(rg string) *kql.Builder {
 	return getResourceListQueryBuilder(rg, vmResourceType, true)
 }
 
-// GetNICListQueryBuilder returns the NIC candidates for the selected provisioning mode.
-func GetNICListQueryBuilder(rg string, provisionMode string) *kql.Builder {
-	machineMode := provisionMode == consts.ProvisionModeAKSMachineAPI ||
-		provisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
-	query := getResourceListQueryBuilder(rg, nicResourceType, !machineMode)
-	if machineMode {
-		// Temporary mitigation until https://github.com/kubernetes-sigs/cloud-provider-azure/pull/11267
-		// is released broadly and stale NIC updates can no longer recreate deleted NICs.
-		query.AddLiteral(` | where isempty(tostring(properties.virtualMachine.id))`)
-	}
-	return query
+// GetNICListQueryBuilder returns a KQL query builder for listing NICs with nodepool tags
+func GetNICListQueryBuilder(rg string) *kql.Builder {
+	return getResourceListQueryBuilder(rg, nicResourceType, true)
+}
+
+// GetAKSMachineNICListQueryBuilder returns VM-created NICs and AKS Machine-created NICs from the
+// configured Machines pool. AKS applies AKSManagedPoolNameTagKey to Machine-affiliated NICs; scoping
+// that branch matches the Machine provider contract that Machines outside aksMachinesPoolName are
+// ignored. This query exists only for the temporary Machine NIC cleanup in the NIC GC controller.
+// Remove it after https://github.com/kubernetes-sigs/cloud-provider-azure/pull/11267 is deployed to
+// all affected Machine API clusters and the cleanup is no longer needed.
+func GetAKSMachineNICListQueryBuilder(rg, aksMachinesPoolName string) *kql.Builder {
+	return getResourceListQueryBuilder(rg, nicResourceType, false).
+		AddLiteral(` | where (not(tags has_cs `).AddString(launchtemplate.KarpenterAKSMachineNodeClaimTagKey).
+		AddLiteral(`) and isempty(tostring(tags[`).AddString(launchtemplate.AKSManagedPoolNameTagKey).AddLiteral(`])))`).
+		AddLiteral(` or (isnotempty(tostring(tags[`).AddString(launchtemplate.AKSManagedPoolNameTagKey).AddLiteral(`])) and tostring(tags[`).
+		AddString(launchtemplate.AKSManagedPoolNameTagKey).AddLiteral(`]) == `).AddString(aksMachinesPoolName).AddLiteral(`)`).
+		AddLiteral(` | order by id asc | project id, name, tags`)
 }
 
 // createVMFromQueryResponseData converts ARG query response data into a VirtualMachine object

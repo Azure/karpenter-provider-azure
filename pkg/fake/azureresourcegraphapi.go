@@ -19,13 +19,14 @@ package fake
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/samber/lo"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -50,14 +51,20 @@ type AzureResourceGraphAPI struct {
 	vmListQuery            string
 	nicListQuery           string
 	aksMachineNICListQuery string
+	aksMachinesPoolName    string
 	AzureResourceGraphBehavior
 }
 
-func NewAzureResourceGraphAPI(resourceGroup string, virtualMachinesAPI *VirtualMachinesAPI, networkInterfacesAPI *NetworkInterfacesAPI) *AzureResourceGraphAPI {
+func NewAzureResourceGraphAPI(resourceGroup string, virtualMachinesAPI *VirtualMachinesAPI, networkInterfacesAPI *NetworkInterfacesAPI, aksMachinesPoolNames ...string) *AzureResourceGraphAPI {
+	aksMachinesPoolName := ""
+	if len(aksMachinesPoolNames) > 0 {
+		aksMachinesPoolName = aksMachinesPoolNames[0]
+	}
 	return &AzureResourceGraphAPI{
 		vmListQuery:            instance.GetVMListQueryBuilder(resourceGroup).String(),
-		nicListQuery:           instance.GetNICListQueryBuilder(resourceGroup, consts.ProvisionModeAKSScriptless).String(),
-		aksMachineNICListQuery: instance.GetNICListQueryBuilder(resourceGroup, consts.ProvisionModeAKSMachineAPI).String(),
+		nicListQuery:           instance.GetNICListQueryBuilder(resourceGroup).String(),
+		aksMachineNICListQuery: instance.GetAKSMachineNICListQueryBuilder(resourceGroup, aksMachinesPoolName).String(),
+		aksMachinesPoolName:    aksMachinesPoolName,
 		AzureResourceGraphBehavior: AzureResourceGraphBehavior{
 			VirtualMachinesAPI:   virtualMachinesAPI,
 			NetworkInterfacesAPI: networkInterfacesAPI,
@@ -85,7 +92,7 @@ func (c *AzureResourceGraphAPI) Resources(_ context.Context, query armresourcegr
 	})
 }
 
-//nolint:gocyclo // Mirrors the VM, legacy NIC, and Machine API NIC query branches.
+//nolint:gocyclo // Mirrors the VM, legacy NIC, and scoped Machine NIC ARG query branches.
 func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 	switch query {
 	case c.vmListQuery:
@@ -110,11 +117,22 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 		return resourceList
 	case c.aksMachineNICListQuery:
 		nicList := lo.Filter(c.loadNicObjects(), func(nic armnetwork.Interface, _ int) bool {
-			return nic.Tags != nil && nic.Tags[launchtemplate.NodePoolTagKey] != nil &&
-				(nic.Properties == nil || nic.Properties.VirtualMachine == nil || lo.FromPtr(nic.Properties.VirtualMachine.ID) == "")
+			resourceID, err := arm.ParseResourceID(lo.FromPtr(nic.ID))
+			isAKSMachineNIC := nic.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] != nil
+			_, hasAKSMachinePoolTag := nic.Tags[launchtemplate.AKSManagedPoolNameTagKey]
+			isLegacyNIC := !isAKSMachineNIC && !hasAKSMachinePoolTag
+			isConfiguredPool := hasAKSMachinePoolTag && lo.FromPtr(nic.Tags[launchtemplate.AKSManagedPoolNameTagKey]) == c.aksMachinesPoolName
+			return err == nil && strings.EqualFold(resourceID.ResourceGroupName, c.ResourceGroup) &&
+				nic.Tags != nil && nic.Tags[launchtemplate.NodePoolTagKey] != nil &&
+				(isLegacyNIC || isConfiguredPool)
 		})
 		resourceList := lo.Map(nicList, func(nic armnetwork.Interface, _ int) interface{} {
-			b, _ := json.Marshal(nic)
+			projectedNIC := struct {
+				ID   *string            `json:"id,omitempty"`
+				Name *string            `json:"name,omitempty"`
+				Tags map[string]*string `json:"tags,omitempty"`
+			}{ID: nic.ID, Name: nic.Name, Tags: nic.Tags}
+			b, _ := json.Marshal(projectedNIC)
 			return convertBytesToInterface(b)
 		})
 		return resourceList

@@ -223,7 +223,7 @@ func NewDefaultVMProvider(
 		env:                          env,
 
 		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
-		nicListQuery: GetNICListQueryBuilder(resourceGroup, provisionMode).String(),
+		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
 
 		errorHandling:  offerings.NewResponseErrorHandler(offeringsCache),
 		deletingVMs:    sets.New[string](),
@@ -427,7 +427,13 @@ func (p *DefaultVMProvider) GetNic(ctx context.Context, rg, nicName string) (*ar
 
 // ListNics returns all network interfaces in the resource group that have the nodepool tag
 func (p *DefaultVMProvider) ListNics(ctx context.Context) ([]*armnetwork.Interface, error) {
-	req := NewQueryRequest(&(p.subscriptionID), p.nicListQuery)
+	nicListQuery := p.nicListQuery
+	// Machine ownership is a lifecycle concern, not only a provisioning concern. Keep Machine NICs
+	// visible while creating Machines or while managing Machines left by a failback to VM provisioning.
+	if shouldAKSMachinesBeVisible(ctx) {
+		nicListQuery = GetAKSMachineNICListQueryBuilder(p.resourceGroup, options.FromContext(ctx).AKSMachinesPoolName).String()
+	}
+	req := NewQueryRequest(&(p.subscriptionID), nicListQuery)
 	client := p.azClient.AzureResourceGraphClient()
 	data, err := GetResourceData(ctx, client, *req)
 	if err != nil {

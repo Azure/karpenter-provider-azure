@@ -21,6 +21,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
@@ -47,7 +48,7 @@ var _ = Describe("gc", func() {
 		env.EventuallyExpectKarpenterNicsToBeDeleted()
 	})
 
-	It("should garbage collect a detached Machine NIC without deleting an attached Machine NIC", func() {
+	It("should garbage collect a Machine NIC recreated by a stale PUT without deleting an attached Machine NIC", func() {
 		if !env.IsAKSMachineAPIMode() {
 			Skip("this E2E requires an AKS Machine API provision mode")
 		}
@@ -59,10 +60,12 @@ var _ = Describe("gc", func() {
 		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 		attachedNIC := env.EventuallyExpectAttachedAKSMachineInterface(nodeClaim.Name)
 
+		orphanedNICTags := azkarptest.ManagedTagsAKSMachine(nodePool.Name, "deleted-nodeclaim")
+		orphanedNICTags[launchtemplate.AKSManagedPoolNameTagKey] = lo.ToPtr(env.MachineAgentPoolName)
 		orphanedNIC := armnetwork.Interface{
 			Name:     lo.ToPtr("orphaned-machine-nic"),
 			Location: lo.ToPtr(env.Region),
-			Tags:     azkarptest.ManagedTagsAKSMachine(nodePool.Name, "deleted-nodeclaim"),
+			Tags:     orphanedNICTags,
 			Properties: &armnetwork.InterfacePropertiesFormat{
 				IPConfigurations: []*armnetwork.InterfaceIPConfiguration{{
 					Name: lo.ToPtr("ip-config"),
@@ -74,7 +77,7 @@ var _ = Describe("gc", func() {
 				}},
 			},
 		}
-		env.ExpectCreatedInterface(orphanedNIC)
+		env.ExpectRecreatedInterfaceFromStalePUT(orphanedNIC)
 
 		env.EventuallyExpectInterfaceToBeDeleted(lo.FromPtr(orphanedNIC.Name))
 		env.ExpectInterfaceToExist(lo.FromPtr(attachedNIC.Name))

@@ -23,7 +23,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	. "github.com/onsi/gomega"
@@ -247,30 +246,30 @@ func TestAzureResourceGraphAPI_Resources_VM_WithKarpenterAKSMachineTagFiltering(
 func TestResourceListQueryOwnershipFilters(t *testing.T) {
 	g := NewWithT(t)
 	vmQuery := instance.GetVMListQueryBuilder("test-rg").String()
-	legacyNICQuery := instance.GetNICListQueryBuilder("test-rg", consts.ProvisionModeBootstrappingClient).String()
-	machineNICQuery := instance.GetNICListQueryBuilder("test-rg", consts.ProvisionModeAKSMachineAPI).String()
+	legacyNICQuery := instance.GetNICListQueryBuilder("test-rg").String()
+	machineNICQuery := instance.GetAKSMachineNICListQueryBuilder("test-rg", "aksmanagedap").String()
 
-	g.Expect(vmQuery).To(ContainSubstring(launchtemplate.KarpenterAKSMachineNodeClaimTagKey))
-	g.Expect(legacyNICQuery).To(ContainSubstring(launchtemplate.KarpenterAKSMachineNodeClaimTagKey))
-	g.Expect(legacyNICQuery).ToNot(ContainSubstring("properties.virtualMachine.id"))
-	g.Expect(machineNICQuery).ToNot(ContainSubstring("where not(tags has_cs"))
-	g.Expect(machineNICQuery).To(ContainSubstring("properties.virtualMachine.id"))
+	g.Expect(vmQuery).To(Equal(`Resources | where type == "microsoft.compute/virtualmachines" | where resourceGroup == "test-rg" | where tags has_cs "karpenter.sh_nodepool" | where not(tags has_cs "karpenter.azure.com_aksmachine_nodeclaim")`))
+	g.Expect(legacyNICQuery).To(Equal(`Resources | where type == "microsoft.network/networkinterfaces" | where resourceGroup == "test-rg" | where tags has_cs "karpenter.sh_nodepool" | where not(tags has_cs "karpenter.azure.com_aksmachine_nodeclaim")`))
+	g.Expect(machineNICQuery).To(Equal(`Resources | where type == "microsoft.network/networkinterfaces" | where resourceGroup == "test-rg" | where tags has_cs "karpenter.sh_nodepool" | where (not(tags has_cs "karpenter.azure.com_aksmachine_nodeclaim") and isempty(tostring(tags["aks-managed-poolName"]))) or (isnotempty(tostring(tags["aks-managed-poolName"])) and tostring(tags["aks-managed-poolName"]) == "aksmanagedap") | order by id asc | project id, name, tags`))
 }
 
+//nolint:gocyclo // Table coverage mirrors the legacy and temporary Machine-inclusive ARG query branches.
 func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering(t *testing.T) {
 	resourceGroup := "test_managed_cluster_rg"
 	subscriptionID := "test_sub"
 
 	cases := []struct {
-		testName         string
-		provisionMode    string
-		nicConfigs       []nicConfig
-		expectedNICNames []string
-		expectedError    string
+		testName              string
+		includeAKSMachineNICs bool
+		emptyAKSMachinePool   bool
+		nicConfigs            []nicConfig
+		expectedNICNames      []string
+		expectedError         string
 	}{
 		{
-			testName:      "include detached Machine NICs in Machine API mode",
-			provisionMode: consts.ProvisionModeAKSMachineAPI,
+			testName:              "include detached Machine NICs in Machine API mode",
+			includeAKSMachineNICs: true,
 			nicConfigs: []nicConfig{
 				{
 					name: "karpenter-nic",
@@ -280,18 +279,15 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 				},
 				{
 					name: "aks-machine-nic",
-					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey:                     lo.ToPtr("default"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-claim"),
-					},
+					tags: testManagedMachineTags("test-claim"),
 				},
 			},
 			expectedNICNames: []string{"karpenter-nic", "aks-machine-nic"},
 			expectedError:    "",
 		},
 		{
-			testName:      "exclude Machine NICs in VM mode",
-			provisionMode: consts.ProvisionModeBootstrappingClient,
+			testName:              "exclude Machine NICs in VM mode",
+			includeAKSMachineNICs: false,
 			nicConfigs: []nicConfig{
 				{name: "karpenter-nic", tags: map[string]*string{launchtemplate.NodePoolTagKey: lo.ToPtr("default")}},
 				{name: "aks-machine-nic", tags: testManagedMachineTags("test-claim")},
@@ -300,8 +296,8 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 			expectedError:    "",
 		},
 		{
-			testName:      "exclude NICs without tags",
-			provisionMode: consts.ProvisionModeAKSMachineAPI,
+			testName:              "exclude NICs without tags",
+			includeAKSMachineNICs: true,
 			nicConfigs: []nicConfig{
 				{
 					name: "karpenter-nic",
@@ -318,8 +314,38 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 			expectedError:    "",
 		},
 		{
-			testName:      "preserve VM-mode NIC discovery",
-			provisionMode: consts.ProvisionModeBootstrappingClient,
+			testName:              "exclude Machine NICs from other resource groups",
+			includeAKSMachineNICs: true,
+			nicConfigs: []nicConfig{
+				{name: "local-machine-nic", tags: testManagedMachineTags("local-claim")},
+				{name: "remote-machine-nic", resourceGroup: "other-resource-group", tags: testManagedMachineTags("remote-claim")},
+			},
+			expectedNICNames: []string{"local-machine-nic"},
+			expectedError:    "",
+		},
+		{
+			testName:              "exclude Machine NICs from other Machine pools",
+			includeAKSMachineNICs: true,
+			nicConfigs: []nicConfig{
+				{name: "configured-pool-nic", tags: testManagedMachineTags("configured-claim")},
+				{name: "other-pool-nic", tags: testManagedMachineTagsForPool("other-claim", "otherpool")},
+			},
+			expectedNICNames: []string{"configured-pool-nic"},
+			expectedError:    "",
+		},
+		{
+			testName:              "exclude Machine NICs when the configured Machine pool is empty",
+			includeAKSMachineNICs: true,
+			emptyAKSMachinePool:   true,
+			nicConfigs: []nicConfig{
+				{name: "unmanaged-machine-nic", tags: testManagedMachineTags("unmanaged-claim")},
+			},
+			expectedNICNames: []string{},
+			expectedError:    "",
+		},
+		{
+			testName:              "preserve VM-mode NIC discovery",
+			includeAKSMachineNICs: false,
 			nicConfigs: []nicConfig{
 				{
 					name: "nic1",
@@ -338,30 +364,18 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 			expectedError:    "",
 		},
 		{
-			testName:      "include all detached Machine NICs in Machine API mode",
-			provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch,
+			testName:              "include all detached Machine NICs in Machine API mode",
+			includeAKSMachineNICs: true,
 			nicConfigs: []nicConfig{
-				{
-					name: "aks-nic1",
-					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey:                     lo.ToPtr("default"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("claim1"),
-					},
-				},
-				{
-					name: "aks-nic2",
-					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey:                     lo.ToPtr("default"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("claim2"),
-					},
-				},
+				{name: "aks-nic1", tags: testManagedMachineTags("claim1")},
+				{name: "aks-nic2", tags: testManagedMachineTags("claim2")},
 			},
 			expectedNICNames: []string{"aks-nic1", "aks-nic2"},
 			expectedError:    "",
 		},
 		{
-			testName:      "exclude attached Machine NICs in Machine API mode",
-			provisionMode: consts.ProvisionModeAKSMachineAPI,
+			testName:              "include attached and detached Machine NICs for ownership evaluation",
+			includeAKSMachineNICs: true,
 			nicConfigs: []nicConfig{
 				{
 					name: "detached-machine-nic",
@@ -375,7 +389,7 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 					},
 				},
 			},
-			expectedNICNames: []string{"detached-machine-nic"},
+			expectedNICNames: []string{"detached-machine-nic", "attached-machine-nic"},
 			expectedError:    "",
 		},
 	}
@@ -384,14 +398,23 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 		t.Run(c.testName, func(t *testing.T) {
 			g := NewWithT(t)
 			networkInterfacesAPI := &NetworkInterfacesAPI{}
-			azureResourceGraphAPI := NewAzureResourceGraphAPI(resourceGroup, nil, networkInterfacesAPI)
+			machinePoolName := "aksmanagedap"
+			if c.emptyAKSMachinePool {
+				machinePoolName = ""
+			}
+			azureResourceGraphAPI := NewAzureResourceGraphAPI(resourceGroup, nil, networkInterfacesAPI, machinePoolName)
 			// Create NICs with different tag configurations
 			for _, nicConfig := range c.nicConfigs {
 				nic := armnetwork.Interface{
+					Location:   lo.ToPtr("southcentralus"),
 					Tags:       nicConfig.tags,
 					Properties: nicConfig.properties,
 				}
-				_, err := networkInterfacesAPI.BeginCreateOrUpdate(context.Background(), resourceGroup, nicConfig.name, nic, nil)
+				nicResourceGroup := resourceGroup
+				if nicConfig.resourceGroup != "" {
+					nicResourceGroup = nicConfig.resourceGroup
+				}
+				_, err := networkInterfacesAPI.BeginCreateOrUpdate(context.Background(), nicResourceGroup, nicConfig.name, nic, nil)
 				if err != nil {
 					t.Errorf("Unexpected error creating NIC %s: %v", nicConfig.name, err)
 					return
@@ -399,12 +422,22 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 			}
 
 			// Query for NICs
-			queryRequest := instance.NewQueryRequest(&subscriptionID, instance.GetNICListQueryBuilder(resourceGroup, c.provisionMode).String())
+			query := instance.GetNICListQueryBuilder(resourceGroup)
+			if c.includeAKSMachineNICs {
+				query = instance.GetAKSMachineNICListQueryBuilder(resourceGroup, machinePoolName)
+			}
+			queryRequest := instance.NewQueryRequest(&subscriptionID, query.String())
 			data, err := instance.GetResourceData(context.Background(), azureResourceGraphAPI, *queryRequest)
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
 				return
+			}
+			if c.includeAKSMachineNICs {
+				for _, nic := range data {
+					g.Expect(nic).To(HaveLen(3), "Machine-inclusive ARG query projects exactly the GC ownership fields")
+					g.Expect(nic).To(And(HaveKey("id"), HaveKey("name"), HaveKey("tags")))
+				}
 			}
 
 			if c.expectedError != "" {
@@ -438,14 +471,20 @@ type vmConfig struct {
 }
 
 type nicConfig struct {
-	name       string
-	tags       map[string]*string
-	properties *armnetwork.InterfacePropertiesFormat
+	name          string
+	resourceGroup string
+	tags          map[string]*string
+	properties    *armnetwork.InterfacePropertiesFormat
 }
 
 func testManagedMachineTags(nodeClaimName string) map[string]*string {
+	return testManagedMachineTagsForPool(nodeClaimName, "aksmanagedap")
+}
+
+func testManagedMachineTagsForPool(nodeClaimName, machinePoolName string) map[string]*string {
 	return map[string]*string{
 		launchtemplate.NodePoolTagKey:                     lo.ToPtr("default"),
 		launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr(nodeClaimName),
+		launchtemplate.AKSManagedPoolNameTagKey:           lo.ToPtr(machinePoolName),
 	}
 }

@@ -87,6 +87,7 @@ func (env *Environment) EventuallyExpectAttachedAKSMachineInterface(nodeClaimNam
 			}
 			for _, nic := range resp.Value {
 				if lo.FromPtr(nic.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]) == nodeClaimName &&
+					lo.FromPtr(nic.Tags[launchtemplate.AKSManagedPoolNameTagKey]) == env.MachineAgentPoolName &&
 					nic.Properties != nil && nic.Properties.VirtualMachine != nil &&
 					lo.FromPtr(nic.Properties.VirtualMachine.ID) != "" {
 					found = nic
@@ -116,6 +117,28 @@ func (env *Environment) ExpectCreatedInterface(networkInterface armnetwork.Inter
 		}
 		return nil
 	})
+}
+
+// ExpectRecreatedInterfaceFromStalePUT reproduces the stale cloud-provider write sequence against
+// Network RP: retain a GET response, delete the server-side NIC, then PUT the retained object after
+// deletion. The create-capable PUT should recreate the NIC; callers can then verify cleanup behavior.
+func (env *Environment) ExpectRecreatedInterfaceFromStalePUT(networkInterface armnetwork.Interface) {
+	GinkgoHelper()
+	env.ExpectCreatedInterface(networkInterface)
+	nicName := lo.FromPtr(networkInterface.Name)
+	staleInterface := env.ExpectInterfaceToExist(nicName)
+
+	deletePoller, err := env.interfacesClient.BeginDelete(env.Context, env.NodeResourceGroup, nicName, nil)
+	Expect(err).ToNot(HaveOccurred())
+	_, err = deletePoller.PollUntilDone(env.Context, nil)
+	Expect(err).ToNot(HaveOccurred())
+	env.EventuallyExpectInterfaceToBeDeleted(nicName)
+
+	createPoller, err := env.interfacesClient.BeginCreateOrUpdate(env.Context, env.NodeResourceGroup, nicName, *staleInterface, nil)
+	Expect(err).ToNot(HaveOccurred())
+	_, err = createPoller.PollUntilDone(env.Context, nil)
+	Expect(err).ToNot(HaveOccurred())
+	env.ExpectInterfaceToExist(nicName)
 }
 
 func (env *Environment) ExpectGetManagedCluster() *containerservice.ManagedCluster {
