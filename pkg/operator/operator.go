@@ -204,7 +204,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(imagefamily.ImageExpirationInterval,
 			imagefamily.ImageCacheCleaningInterval),
 	)
-	quotaProvider := quota.NewProvider(azClient.UsageClient, azClient.QuotaCategoryVMFamilyMappingClient, azConfig.Location)
+	quotaProvider := quota.NewProvider(azClient.UsageClient, azClient.QuotaCategoryVMFamilyMappingClient, azConfig.Location, operator.Clock)
 	instanceTypeProvider := instancetype.NewDefaultProvider(
 		azConfig.Location,
 		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
@@ -272,6 +272,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).ProvisionMode,
 		options.FromContext(ctx).DiskEncryptionSetID,
 		env,
+		quotaProvider,
 	)
 
 	aksMachineCache := machinecache.New(
@@ -295,6 +296,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch,
 		aksMachineCache,
+		quotaProvider,
 	)
 
 	return ctx, &Operator{

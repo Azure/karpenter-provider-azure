@@ -87,6 +87,7 @@ type CloudProvider struct {
 	recorder                   events.Recorder
 	instanceTypeStore          *nodeoverlay.InstanceTypeStore
 	instancePromiseWg          sync.WaitGroup
+	legacyRepairPolicies       bool
 }
 
 func New(
@@ -97,6 +98,7 @@ func New(
 	kubeClient client.Client,
 	imageProvider imagefamily.NodeImageProvider,
 	store *nodeoverlay.InstanceTypeStore,
+	legacyRepairPolicies bool,
 ) *CloudProvider {
 	return &CloudProvider{
 		instanceTypeProvider:       instanceTypeProvider,
@@ -106,6 +108,7 @@ func New(
 		imageProvider:              imageProvider,
 		recorder:                   recorder,
 		instanceTypeStore:          store,
+		legacyRepairPolicies:       legacyRepairPolicies,
 	}
 }
 
@@ -159,7 +162,8 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, err
 	}
 
-	// Note: This filters out any instance types which we're out of capacity for
+	// Filter static requirement and resource incompatibilities here. Offering availability is
+	// checked by the instance provider after it first gets a chance to reuse an existing resource.
 	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
@@ -263,6 +267,7 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 			c.handleInstancePromiseWaitError(ctx, instancePromise, nodeClaim, err)
 			return toCreateError(err, "creating standalone instance failed")
 		}
+		return nil
 	}
 	// For NodePool-managed nodeclaims, launch a single goroutine to poll the returned promise.
 	// Note that we could store the LRO details on the NodeClaim, but we don't bother today because Karpenter
@@ -498,15 +503,14 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	// AKS machine-based node
 	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
-		return c.aksMachineInstanceProvider.Delete(ctx, aksMachineName)
+		return c.aksMachineInstanceProvider.Delete(ctx, nodeClaim, aksMachineName)
 	}
 
-	// VM-based node
 	vmName, err := nodeclaimutils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		return fmt.Errorf("getting VM name, %w", err)
 	}
-	return c.vmInstanceProvider.Delete(ctx, vmName)
+	return c.vmInstanceProvider.Delete(ctx, nodeClaim, vmName)
 }
 
 // IsDrifted checks if the NodeClaim has drifted from our goal state.
@@ -553,38 +557,97 @@ func (c *CloudProvider) Name() string {
 	return "azure"
 }
 
+func (c *CloudProvider) Reboot(context.Context, *karpv1.NodeClaim, string) error {
+	return cloudprovider.NewNodeRebootNotImplementedError()
+}
+
 func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
 	return []status.Object{&v1beta1.AKSNodeClass{}}
 }
 
-// TODO: review repair policies
 func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
+	if c.legacyRepairPolicies {
+		return legacyRepairPolicies()
+	}
+	return budgetAwareRepairPolicies()
+}
+
+func legacyRepairPolicies() []cloudprovider.RepairPolicy {
+	// Keep the pre-v1.15 policy profile independent of future recovery choices.
 	return []cloudprovider.RepairPolicy{
-		// Supported Kubelet fields
 		{
 			ConditionType:      corev1.NodeReady,
 			ConditionStatus:    corev1.ConditionFalse,
 			TolerationDuration: 10 * time.Minute,
+			Action:             cloudprovider.ReplaceNode,
 		},
 		{
 			ConditionType:      corev1.NodeReady,
 			ConditionStatus:    corev1.ConditionUnknown,
 			TolerationDuration: 10 * time.Minute,
+			Action:             cloudprovider.ReplaceNode,
 		},
 		{
 			ConditionType:      "kubernetes.azure.com/NodeHealthy",
 			ConditionStatus:    corev1.ConditionFalse,
 			TolerationDuration: 0,
+			Action:             cloudprovider.ReplaceNode,
 		},
-		// Fast-path repair for Azure Spot VMs that received a platform eviction signal.
-		// The condition is emitted by a node-level agent that polls the Instance Metadata
-		// Service for SpotRebalanceRecommendation / Preempt events. Spot eviction notice
-		// is ~30s, so toleration is 0 — we want to start the replacement immediately
-		// rather than waiting for the NodeReady=Unknown 10-minute backstop.
 		{
 			ConditionType:      SpotConditionPreemptionScheduled,
 			ConditionStatus:    corev1.ConditionTrue,
 			TolerationDuration: 0,
+			Action:             cloudprovider.ReplaceNode,
+		},
+	}
+}
+
+func budgetAwareRepairPolicies() []cloudprovider.RepairPolicy {
+	// Start with legacy eligibility and forceful drains; policy changes remain opt-in future work.
+	// Possible per-reason extensions, only after validating Azure signals:
+	//   TerminationGracePeriod: lo.ToPtr(5 * time.Minute), // bounded drain for a responsive node
+	//   Priority:               50,                     // higher urgency, not a budget bypass
+	//   Action:                 cloudprovider.RebootNode, // requires supported Azure reboot operations
+	// Replace overlapping catch-all policies when splitting reasons: an eligible replacement wins over reboot.
+	return []cloudprovider.RepairPolicy{
+		// Supported Kubelet fields
+		{
+			// The sole default fallback; the other conditions match every reason explicitly.
+			ConditionType:          corev1.NodeReady,
+			ConditionStatus:        corev1.ConditionFalse,
+			TolerationDuration:     10 * time.Minute,
+			TerminationGracePeriod: lo.ToPtr(time.Duration(0)),
+			Action:                 cloudprovider.ReplaceNode,
+		},
+		{
+			ConditionType:          corev1.NodeReady,
+			ConditionStatus:        corev1.ConditionUnknown,
+			ReasonRegex:            ".*",
+			TolerationDuration:     10 * time.Minute,
+			TerminationGracePeriod: lo.ToPtr(time.Duration(0)),
+			Action:                 cloudprovider.ReplaceNode,
+		},
+		{
+			ConditionType:          "kubernetes.azure.com/NodeHealthy",
+			ConditionStatus:        corev1.ConditionFalse,
+			ReasonRegex:            ".*",
+			TolerationDuration:     0,
+			TerminationGracePeriod: lo.ToPtr(time.Duration(0)),
+			Action:                 cloudprovider.ReplaceNode,
+		},
+		// Fast-path repair for Azure Spot VMs that received a platform eviction signal.
+		// The condition is emitted by a node-level agent that polls the Instance Metadata
+		// Service for SpotRebalanceRecommendation / Preempt events. Spot eviction notice
+		// is ~30s, so toleration is 0 — we want repair to become eligible immediately
+		// rather than waiting for the NodeReady=Unknown 10-minute backstop.
+		// Budgets and replacement initialization can still delay termination.
+		{
+			ConditionType:          SpotConditionPreemptionScheduled,
+			ConditionStatus:        corev1.ConditionTrue,
+			ReasonRegex:            ".*",
+			TolerationDuration:     0,
+			TerminationGracePeriod: lo.ToPtr(time.Duration(0)),
+			Action:                 cloudprovider.ReplaceNode,
 		},
 	}
 }
@@ -603,6 +666,7 @@ func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePo
 	}
 	return nodeClass, nil
 }
+
 func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
 	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
@@ -617,10 +681,18 @@ func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *kar
 		}
 	}
 
+	// Filter instance type compatibility here, so we avoid considering instance types that
+	// cannot satisfy the node claim's requirements and resource requests.
+	// Note that offering availability is checked in pkg/providers/allocationstrategy/allocation_strategy.go
+	// NOT here. That is because availability can change moment to moment due to things like quota/capacity, but
+	// we need to still consider instance types in case of something like NodeClaim recreate (to make CloudProvider.Create idempotent)
+	// If we consider availability here, we may filter out the instance type that we actually previously created.
+	// Then a subsequent call to Create will not adopt the already-created instance because it was filtered out here due to max quota (for example),
+	// even though since we aren't actually creating a NEW VM, for the purposes of adopting an existing VM to a NodeClaim availability doesn't matter.
 	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 	return lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
 		return reqs.Compatible(i.Requirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil &&
-			len(i.Offerings.Compatible(reqs).Available()) > 0 &&
+			len(i.Offerings.Compatible(reqs)) > 0 &&
 			resources.Fits(nodeClaim.Spec.Resources.Requests, i.Allocatable())
 	}), nil
 
@@ -689,6 +761,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 	labels[v1beta1.AKSLabelScaleSetPriority] = instance.GetScaleSetPriorityLabelFromVM(vm)
 	labels[v1beta1.AKSLabelPriority] = instance.GetPriorityLabelFromVM(vm)
 	labels[v1beta1.LabelUltraSSD] = fmt.Sprint(instance.GetUltraSSDEnabled(vm))
+	annotations[v1beta1.AnnotationCapacityReservationGroupID] = instance.CapacityReservationGroupID(vm)
 
 	if tag, ok := vm.Tags[launchtemplate.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
@@ -765,9 +838,10 @@ func setAdditionalAnnotationsForNewNodeClaim(ctx context.Context, nodeClaim *kar
 		return fmt.Errorf("failed to calculate in place update hash, %w", err)
 	}
 	nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
-		v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
-		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
-		v1beta1.AnnotationInPlaceUpdateHash:       inPlaceUpdateHash,
+		v1beta1.AnnotationAKSNodeClassHash:           nodeClass.Hash(),
+		v1beta1.AnnotationAKSNodeClassHashVersion:    v1beta1.AKSNodeClassHashVersion,
+		v1beta1.AnnotationInPlaceUpdateHash:          inPlaceUpdateHash,
+		v1beta1.AnnotationCapacityReservationGroupID: nodeClass.GetCapacityReservationGroupID(),
 	})
 	return nil
 }

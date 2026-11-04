@@ -96,11 +96,13 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	annotations := map[string]string{}
 
 	annotations[v1beta1.AnnotationAKSMachineResourceID] = aksMachineResourceID
+	annotations[v1beta1.AnnotationCapacityReservationGroupID] = capacityReservationGroupIDFromAKSMachine(aksMachineTemplate)
 	if instanceType != nil {
 		labels = labelspkg.GetAllSingleValuedRequirementLabels(instanceType.Requirements)
 		nodeClaim.Status.Capacity = lo.PickBy(instanceType.Capacity, func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 	}
+
 	if zone != nil {
 		labels[corev1.LabelTopologyZone] = *zone
 		labels[v1beta1.LabelPlacementScope] = zones.PlacementScopeForZone(*zone)
@@ -136,6 +138,16 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	nodeClaim.Status.ImageID = aksMachineNodeImageVersion // ASSUMPTION: this doesn't need to be full image ID (should be fine on core, as the definition of ID is provider agnostic)
 
 	return nodeClaim, nil
+}
+
+func capacityReservationGroupIDFromAKSMachine(aksMachine *armcontainerservice.Machine) string {
+	if aksMachine == nil ||
+		aksMachine.Properties == nil ||
+		aksMachine.Properties.CapacityReservation == nil ||
+		aksMachine.Properties.CapacityReservation.CapacityReservationGroup == nil {
+		return ""
+	}
+	return lo.FromPtr(aksMachine.Properties.CapacityReservation.CapacityReservationGroup.ID)
 }
 
 func ultraSSDLabelFromAKSMachineTemplate(aksMachineTemplate *armcontainerservice.Machine) string {

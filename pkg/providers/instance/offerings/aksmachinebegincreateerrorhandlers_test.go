@@ -45,7 +45,7 @@ func newAKSMachineBeginCreateErrorTestCase(name string) *aksMachineBeginCreateEr
 }
 
 func (b *aksMachineBeginCreateErrorTestCaseBuilder) withInstanceType(offerings ...offering) *aksMachineBeginCreateErrorTestCaseBuilder {
-	b.tc.instanceType = createInstanceType(testInstanceName, offerings...)
+	b.tc.instanceType = createInstanceType(offerings...)
 	return b
 }
 
@@ -122,6 +122,48 @@ func nodePublicIPBeginCreateErrorTestCase(name, code, message string) aksMachine
 
 func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTestCase {
 	return []aksMachineBeginCreateErrorTestCase{
+		newAKSMachineBeginCreateErrorTestCase("AKS availability zone not supported").
+			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withHandlableError("AvailabilityZoneNotSupported", "The zone(s) '2' for resource 'dummy' is not supported. The supported zones for location 'westus' are '3,1'").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+			).
+			expectAvailable(
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", testInstanceFamilyName, "16"),
+				offeringInformation(testZone2, karpv1.CapacityTypeSpot, "Standard_E2s_v5", "E2s_v5", "standardEsv5Family", "2"),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+			).
+			build(),
+		newAKSMachineBeginCreateErrorTestCase("AKS availability zone not supported for reserved capacity").
+			withInstanceType(zone2OnDemand, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withCapacityReservationGroup(testCapacityReservationGroupID).
+			withHandlableError("AvailabilityZoneNotSupported", "The requested availability zone is not supported.").
+			expectError(fmt.Errorf(errMsgInvalidAvailabilityZoneFmt, testZone2, testInstanceName)).
+			expectReason(InvalidAvailabilityZoneReason).
+			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			expectAvailable(
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+			).
+			build(),
+		newAKSMachineBeginCreateErrorTestCase("AvailabilityZoneNotSupported in an unrelated message is not handled").
+			withInstanceType(zone2OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withHandlableError("BadRequest", "AvailabilityZoneNotSupported").
+			expectAvailable(allDefaultTestOfferingInfo()...).
+			build(),
+		newAKSMachineBeginCreateErrorTestCase("Compute code is not treated as Machine frontend validation").
+			withInstanceType(zone2OnDemand, zone2Spot, zone3OnDemand, regionalOnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+			withHandlableError("InvalidAvailabilityZone", "The requested zone is not supported.").
+			expectAvailable(allDefaultTestOfferingInfo()...).
+			build(),
 		newAKSMachineBeginCreateErrorTestCase("VMSizeNotSupported").
 			withInstanceType(zone2OnDemand, zone3Spot, regionalOnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
@@ -226,7 +268,7 @@ func TestHandleMachineAPISyncErrors(t *testing.T) {
 			)
 
 			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
-			assertOfferingsState(t, handler.unavailableOfferings, tc.capacityReservationGroupID, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+			assertOfferingsState(t, handler.unavailableOfferings, tc.capacityReservationGroupID, tc.he.Code == aksMachineAvailabilityZoneNotSupportedCode, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
 }

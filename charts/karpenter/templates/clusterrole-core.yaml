@@ -41,6 +41,9 @@ rules:
   - apiGroups: ["apps"]
     resources: ["daemonsets", "deployments", "replicasets", "statefulsets"]
     verbs: ["list", "watch", "get"]
+  - apiGroups: ["autoscaling.k8s.io"]
+    resources: ["verticalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
   {{- if dig "capacityBuffer" false .Values.settings.featureGates }}
   - apiGroups: ["autoscaling.x-k8s.io"]
     resources: ["capacitybuffers"]
@@ -91,7 +94,11 @@ rules:
     verbs: ["create"]
   - apiGroups: [""]
     resources: ["pods"]
+    {{- if dig "podDeletionCostManagement" false .Values.settings.featureGates }}
+    verbs: ["delete", "patch"]
+    {{- else }}
     verbs: ["delete"]
+    {{- end }}
   {{- if .Values.webhook.enabled }}
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions/status"]
