@@ -21,7 +21,6 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
@@ -61,7 +60,6 @@ var _ = Describe("gc", func() {
 		attachedNIC := env.EventuallyExpectAttachedAKSMachineInterface(nodeClaim.Name)
 
 		orphanedNICTags := azkarptest.ManagedTagsAKSMachine(nodePool.Name, "deleted-nodeclaim")
-		orphanedNICTags[launchtemplate.AKSManagedPoolNameTagKey] = lo.ToPtr(env.MachineAgentPoolName)
 		orphanedNIC := armnetwork.Interface{
 			Name:     lo.ToPtr("orphaned-machine-nic"),
 			Location: lo.ToPtr(env.Region),

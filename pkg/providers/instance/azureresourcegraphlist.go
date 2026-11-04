@@ -33,41 +33,34 @@ const (
 	nicResourceType = "microsoft.network/networkinterfaces"
 )
 
-// getResourceListQueryBuilder returns a KQL query builder for listing resources with nodepool tags.
-func getResourceListQueryBuilder(rg string, resourceType string, excludeAKSMachineResources bool) *kql.Builder {
-	query := kql.New(`Resources`).
+// getResourceListQueryBuilder returns a KQL query builder for listing resources with nodepool tags
+// but excluding AKS machine-created resources
+func getResourceListQueryBuilder(rg string, resourceType string) *kql.Builder {
+	return kql.New(`Resources`).
 		AddLiteral(` | where type == `).AddString(resourceType).
 		AddLiteral(` | where resourceGroup == `).AddString(strings.ToLower(rg)). // ARG resources appear to have lowercase RG
-		AddLiteral(` | where tags has_cs `).AddString(launchtemplate.NodePoolTagKey)
-	if excludeAKSMachineResources {
-		query.AddLiteral(` | where not(tags has_cs `).AddString(launchtemplate.KarpenterAKSMachineNodeClaimTagKey).AddLiteral(`)`)
-	}
-	return query
+		AddLiteral(` | where tags has_cs `).AddString(launchtemplate.NodePoolTagKey).
+		AddLiteral(` | where not(tags has_cs `).AddString(launchtemplate.KarpenterAKSMachineNodeClaimTagKey).AddLiteral(`)`)
 }
 
 // GetVMListQueryBuilder returns a KQL query builder for listing VMs with nodepool tags
 func GetVMListQueryBuilder(rg string) *kql.Builder {
-	return getResourceListQueryBuilder(rg, vmResourceType, true)
+	return getResourceListQueryBuilder(rg, vmResourceType)
 }
 
 // GetNICListQueryBuilder returns a KQL query builder for listing NICs with nodepool tags
 func GetNICListQueryBuilder(rg string) *kql.Builder {
-	return getResourceListQueryBuilder(rg, nicResourceType, true)
+	return getResourceListQueryBuilder(rg, nicResourceType)
 }
 
-// GetAKSMachineNICListQueryBuilder returns VM-created NICs and AKS Machine-created NICs from the
-// configured Machines pool. AKS applies AKSManagedPoolNameTagKey to Machine-affiliated NICs; scoping
-// that branch matches the Machine provider contract that Machines outside aksMachinesPoolName are
-// ignored. This query exists only for the temporary Machine NIC cleanup in the NIC GC controller.
-// Remove it after https://github.com/kubernetes-sigs/cloud-provider-azure/pull/11267 is deployed to
-// all affected Machine API clusters and the cleanup is no longer needed.
-func GetAKSMachineNICListQueryBuilder(rg, aksMachinesPoolName string) *kql.Builder {
-	return getResourceListQueryBuilder(rg, nicResourceType, false).
-		AddLiteral(` | where (not(tags has_cs `).AddString(launchtemplate.KarpenterAKSMachineNodeClaimTagKey).
-		AddLiteral(`) and isempty(tostring(tags[`).AddString(launchtemplate.AKSManagedPoolNameTagKey).AddLiteral(`])))`).
-		AddLiteral(` or (isnotempty(tostring(tags[`).AddString(launchtemplate.AKSManagedPoolNameTagKey).AddLiteral(`])) and tostring(tags[`).
-		AddString(launchtemplate.AKSManagedPoolNameTagKey).AddLiteral(`]) == `).AddString(aksMachinesPoolName).AddLiteral(`)`).
-		AddLiteral(` | order by id asc | project id, name, tags`)
+// GetAKSMachineNICListQueryBuilder returns VM-created and AKS Machine-created NICs for the temporary
+// Machine NIC cleanup. Remove it after https://github.com/kubernetes-sigs/cloud-provider-azure/pull/11267
+// is deployed to all affected Machine API clusters and the cleanup is no longer needed.
+func GetAKSMachineNICListQueryBuilder(rg string) *kql.Builder {
+	return kql.New(`Resources`).
+		AddLiteral(` | where type == `).AddString(nicResourceType).
+		AddLiteral(` | where resourceGroup == `).AddString(strings.ToLower(rg)).
+		AddLiteral(` | where tags has_cs `).AddString(launchtemplate.NodePoolTagKey)
 }
 
 // createVMFromQueryResponseData converts ARG query response data into a VirtualMachine object

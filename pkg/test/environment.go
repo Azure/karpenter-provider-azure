@@ -172,7 +172,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	serverVersion := strings.TrimPrefix(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).GitVersion, "v")
 	aksManagedClustersAPI := fake.NewAKSManagedClustersAPI(serverVersion)
 
-	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI, testOptions.AKSMachinesPoolName)
+	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
 	kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
 	nodeImagesCache := cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval)

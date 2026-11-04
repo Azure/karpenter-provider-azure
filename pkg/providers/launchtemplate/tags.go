@@ -29,10 +29,8 @@ import (
 const (
 	KarpenterManagedTagKey             = "karpenter.azure.com_cluster"
 	KarpenterAKSMachineNodeClaimTagKey = "karpenter.azure.com_aksmachine_nodeclaim"
-	// AKSManagedPoolNameTagKey is applied by AKS to Machine-affiliated Azure resources.
-	AKSManagedPoolNameTagKey = "aks-managed-poolName"
-	BillingTagKey            = "compute.aks.billing"
-	BillingTagValueLinux     = "linux"
+	BillingTagKey                      = "compute.aks.billing"
+	BillingTagValueLinux               = "linux"
 )
 
 var (

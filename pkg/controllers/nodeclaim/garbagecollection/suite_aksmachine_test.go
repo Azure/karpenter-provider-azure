@@ -508,7 +508,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 			}))
 			nic := test.Interface(test.InterfaceOptions{
 				NodepoolName: nodePool.Name,
-				Tags:         managedAKSMachineNICTags(nodePool.Name, "some-nodeclaim", "aksmanagedap"),
+				Tags:         test.ManagedTagsAKSMachine(nodePool.Name, "some-nodeclaim"),
 			})
 			nic2 := test.Interface(test.InterfaceOptions{
 				NodepoolName: nodePool.Name,
@@ -531,24 +531,16 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 			Expect(exists).To(BeTrue())
 		})
 
-		DescribeTable("should preserve a Machine NIC while its tagged NodeClaim exists", func(provisionMode string, manageExisting, launched bool) {
+		DescribeTable("should preserve a Machine NIC while its tagged NodeClaim exists", func(provisionMode string, manageExisting bool) {
 			testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
 				ProvisionMode:             lo.ToPtr(provisionMode),
 				ManageExistingAKSMachines: lo.ToPtr(manageExisting),
 			}))
 			nodeClaim := coretest.NodeClaim()
-			if launched {
-				nodeClaim.Annotations = map[string]string{
-					v1beta1.AnnotationAKSMachineResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/aksmanagedap/machines/machine",
-				}
-				nodeClaim.Status.ProviderID = "azure:///subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/machine-vm"
-			} else {
-				nodeClaim.Status.ProviderID = ""
-			}
 			ExpectApplied(testCtx, env.Client, nodeClaim)
 			nic := test.Interface(test.InterfaceOptions{
 				NodepoolName: nodePool.Name,
-				Tags:         managedAKSMachineNICTags(nodePool.Name, nodeClaim.Name, "aksmanagedap"),
+				Tags:         test.ManagedTagsAKSMachine(nodePool.Name, nodeClaim.Name),
 				Properties: &armnetwork.InterfacePropertiesFormat{
 					VirtualMachine: &armnetwork.SubResource{ID: lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/live-machine-vm")},
 				},
@@ -564,145 +556,28 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 			Expect(nicsAfterGC).To(HaveLen(1))
 			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(BeZero())
 		},
-			Entry("while unlaunched in Machine API mode", consts.ProvisionModeAKSMachineAPI, false, false),
-			Entry("after launch during failback to VM provisioning", consts.ProvisionModeBootstrappingClient, true, true),
+			Entry("in Machine API mode", consts.ProvisionModeAKSMachineAPI, false),
+			Entry("during failback to VM provisioning", consts.ProvisionModeBootstrappingClient, true),
 		)
 
-		It("should preserve an unknown Machine owner during failback until its replacement VM is visible", func() {
+		It("should use the Machine owner tag instead of the NIC name", func() {
 			testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeBootstrappingClient),
-				ManageExistingAKSMachines: lo.ToPtr(true),
+				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 			}))
 			nodeClaim := coretest.NodeClaim()
-			nodeClaim.Status.ProviderID = ""
 			ExpectApplied(testCtx, env.Client, nodeClaim)
-			machineNIC := test.Interface(test.InterfaceOptions{
-				NodepoolName: nodePool.Name,
-				Tags:         managedAKSMachineNICTags(nodePool.Name, nodeClaim.Name, "aksmanagedap"),
-			})
-			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(machineNIC.ID), *machineNIC)
-
-			ExpectSingletonReconciled(testCtx, networkInterfaceGCController)
-			nics, err := azureEnv.VMInstanceProvider.ListNics(testCtx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nics).To(HaveLen(1))
-			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(BeZero())
-
-			vm := test.VirtualMachine(test.VirtualMachineOptions{
-				Name:         instance.GenerateResourceName(nodeClaim.Name),
-				NodepoolName: nodePool.Name,
-			})
-			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
-			ExpectSingletonReconciled(testCtx, networkInterfaceGCController)
-			nics, err = azureEnv.VMInstanceProvider.ListNics(testCtx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nics).To(BeEmpty())
-			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(Equal(1))
-		})
-
-		It("should preserve a Machine NIC when its unlaunched NodeClaim retries from VM to Machine", func() {
-			testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
-				ManageExistingAKSMachines: lo.ToPtr(true),
-			}))
-			nodeClaim := coretest.NodeClaim()
-			nodeClaim.Status.ProviderID = ""
-			ExpectApplied(testCtx, env.Client, nodeClaim)
-			staleVM := test.VirtualMachine(test.VirtualMachineOptions{
-				Name:         instance.GenerateResourceName(nodeClaim.Name),
-				NodepoolName: nodePool.Name,
-			})
-			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(staleVM.ID), *staleVM)
-			machineNIC := test.Interface(test.InterfaceOptions{
-				NodepoolName: nodePool.Name,
-				Tags:         managedAKSMachineNICTags(nodePool.Name, nodeClaim.Name, "aksmanagedap"),
-			})
-			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(machineNIC.ID), *machineNIC)
-
-			nicsBeforeGC, err := azureEnv.VMInstanceProvider.ListNics(testCtx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nicsBeforeGC).To(HaveLen(1))
-			ExpectSingletonReconciled(testCtx, networkInterfaceGCController)
-			nicsAfterGC, err := azureEnv.VMInstanceProvider.ListNics(testCtx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nicsAfterGC).To(HaveLen(1))
-			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(BeZero())
-		})
-
-		It("should delete a stale Machine NIC when its live NodeClaim has failed back to a VM", func() {
-			testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeBootstrappingClient),
-				ManageExistingAKSMachines: lo.ToPtr(true),
-			}))
-			nodeClaim := coretest.NodeClaim()
-			vm := test.VirtualMachine(test.VirtualMachineOptions{
-				Name:         instance.GenerateResourceName(nodeClaim.Name),
-				NodepoolName: nodePool.Name,
-			})
-			nodeClaim.Annotations = map[string]string{
-				v1beta1.AnnotationAKSMachineResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/aksmanagedap/machines/stale-machine",
-			}
-			nodeClaim.Status.ProviderID = utils.VMResourceIDToProviderID(testCtx, lo.FromPtr(vm.ID))
-			ExpectApplied(testCtx, env.Client, nodeClaim)
-			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
-			staleMachineNIC := test.Interface(test.InterfaceOptions{
-				NodepoolName: nodePool.Name,
-				Tags:         managedAKSMachineNICTags(nodePool.Name, nodeClaim.Name, "aksmanagedap"),
-			})
-			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(staleMachineNIC.ID), *staleMachineNIC)
-
-			nicsBeforeGC, err := azureEnv.VMInstanceProvider.ListNics(testCtx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nicsBeforeGC).To(HaveLen(1))
-			ExpectSingletonReconciled(testCtx, networkInterfaceGCController)
-			nicsAfterGC, err := azureEnv.VMInstanceProvider.ListNics(testCtx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nicsAfterGC).To(BeEmpty())
-			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(Equal(1))
-		})
-
-		It("should ignore Machine NICs outside the configured Machine pool", func() {
-			testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeBootstrappingClient),
-				ManageExistingAKSMachines: lo.ToPtr(true),
-				AKSMachinesPoolName:       lo.ToPtr("aksmanagedap"),
-			}))
 			nic := test.Interface(test.InterfaceOptions{
+				Name:         instance.GenerateResourceName(nodeClaim.Name),
 				NodepoolName: nodePool.Name,
-				Tags:         managedAKSMachineNICTags(nodePool.Name, "other-pool-nodeclaim", "otherpool"),
+				Tags:         test.ManagedTagsAKSMachine(nodePool.Name, "deleted-nodeclaim"),
 			})
 			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
 
-			nics, err := azureEnv.VMInstanceProvider.ListNics(testCtx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nics).To(BeEmpty())
 			ExpectSingletonReconciled(testCtx, networkInterfaceGCController)
-			_, exists := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.ID))
-			Expect(exists).To(BeTrue())
-			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(BeZero())
-		})
 
-		It("should preserve a configured-pool NIC when its Machine owner tag is missing", func() {
-			testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeBootstrappingClient),
-				ManageExistingAKSMachines: lo.ToPtr(true),
-				AKSMachinesPoolName:       lo.ToPtr("aksmanagedap"),
-			}))
-			tags := test.ManagedTags(nodePool.Name)
-			tags[launchtemplate.AKSManagedPoolNameTagKey] = lo.ToPtr("aksmanagedap")
-			nic := test.Interface(test.InterfaceOptions{
-				NodepoolName: nodePool.Name,
-				Tags:         tags,
-			})
-			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
-
-			nics, err := azureEnv.VMInstanceProvider.ListNics(testCtx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nics).To(HaveLen(1))
-			ExpectSingletonReconciled(testCtx, networkInterfaceGCController)
 			_, exists := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.ID))
-			Expect(exists).To(BeTrue())
-			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(BeZero())
+			Expect(exists).To(BeFalse())
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(Equal(1))
 		})
 
 		DescribeTable("should delete a Machine NIC after its tagged NodeClaim is gone", func(provisionMode string, manageExisting bool) {
@@ -712,7 +587,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 			}))
 			nic := test.Interface(test.InterfaceOptions{
 				NodepoolName: nodePool.Name,
-				Tags:         managedAKSMachineNICTags(nodePool.Name, "deleted-nodeclaim", "aksmanagedap"),
+				Tags:         test.ManagedTagsAKSMachine(nodePool.Name, "deleted-nodeclaim"),
 			})
 			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
 
@@ -730,9 +605,3 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		)
 	})
 })
-
-func managedAKSMachineNICTags(nodepoolName, nodeClaimName, machinePoolName string) map[string]*string {
-	tags := test.ManagedTagsAKSMachine(nodepoolName, nodeClaimName)
-	tags[launchtemplate.AKSManagedPoolNameTagKey] = lo.ToPtr(machinePoolName)
-	return tags
-}

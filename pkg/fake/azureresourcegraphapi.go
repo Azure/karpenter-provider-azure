@@ -51,20 +51,14 @@ type AzureResourceGraphAPI struct {
 	vmListQuery            string
 	nicListQuery           string
 	aksMachineNICListQuery string
-	aksMachinesPoolName    string
 	AzureResourceGraphBehavior
 }
 
-func NewAzureResourceGraphAPI(resourceGroup string, virtualMachinesAPI *VirtualMachinesAPI, networkInterfacesAPI *NetworkInterfacesAPI, aksMachinesPoolNames ...string) *AzureResourceGraphAPI {
-	aksMachinesPoolName := ""
-	if len(aksMachinesPoolNames) > 0 {
-		aksMachinesPoolName = aksMachinesPoolNames[0]
-	}
+func NewAzureResourceGraphAPI(resourceGroup string, virtualMachinesAPI *VirtualMachinesAPI, networkInterfacesAPI *NetworkInterfacesAPI) *AzureResourceGraphAPI {
 	return &AzureResourceGraphAPI{
 		vmListQuery:            instance.GetVMListQueryBuilder(resourceGroup).String(),
 		nicListQuery:           instance.GetNICListQueryBuilder(resourceGroup).String(),
-		aksMachineNICListQuery: instance.GetAKSMachineNICListQueryBuilder(resourceGroup, aksMachinesPoolName).String(),
-		aksMachinesPoolName:    aksMachinesPoolName,
+		aksMachineNICListQuery: instance.GetAKSMachineNICListQueryBuilder(resourceGroup).String(),
 		AzureResourceGraphBehavior: AzureResourceGraphBehavior{
 			VirtualMachinesAPI:   virtualMachinesAPI,
 			NetworkInterfacesAPI: networkInterfacesAPI,
@@ -92,7 +86,6 @@ func (c *AzureResourceGraphAPI) Resources(_ context.Context, query armresourcegr
 	})
 }
 
-//nolint:gocyclo // Mirrors the VM, legacy NIC, and scoped Machine NIC ARG query branches.
 func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 	switch query {
 	case c.vmListQuery:
@@ -118,21 +111,11 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 	case c.aksMachineNICListQuery:
 		nicList := lo.Filter(c.loadNicObjects(), func(nic armnetwork.Interface, _ int) bool {
 			resourceID, err := arm.ParseResourceID(lo.FromPtr(nic.ID))
-			isAKSMachineNIC := nic.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] != nil
-			_, hasAKSMachinePoolTag := nic.Tags[launchtemplate.AKSManagedPoolNameTagKey]
-			isLegacyNIC := !isAKSMachineNIC && !hasAKSMachinePoolTag
-			isConfiguredPool := hasAKSMachinePoolTag && lo.FromPtr(nic.Tags[launchtemplate.AKSManagedPoolNameTagKey]) == c.aksMachinesPoolName
 			return err == nil && strings.EqualFold(resourceID.ResourceGroupName, c.ResourceGroup) &&
-				nic.Tags != nil && nic.Tags[launchtemplate.NodePoolTagKey] != nil &&
-				(isLegacyNIC || isConfiguredPool)
+				nic.Tags != nil && nic.Tags[launchtemplate.NodePoolTagKey] != nil
 		})
 		resourceList := lo.Map(nicList, func(nic armnetwork.Interface, _ int) interface{} {
-			projectedNIC := struct {
-				ID   *string            `json:"id,omitempty"`
-				Name *string            `json:"name,omitempty"`
-				Tags map[string]*string `json:"tags,omitempty"`
-			}{ID: nic.ID, Name: nic.Name, Tags: nic.Tags}
-			b, _ := json.Marshal(projectedNIC)
+			b, _ := json.Marshal(nic)
 			return convertBytesToInterface(b)
 		})
 		return resourceList

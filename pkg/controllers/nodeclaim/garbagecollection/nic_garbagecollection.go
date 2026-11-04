@@ -19,7 +19,6 @@ package garbagecollection
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/samber/lo"
@@ -35,10 +34,8 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 const (
@@ -61,36 +58,29 @@ func NewNetworkInterface(kubeClient client.Client, vmInstanceProvider instance.V
 }
 
 func (c *NetworkInterface) populateUnremovableInterfaces(ctx context.Context) (sets.Set[string], sets.Set[string], error) {
+	// Keep a NIC when we can connect it to something that still exists. For VM-created NICs, the NIC
+	// name matches either a VM name or the Azure name generated from a live NodeClaim. Machine-created
+	// NIC names do not match NodeClaim names, so their tag stores the original NodeClaim name. Both
+	// kinds call DeleteNic when no match is found.
 	unremovableInterfaces := sets.New[string]()
-	vmProviderIDs := sets.New[string]()
-	liveAKSMachineNodeClaimNames := sets.New[string]()
+	liveNodeClaimNames := sets.New[string]()
 	vms, err := c.vmInstanceProvider.List(ctx)
 	if err != nil {
-		return unremovableInterfaces, liveAKSMachineNodeClaimNames, fmt.Errorf("listing VMs: %w", err)
+		return unremovableInterfaces, liveNodeClaimNames, fmt.Errorf("listing VMs: %w", err)
 	}
 	for _, vm := range vms {
 		unremovableInterfaces.Insert(lo.FromPtr(vm.Name))
-		vmProviderIDs.Insert(strings.ToLower(utils.VMResourceIDToProviderID(ctx, lo.FromPtr(vm.ID))))
 	}
 	nodeClaimList := &karpv1.NodeClaimList{}
 	if err := c.kubeClient.List(ctx, nodeClaimList); err != nil {
-		return unremovableInterfaces, liveAKSMachineNodeClaimNames, fmt.Errorf("listing NodeClaims for NIC GC: %w", err)
+		return unremovableInterfaces, liveNodeClaimNames, fmt.Errorf("listing NodeClaims for NIC GC: %w", err)
 	}
 
-	machineMode := options.FromContext(ctx).IsAKSMachineAPIMode()
 	for _, nodeClaim := range nodeClaimList.Items {
-		vmResourceName := instance.GenerateResourceName(nodeClaim.Name)
-		providerID := strings.ToLower(nodeClaim.Status.ProviderID)
-		vmBacked := providerID != "" && vmProviderIDs.Has(providerID)
-		if providerID == "" && !machineMode {
-			vmBacked = unremovableInterfaces.Has(vmResourceName)
-		}
-		unremovableInterfaces.Insert(vmResourceName)
-		if !vmBacked {
-			liveAKSMachineNodeClaimNames.Insert(nodeClaim.Name)
-		}
+		unremovableInterfaces.Insert(instance.GenerateResourceName(nodeClaim.Name))
+		liveNodeClaimNames.Insert(nodeClaim.Name)
 	}
-	return unremovableInterfaces, liveAKSMachineNodeClaimNames, nil
+	return unremovableInterfaces, liveNodeClaimNames, nil
 }
 
 func (c *NetworkInterface) Reconcile(ctx context.Context) (reconciler.Result, error) {
@@ -100,43 +90,40 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconciler.Result, er
 		return reconciler.Result{}, fmt.Errorf("listing NICs: %w", err)
 	}
 
-	unremovableInterfaces, liveAKSMachineNodeClaimNames, err := c.populateUnremovableInterfaces(ctx)
+	unremovableInterfaces, liveNodeClaimNames, err := c.populateUnremovableInterfaces(ctx)
 	if err != nil {
 		return reconciler.Result{}, fmt.Errorf("error listing resources needed to populate unremovable nics %w", err)
 	}
 	workqueue.ParallelizeUntil(ctx, 100, len(nics), func(i int) {
 		nicName := lo.FromPtr(nics[i].Name)
-		if unremovableInterfaces.Has(nicName) {
+		machineNodeClaimName, isMachineNIC := nics[i].Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]
+		if isMachineNIC {
+			// Machine NICs use their tag to name the owning NodeClaim. Remove this temporary block with
+			// GetAKSMachineNICListQueryBuilder after
+			// https://github.com/kubernetes-sigs/cloud-provider-azure/pull/11267 is fully deployed.
+			if liveNodeClaimNames.Has(lo.FromPtr(machineNodeClaimName)) {
+				return
+			}
+
+			err := c.vmInstanceProvider.DeleteNic(ctx, nicName)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "")
+				return
+			}
+
+			log.FromContext(ctx).Info("garbage collected NIC", "nicName", nicName)
 			return
 		}
 
-		// Temporary Machine API cleanup: Machine NIC names do not derive from NodeClaim names.
-		// Karpenter puts the raw NodeClaim name in KarpenterAKSMachineNodeClaimTagKey on the Machine,
-		// and AKS propagates Machine tags to its NIC. Preserve the NIC unless the live NodeClaim is
-		// positively matched to a VM-path instance by provider ID, or by generated VM name while an
-		// unlaunched NodeClaim is failing back to VM mode. This fail-closed distinction handles either
-		// mode retrying the same NodeClaim after the other mode's create response was lost. An absent
-		// Machine owner falls through to the existing orphan deletion path. Remove this block with
-		// GetAKSMachineNICListQueryBuilder after the linked cloud-provider fix is fully deployed.
-		// See https://github.com/kubernetes-sigs/cloud-provider-azure/pull/11267.
-		nodeClaimName, hasMachineOwnerTag := nics[i].Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]
-		_, hasMachinePoolTag := nics[i].Tags[launchtemplate.AKSManagedPoolNameTagKey]
-		if hasMachinePoolTag && !hasMachineOwnerTag {
-			// Pool membership identifies this as AKS-managed, but ownership is incomplete. Fail closed
-			// rather than applying the VM name strategy to a Machine NIC with a missing owner tag.
-			return
-		}
-		if hasMachineOwnerTag && liveAKSMachineNodeClaimNames.Has(lo.FromPtr(nodeClaimName)) {
-			return
-		}
+		if !unremovableInterfaces.Has(nicName) {
+			err := c.vmInstanceProvider.DeleteNic(ctx, nicName)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "")
+				return
+			}
 
-		err := c.vmInstanceProvider.DeleteNic(ctx, nicName)
-		if err != nil {
-			log.FromContext(ctx).Error(err, "")
-			return
+			log.FromContext(ctx).Info("garbage collected NIC", "nicName", nicName)
 		}
-
-		log.FromContext(ctx).Info("garbage collected NIC", "nicName", nicName)
 	})
 	return reconciler.Result{
 		RequeueAfter: NicGarbageCollectionInterval,

@@ -431,7 +431,7 @@ func (p *DefaultVMProvider) ListNics(ctx context.Context) ([]*armnetwork.Interfa
 	// Machine ownership is a lifecycle concern, not only a provisioning concern. Keep Machine NICs
 	// visible while creating Machines or while managing Machines left by a failback to VM provisioning.
 	if shouldAKSMachinesBeVisible(ctx) {
-		nicListQuery = GetAKSMachineNICListQueryBuilder(p.resourceGroup, options.FromContext(ctx).AKSMachinesPoolName).String()
+		nicListQuery = GetAKSMachineNICListQueryBuilder(p.resourceGroup).String()
 	}
 	req := NewQueryRequest(&(p.subscriptionID), nicListQuery)
 	client := p.azClient.AzureResourceGraphClient()

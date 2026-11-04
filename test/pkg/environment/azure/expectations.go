@@ -87,7 +87,6 @@ func (env *Environment) EventuallyExpectAttachedAKSMachineInterface(nodeClaimNam
 			}
 			for _, nic := range resp.Value {
 				if lo.FromPtr(nic.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]) == nodeClaimName &&
-					lo.FromPtr(nic.Tags[launchtemplate.AKSManagedPoolNameTagKey]) == env.MachineAgentPoolName &&
 					nic.Properties != nil && nic.Properties.VirtualMachine != nil &&
 					lo.FromPtr(nic.Properties.VirtualMachine.ID) != "" {
 					found = nic
