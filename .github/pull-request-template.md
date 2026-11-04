@@ -24,7 +24,7 @@ Fixes # <!-- issue number -->
 
 * [ ] I used AI assistance to help produce this contribution.
 * [ ] I have verified the AI generated code prior to submission.
-* [ ] I will engage with review comments directly and will not use AI to write my replies.
+* [ ] I will either respond to review comments myself or indicate clearly that the response was submitted by AI.
 
 Additional Comments: <!-- E.g., if you would like to justify an unusually excessive use of AI. -->
 
