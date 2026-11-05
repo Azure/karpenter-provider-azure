@@ -121,7 +121,6 @@ func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSN
 	if err != nil {
 		if sinceLastUpdate < LatestImageGracePeriod {
 			log.FromContext(ctx).Error(err, "failed to refresh latest node image version, using last successfully retrieved version", "lastUpdated", p.latestImage.lastUpdate)
-			p.latestImage.err = nil
 			return p.latestImage.suffix, nil
 		}
 		p.latestImage.suffix = ""
