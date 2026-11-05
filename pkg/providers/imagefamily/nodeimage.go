@@ -64,11 +64,13 @@ type NodeImageProvider interface {
 }
 
 type latestImageState struct {
-	mu          sync.Mutex
-	suffix      string
-	err         error
+	mu     sync.Mutex
+	suffix string
+	err    error
+	// lastAttempt records the last time an attempt was made to refresh the latest image version.
 	lastAttempt time.Time
-	lastUpdate  time.Time
+	// lastUpdate records the last time the latest image version was successfully refreshed.
+	lastUpdate time.Time
 }
 
 type provider struct {
