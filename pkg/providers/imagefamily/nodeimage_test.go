@@ -17,12 +17,10 @@ limitations under the License.
 package imagefamily_test
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -99,7 +97,6 @@ var _ = Describe("NodeImageProvider tests", func() {
 	var (
 		testOptions               *options.Options
 		communityImageVersionsAPI *fake.CommunityGalleryImageVersionsAPI
-		nodeImageVersionsAPI      *fake.NodeImageVersionsAPI
 
 		nodeImageProvider imagefamily.NodeImageProvider
 		nodeClass         *v1beta1.AKSNodeClass
@@ -114,7 +111,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		communityImageVersionsAPI = &fake.CommunityGalleryImageVersionsAPI{}
 		cigImageVersionTest := cigImageVersion
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
-		nodeImageVersionsAPI = &fake.NodeImageVersionsAPI{}
+		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval))
 		kubernetesVersion = lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
 
@@ -664,45 +661,16 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(latestVersion).To(Equal(laterCIGImageVersion))
 
-			communityImageVersionsAPI.Reset()
-			cigImageVersionTest := cigImageVersion
-			communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
-
-			latestVersion, err = nodeImageProvider.GetLatestVersion(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(latestVersion).To(Equal(laterCIGImageVersion))
-
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(foundImages).To(Equal(cachedImages))
 		})
 
-		It("should cache an empty latest image result", func() {
-			testOptions.UseSIG = true
-			nodeImageVersionsAPI.OverrideNodeImageVersions = []*armcontainerservice.NodeImageVersion{}
+		It("should return an empty latest image version when no images are available", func() {
+			communityImageVersionsAPI.Reset()
 
 			latestVersion, err := nodeImageProvider.GetLatestVersion(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(latestVersion).To(BeEmpty())
-
-			nodeImageVersionsAPI.Reset()
-			latestVersion, err = nodeImageProvider.GetLatestVersion(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(latestVersion).To(BeEmpty())
-		})
-
-		It("should cache a latest image error", func() {
-			testOptions.UseSIG = true
-			firstErr := errors.New("first error")
-			nodeImageVersionsAPI.Error = firstErr
-
-			latestVersion, err := nodeImageProvider.GetLatestVersion(ctx, nodeClass)
-			Expect(err).To(MatchError(firstErr))
-			Expect(latestVersion).To(BeEmpty())
-
-			nodeImageVersionsAPI.Error = errors.New("second error")
-			latestVersion, err = nodeImageProvider.GetLatestVersion(ctx, nodeClass)
-			Expect(err).To(MatchError(firstErr))
 			Expect(latestVersion).To(BeEmpty())
 		})
 

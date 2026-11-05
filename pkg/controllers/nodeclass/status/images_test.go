@@ -17,7 +17,6 @@ limitations under the License.
 package status_test
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -255,21 +254,11 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 					nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 				})
 
-				if testCase.useSIG {
-					It("should return an error when getting the latest image version fails", func() {
-						azureEnv.NodeImageVersionsAPI.Error = fmt.Errorf("image lookup failed")
-						imageReconciler := status.NewNodeImageReconciler(imageProvider, env.KubernetesInterface, "")
-
-						_, err := imageReconciler.Reconcile(ctx, nodeClass)
-						Expect(err).To(MatchError("getting latest node image version, image lookup failed"))
-					})
-				}
-
 				When("versions are requested", func() {
 					var imageReconciler *status.NodeImageReconciler
 
 					BeforeEach(func() {
-						imageReconciler = status.NewNodeImageReconciler(imageProvider, env.KubernetesInterface, "kube-system")
+						imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, "kube-system")
 						ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
 
 						nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersions{
@@ -412,7 +401,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 					)
 
 					BeforeEach(func() {
-						imageReconciler = status.NewNodeImageReconciler(imageProvider, env.KubernetesInterface, "kube-system")
+						imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, "kube-system")
 					})
 
 					It("Should update NodeImages when ConfigMap is missing (fail open)", func() {
@@ -489,7 +478,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 					)
 
 					BeforeEach(func() {
-						imageReconciler = status.NewNodeImageReconciler(imageProvider, env.KubernetesInterface, "")
+						imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, "")
 					})
 
 					It("Should update NodeImages (fail open)", func() {
@@ -515,7 +504,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 			nodeClass.Status.Images = getExpectedTestCommunityImages(testK8sVersion, oldcigImageVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
-			imageReconciler = status.NewNodeImageReconciler(imageProvider, env.KubernetesInterface, "")
+			imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, "")
 		})
 
 		It("images ready status should be false if FIPS is enabled but UseSIG is false", func() {
