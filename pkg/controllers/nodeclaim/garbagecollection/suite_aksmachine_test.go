@@ -500,28 +500,105 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(Equal(2))
 		})
 
-		It("should not delete an AKS Machine NIC if there is no associated VM", func() {
-			nic := test.Interface(test.InterfaceOptions{
-				NodepoolName: nodePool.Name,
-				Tags:         test.ManagedTagsAKSMachine(nodePool.Name, "some-nodeclaim"),
+		// Temporary. This is to help mitigate CCM bug where it incorrectly creates unused NICs by enabling garbage collection from Karpenter.
+		var _ = Context("AKS machine instances NIC garbage collection (temporary)", func() {
+			It("should exclude AKS Machine NICs when AKS Machine management is disabled", func() {
+				testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
+					ProvisionMode:             lo.ToPtr(consts.ProvisionModeBootstrappingClient),
+					ManageExistingAKSMachines: lo.ToPtr(false),
+				}))
+				nic := test.Interface(test.InterfaceOptions{
+					NodepoolName: nodePool.Name,
+					Tags:         test.ManagedTagsAKSMachine(nodePool.Name, "deleted-nodeclaim"),
+				})
+				azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+
+				ExpectSingletonReconciled(testCtx, networkInterfaceGCController)
+
+				_, exists := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.ID))
+				Expect(exists).To(BeTrue())
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(BeZero())
 			})
-			nic2 := test.Interface(test.InterfaceOptions{
-				NodepoolName: nodePool.Name,
+
+			It("should continue garbage collecting VM NICs in AKS Machine API mode", func() {
+				testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
+					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				}))
+				nic := test.Interface(test.InterfaceOptions{
+					NodepoolName: nodePool.Name,
+				})
+				azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+
+				ExpectSingletonReconciled(testCtx, networkInterfaceGCController)
+
+				_, exists := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.ID))
+				Expect(exists).To(BeFalse())
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(Equal(1))
 			})
-			nic3 := test.Interface(test.InterfaceOptions{
-				NodepoolName: nodePool.Name,
+
+			It("should preserve a VM NIC owned by a live NodeClaim in AKS Machine API mode", func() {
+				testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
+					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				}))
+				nodeClaim := coretest.NodeClaim()
+				ExpectApplied(testCtx, env.Client, nodeClaim)
+				nic := test.Interface(test.InterfaceOptions{
+					Name:         instance.GenerateResourceName(nodeClaim.Name),
+					NodepoolName: nodePool.Name,
+				})
+				azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+
+				ExpectSingletonReconciled(testCtx, networkInterfaceGCController)
+
+				_, exists := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.ID))
+				Expect(exists).To(BeTrue())
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(BeZero())
 			})
-			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
-			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic2.ID), *nic2)
-			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic3.ID), *nic3)
-			nicsBeforeGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(nicsBeforeGC)).To(Equal(2))
-			ExpectSingletonReconciled(ctx, networkInterfaceGCController)
-			nicsAfterGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(nicsAfterGC)).To(Equal(0))
-			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(Equal(2))
+
+			DescribeTable("should preserve an AKS Machine NIC while its tagged NodeClaim exists", func(provisionMode string, manageExisting bool) {
+				testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
+					ProvisionMode:             lo.ToPtr(provisionMode),
+					ManageExistingAKSMachines: lo.ToPtr(manageExisting),
+				}))
+				nodeClaim := coretest.NodeClaim()
+				ExpectApplied(testCtx, env.Client, nodeClaim)
+				nic := test.Interface(test.InterfaceOptions{
+					NodepoolName: nodePool.Name,
+					Tags:         test.ManagedTagsAKSMachine(nodePool.Name, nodeClaim.Name),
+				})
+				azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+
+				ExpectSingletonReconciled(testCtx, networkInterfaceGCController)
+
+				_, exists := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.ID))
+				Expect(exists).To(BeTrue())
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(BeZero())
+			},
+				Entry("in AKS Machine API mode", consts.ProvisionModeAKSMachineAPI, false),
+				Entry("during failback to VM provisioning", consts.ProvisionModeBootstrappingClient, true),
+			)
+
+			DescribeTable("should delete an AKS Machine NIC after its tagged NodeClaim is gone", func(provisionMode string, manageExisting bool) {
+				testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
+					ProvisionMode:             lo.ToPtr(provisionMode),
+					ManageExistingAKSMachines: lo.ToPtr(manageExisting),
+				}))
+				nic := test.Interface(test.InterfaceOptions{
+					NodepoolName: nodePool.Name,
+					Tags:         test.ManagedTagsAKSMachine(nodePool.Name, "deleted-nodeclaim"),
+				})
+				azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+
+				ExpectSingletonReconciled(testCtx, networkInterfaceGCController)
+
+				_, exists := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.ID))
+				Expect(exists).To(BeFalse())
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(Equal(1))
+			},
+				Entry("in direct AKS Machine API mode", consts.ProvisionModeAKSMachineAPI, false),
+				Entry("in header-batch AKS Machine API mode", consts.ProvisionModeAKSMachineAPIHeaderBatch, false),
+				Entry("during failback to VM provisioning", consts.ProvisionModeBootstrappingClient, true),
+			)
 		})
 	})
 })
