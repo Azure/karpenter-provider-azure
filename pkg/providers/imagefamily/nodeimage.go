@@ -81,7 +81,7 @@ type provider struct {
 	nodeImageVersions   types.NodeImageVersionsAPI
 
 	nodeImagesCache *cache.Cache
-	latestImage     latestImageState
+	latestImageMu   sync.Mutex
 	cm              *pretty.ChangeMonitor
 }
 
@@ -103,43 +103,71 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 
 // GetLatestVersion returns the latest image version available for the NodeClass.
 func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (string, error) {
-	p.latestImage.mu.Lock()
-	defer p.latestImage.mu.Unlock()
+	latestImage, err := p.getLatestImageState(ctx, nodeClass)
+	if err != nil {
+		return "", err
+	}
 
-	sinceLastUpdate := time.Since(p.latestImage.lastUpdate)
+	latestImage.mu.Lock()
+	defer latestImage.mu.Unlock()
+
+	sinceLastUpdate := time.Since(latestImage.lastUpdate)
 	// If the latest image was successfully retrieved recently, return it to avoid unnecessary API calls.
-	if p.latestImage.err == nil && sinceLastUpdate < LatestImageRefreshInterval {
-		return p.latestImage.suffix, nil
+	if latestImage.err == nil && sinceLastUpdate < LatestImageRefreshInterval {
+		return latestImage.suffix, nil
 	}
 	// If the latest image retrieval was attempted recently, return its cached result to avoid hammering the API.
-	if time.Since(p.latestImage.lastAttempt) < LatestImageRetryInterval {
-		return p.latestImage.suffix, p.latestImage.err
+	if time.Since(latestImage.lastAttempt) < LatestImageRetryInterval {
+		return latestImage.suffix, latestImage.err
 	}
 
-	p.latestImage.lastAttempt = time.Now()
+	latestImage.lastAttempt = time.Now()
 	nodeImages, err := p.listNodeImages(ctx, nodeClass, false)
 	if err != nil {
 		// If the last successful update was recent enough, use it instead of failing immediately.
 		if sinceLastUpdate < LatestImageGracePeriod {
-			log.FromContext(ctx).Error(err, "failed to refresh latest node image version, using last successfully retrieved version", "lastUpdated", p.latestImage.lastUpdate)
-			return p.latestImage.suffix, nil
+			log.FromContext(ctx).Error(err, "failed to refresh latest node image version, using last successfully retrieved version", "lastUpdated", latestImage.lastUpdate)
+			return latestImage.suffix, nil
 		}
-		p.latestImage.suffix = ""
-		p.latestImage.err = err
-		return p.latestImage.suffix, p.latestImage.err
+		latestImage.suffix = ""
+		latestImage.err = err
+		return latestImage.suffix, latestImage.err
 	}
 
 	// Update the latest image version based on the retrieved node images.
-	p.latestImage.suffix = ""
+	latestImage.suffix = ""
 	if len(nodeImages) > 0 {
 		// All node images in a region share the same version, so the first image is representative.
 		imageIDParts := strings.Split(nodeImages[0].ID, "/")
-		p.latestImage.suffix = imageIDParts[len(imageIDParts)-1]
+		latestImage.suffix = imageIDParts[len(imageIDParts)-1]
 	}
-	p.latestImage.err = nil
-	p.latestImage.lastUpdate = time.Now()
+	latestImage.err = nil
+	latestImage.lastUpdate = time.Now()
 
-	return p.latestImage.suffix, nil
+	return latestImage.suffix, nil
+}
+
+func (p *provider) getLatestImageState(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (*latestImageState, error) {
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return nil, err
+	}
+	useSIG := options.FromContext(ctx).UseSIG
+	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled())
+	key, err := p.cacheKey(supportedImages, kubernetesVersion)
+	if err != nil {
+		return nil, err
+	}
+	key = fmt.Sprintf("latest-%t-%s", useSIG, key)
+
+	p.latestImageMu.Lock()
+	defer p.latestImageMu.Unlock()
+	if cached, ok := p.nodeImagesCache.Get(key); ok {
+		return cached.(*latestImageState), nil
+	}
+	latestImage := &latestImageState{}
+	p.nodeImagesCache.Set(key, latestImage, cache.NoExpiration)
+	return latestImage, nil
 }
 
 func (p *provider) listNodeImages(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, useCache bool) ([]NodeImage, error) {
