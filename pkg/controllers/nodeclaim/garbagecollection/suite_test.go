@@ -27,6 +27,7 @@ import (
 	"github.com/awslabs/operatorpkg/object"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
@@ -344,6 +345,38 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.
 	// If VM instances are no longer supported, their code/tests will be replaced with AKS Machine instances.
 	var _ = Context("VM instances", func() {
+		DescribeTable("should garbage collect only orphaned node public IPs", func(hasNodeClaim, foreign, attached bool) {
+			nodeClaim := coretest.NodeClaim()
+			name := instance.GenerateResourceName(nodeClaim.Name)
+			if hasNodeClaim {
+				ExpectApplied(ctx, env.Client, nodeClaim)
+			}
+			address := armnetwork.PublicIPAddress{
+				Name: &name,
+				Tags: map[string]*string{
+					"karpenter.azure.com_public-ip-owner": &name,
+					launchtemplate.KarpenterManagedTagKey: lo.ToPtr(options.FromContext(ctx).ClusterName),
+				},
+				Properties: &armnetwork.PublicIPAddressPropertiesFormat{},
+			}
+			if foreign {
+				address.Tags = nil
+			}
+			if attached {
+				address.Properties.IPConfiguration = &armnetwork.IPConfiguration{ID: lo.ToPtr("/other/interface")}
+			}
+			key := options.FromContext(ctx).NodeResourceGroup + "/" + name
+			azureEnv.PublicIPAddressesAPI.Addresses.Store(key, address)
+			ExpectSingletonReconciled(ctx, networkInterfaceGCController)
+			_, exists := azureEnv.PublicIPAddressesAPI.Addresses.Load(key)
+			Expect(exists).To(Equal(hasNodeClaim || foreign || attached))
+		},
+			Entry("orphaned IP", false, false, false),
+			Entry("active NodeClaim", true, false, false),
+			Entry("foreign IP", false, true, false),
+			Entry("still attached IP", false, false, true),
+		)
+
 		It("should not delete a network interface if a nodeclaim exists for it", func() {
 			// Create and apply a NodeClaim that references this NIC
 			nodeClaim := coretest.NodeClaim()

@@ -99,6 +99,9 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconciler.Result, er
 			log.FromContext(ctx).Info("garbage collected NIC", "nicName", nicName)
 		}
 	})
+	if err := c.vmInstanceProvider.CleanupPublicIPs(ctx, unremovableInterfaces); err != nil {
+		return reconciler.Result{}, fmt.Errorf("garbage collecting node public IPs: %w", err)
+	}
 	return reconciler.Result{
 		RequeueAfter: NicGarbageCollectionInterval,
 	}, nil
