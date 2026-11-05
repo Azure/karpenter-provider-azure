@@ -119,6 +119,7 @@ func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSN
 	p.latestImage.lastAttempt = time.Now()
 	nodeImages, err := p.listNodeImages(ctx, nodeClass, false)
 	if err != nil {
+		// If the last successful update was recent enough, use it instead of failing immediately.
 		if sinceLastUpdate < LatestImageGracePeriod {
 			log.FromContext(ctx).Error(err, "failed to refresh latest node image version, using last successfully retrieved version", "lastUpdated", p.latestImage.lastUpdate)
 			return p.latestImage.suffix, nil
@@ -128,6 +129,7 @@ func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSN
 		return p.latestImage.suffix, p.latestImage.err
 	}
 
+	// Update the latest image version based on the retrieved node images.
 	p.latestImage.suffix = ""
 	if len(nodeImages) > 0 {
 		// All node images in a region share the same version, so the first image is representative.
