@@ -2041,7 +2041,27 @@ var _ = Describe("InstanceType Provider", func() {
 			azureLinuxGen1ImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen1ImageDefinition, imagefamily.AzureLinuxGen1ImageDefinition)
 			azureLinuxGen2ArmImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ArmImageDefinition, imagefamily.AzureLinuxGen2ArmImageDefinition)
 
-			DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryRG string, expectedGalleryURL string) {
+			v132 := new(semver.MustParse("1.32.0"))
+			v137 := new(semver.MustParse("1.37.0"))
+
+			DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(
+				instanceType string,
+				imageFamily string,
+				expectedImageDefinition string,
+				expectedGalleryRG string,
+				expectedGalleryURL string,
+				minK8sVersion *semver.Version, // Minimum bound (inclusive) for which this test case applies
+				maxK8sVersion *semver.Version, // Maximum bound (exclusive) for which this test case applies
+			) {
+				kubernetesVersion, err := semver.Parse(lo.FromPtr(nodeClass.Status.KubernetesVersion))
+				Expect(err).ToNot(HaveOccurred())
+				if minK8sVersion != nil && kubernetesVersion.LT(*minK8sVersion) {
+					Skip(fmt.Sprintf("requires Kubernetes >= %s; found %s", *minK8sVersion, kubernetesVersion))
+				}
+				if maxK8sVersion != nil && !kubernetesVersion.LT(*maxK8sVersion) {
+					Skip(fmt.Sprintf("requires Kubernetes < %s; found %s", *maxK8sVersion, kubernetesVersion))
+				}
+
 				options := test.Options(test.OptionsFields{
 					UseSIG: lo.ToPtr(true),
 				})
@@ -2070,15 +2090,34 @@ var _ = Describe("InstanceType Provider", func() {
 
 			},
 
-				Entry("Gen2, Gen1 instance type with AKSUbuntu image family", "Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-				Entry("Gen1 instance type with AKSUbuntu image family", "Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-				Entry("ARM instance type with AKSUbuntu image family", "Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-				Entry("Gen2 instance type with AzureLinux image family", "Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
-				Entry("Gen1 instance type with AzureLinux image family", "Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
-				Entry("ARM instance type with AzureLinux image family", "Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+				Entry("Gen2, Gen1 instance type with Ubuntu2204 image family", "Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, nil, v137),
+				Entry("Gen1 instance type with Ubuntu2204 image family", "Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, nil, v137),
+				Entry("ARM instance type with Ubuntu2204 image family", "Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, nil, v137),
+				Entry("Gen2 instance type with Ubuntu2404 image family", "Standard_D2_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, v132, nil),
+				Entry("Gen1 instance type with Ubuntu2404 image family", "Standard_D2_v3", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen1ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, v132, nil),
+				Entry("ARM instance type with Ubuntu2404 image family", "Standard_D16plds_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ArmImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, v132, nil),
+				Entry("Gen2 instance type with AzureLinux image family", "Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName, nil, nil),
+				Entry("Gen1 instance type with AzureLinux image family", "Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName, nil, nil),
+				Entry("ARM instance type with AzureLinux image family", "Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName, nil, nil),
 			)
 			DescribeTable("should select the right image for a given instance type",
-				func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
+				func(
+					instanceType string,
+					imageFamily string,
+					expectedImageDefinition string,
+					expectedGalleryURL string,
+					minK8sVersion *semver.Version, // Minimum bound (inclusive) for which this test case applies
+					maxK8sVersion *semver.Version, // Maximum bound (exclusive) for which this test case applies
+				) {
+					kubernetesVersion, err := semver.Parse(lo.FromPtr(nodeClass.Status.KubernetesVersion))
+					Expect(err).ToNot(HaveOccurred())
+					if minK8sVersion != nil && kubernetesVersion.LT(*minK8sVersion) {
+						Skip(fmt.Sprintf("requires Kubernetes >= %s; found %s", *minK8sVersion, kubernetesVersion))
+					}
+					if maxK8sVersion != nil && !kubernetesVersion.LT(*maxK8sVersion) {
+						Skip(fmt.Sprintf("requires Kubernetes < %s; found %s", *maxK8sVersion, kubernetesVersion))
+					}
+
 					statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
 						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace)
 					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
@@ -2104,18 +2143,24 @@ var _ = Describe("InstanceType Provider", func() {
 					cluster.Reset()
 					azureEnv.Reset(ctx)
 				},
-				Entry("Gen2, Gen1 instance type with AKSUbuntu image family",
-					"Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
-				Entry("Gen1 instance type with AKSUbuntu image family",
-					"Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
-				Entry("ARM instance type with AKSUbuntu image family",
-					"Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
+				Entry("Gen2, Gen1 instance type with Ubuntu2204 image family",
+					"Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL, nil, v137),
+				Entry("Gen1 instance type with Ubuntu2204 image family",
+					"Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL, nil, v137),
+				Entry("ARM instance type with Ubuntu2204 image family",
+					"Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL, nil, v137),
+				Entry("Gen2 instance type with Ubuntu2404 image family",
+					"Standard_D2_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL, v132, nil),
+				Entry("Gen1 instance type with Ubuntu2404 image family",
+					"Standard_D2_v3", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen1ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL, v132, nil),
+				Entry("ARM instance type with Ubuntu2404 image family",
+					"Standard_D16plds_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL, v132, nil),
 				Entry("Gen2 instance type with AzureLinux image family",
-					"Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+					"Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL, nil, nil),
 				Entry("Gen1 instance type with AzureLinux image family",
-					"Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+					"Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL, nil, nil),
 				Entry("ARM instance type with AzureLinux image family",
-					"Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+					"Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL, nil, nil),
 			)
 		})
 
