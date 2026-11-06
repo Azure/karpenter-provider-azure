@@ -42,6 +42,11 @@ standard_nc80adis_h100_v5:
   gpu: nvidia
   os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
+# Confidential H100 (user-managed drivers only):
+standard_ncc40ads_h100_v5:
+  gpu: nvidia
+  os: ["ubuntu"]
+
 #  StandardNDASv4_A100Family:
 standard_nd96asr_v4:
   gpu: nvidia

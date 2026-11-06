@@ -19,11 +19,16 @@ package integration_test
 import (
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	armcontainerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
@@ -117,6 +122,126 @@ var _ = Describe("Trusted Launch", func() {
 	},
 		Entry("SNP amd64", v1beta1.FIPSModeDisabled, "aclgen2CVM"),
 		Entry("FIPS SNP amd64", Label("ACL-FIPS-CVM"), v1beta1.FIPSModeFIPS, "aclgen2fipsCVM"),
+	)
+
+	DescribeTable("should provision Ubuntu ConfidentialVM", Label("Ubuntu-CVM"), func(imageFamily, imageDefinition, sku, optIn string, gpuWorkload bool) {
+		if os.Getenv(optIn) != "true" {
+			Skip("set " + optIn + "=true to opt in; see test/README.md for environment prerequisites")
+		}
+		if !env.IsAKSMachineAPIMode() || env.InClusterController {
+			Skip("Ubuntu CVM tests require NAP Machine API provisioning with managed SIG access")
+		}
+		if imageDefinition == "2004gen2CVMcontainerd" {
+			serverVersion := lo.Must(env.KubeClient.Discovery().ServerVersion())
+			if lo.Must(semver.ParseTolerant(serverVersion.GitVersion)).GTE(semver.MustParse("1.34.0")) {
+				Skip("Ubuntu 20.04 CVM requires generic Ubuntu on Kubernetes < 1.34; there is no Ubuntu2004 NodeClass API")
+			}
+		}
+		nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+		nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeDisabled)
+		nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+		// CVM security comes from the SKU, not a Trusted Launch opt-in.
+		nodeClass.Spec.Security = nil
+		isGPU := sku == "Standard_NCC40ads_H100_v5"
+		if isGPU {
+			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}
+		}
+		coretest.ReplaceRequirements(nodePool,
+			karpv1.NodeSelectorRequirementWithMinValues{Key: v1beta1.LabelSKUFamily, Operator: corev1.NodeSelectorOpExists},
+			karpv1.NodeSelectorRequirementWithMinValues{Key: corev1.LabelInstanceTypeStable, Operator: corev1.NodeSelectorOpIn, Values: []string{sku}},
+			karpv1.NodeSelectorRequirementWithMinValues{Key: corev1.LabelArchStable, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.ArchitectureAmd64}},
+		)
+		deployment := coretest.Deployment(coretest.DeploymentOptions{
+			Replicas:   1,
+			PodOptions: coretest.PodOptions{NodeSelector: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name}},
+		})
+		var probe *corev1.Pod
+		if gpuWorkload {
+			// GPU pressure must create the claim so initialization waits for device registration.
+			// A preconfigured external installer DaemonSet supplies the signed driver/runtime/plugin.
+			probe = env.Pod(coretest.PodOptions{
+				Image:         "nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda12.5.0",
+				RestartPolicy: corev1.RestartPolicyNever,
+				NodeSelector:  map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
+				ResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{"nvidia.com/gpu": resource.MustParse("1")},
+					Limits:   corev1.ResourceList{"nvidia.com/gpu": resource.MustParse("1")},
+				},
+			})
+			env.ExpectCreated(probe, nodeClass, nodePool)
+		} else {
+			// Provisioning-only GPU coverage uses CPU pressure and does not need a driver/plugin.
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+		}
+		claim := env.EventuallyExpectRegisteredNodeClaimsForNodePoolWithTimeout(15*time.Minute, nodePool, 1)[0]
+		if gpuWorkload {
+			Expect(claim.Spec.Resources.Requests).To(HaveKey(corev1.ResourceName("nvidia.com/gpu")))
+			gpuRequest := claim.Spec.Resources.Requests["nvidia.com/gpu"]
+			Expect(gpuRequest.Cmp(resource.MustParse("1"))).To(BeZero())
+		}
+		node := &corev1.Node{}
+		Eventually(func(g Gomega) {
+			g.Expect(env.Client.Get(env, client.ObjectKey{Name: claim.Status.NodeName}, node)).To(Succeed())
+			g.Expect(node.Status.Conditions).To(ContainElement(And(
+				HaveField("Type", corev1.NodeReady), HaveField("Status", corev1.ConditionTrue),
+			)))
+		}).WithTimeout(15 * time.Minute).Should(Succeed())
+		Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelOSSKU, v1beta1.OSSKUUbuntu))
+		Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelInstanceTypeStable, sku))
+
+		vm := env.GetVM(node.Name)
+		Expect(vm.Properties).ToNot(BeNil())
+		Expect(vm.Properties.HardwareProfile).ToNot(BeNil())
+		Expect(string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))).To(Equal(sku))
+		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile.SecurityType).To(Equal(lo.ToPtr(armcompute.SecurityTypesConfidentialVM)))
+		Expect(vm.Properties.SecurityProfile.UefiSettings).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile.UefiSettings.VTpmEnabled).To(Equal(lo.ToPtr(true)))
+		Expect(vm.Properties.SecurityProfile.UefiSettings.SecureBootEnabled).To(Equal(lo.ToPtr(true)))
+		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
+		imageID := strings.ToLower(lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID))
+		Expect(imageID).To(HavePrefix("/subscriptions/"))
+		Expect(imageID).To(ContainSubstring("/providers/microsoft.compute/galleries/"))
+		Expect(imageID).To(ContainSubstring("/images/" + strings.ToLower(imageDefinition) + "/versions/"))
+		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.SecurityProfile).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.SecurityProfile.SecurityEncryptionType).To(Equal(lo.ToPtr(armcompute.SecurityEncryptionTypesVMGuestStateOnly)))
+		if isGPU {
+			Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelSKUGPUCount, "1"))
+			Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelSKUGPUManufacturer, "nvidia"))
+			Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelSKUGPUName, "H100"))
+			Expect(claim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
+			machine := env.ExpectMachineByID(claim.Annotations[v1beta1.AnnotationAKSMachineResourceID])
+			Expect(machine.Properties).ToNot(BeNil())
+			Expect(machine.Properties.Hardware).ToNot(BeNil())
+			Expect(machine.Properties.Hardware.GpuProfile).ToNot(BeNil())
+			Expect(machine.Properties.Hardware.GpuProfile.Driver).To(Equal(lo.ToPtr(armcontainerservice.GPUDriverNone)))
+			if nvidia := machine.Properties.Hardware.GpuProfile.Nvidia; nvidia != nil {
+				Expect(nvidia.ManagementMode).ToNot(Equal(lo.ToPtr(armcontainerservice.ManagementModeManaged)))
+			}
+		}
+		// Ready alone is not proof of GPU execution or NodeClaim initialization.
+		// Do not patch resource requests, add an ignore annotation, or install a driver here.
+		if !isGPU {
+			env.EventuallyExpectHealthyDeployment(deployment)
+			env.EventuallyExpectNodeClaimsReady(claim)
+		}
+		if gpuWorkload {
+			Eventually(func(g Gomega) {
+				g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(probe), probe)).To(Succeed())
+				g.Expect(probe.Status.Phase).To(Equal(corev1.PodSucceeded))
+			}).WithTimeout(15 * time.Minute).Should(Succeed())
+			Expect(probe.Spec.NodeName).To(Equal(node.Name))
+			Expect(env.EventuallyGetPodLogs(probe)).To(ContainSubstring("Test PASSED"))
+			env.EventuallyExpectNodeClaimsReady(claim)
+		}
+	},
+		Entry("CPU Ubuntu 20.04", Label("Ubuntu-CVM-CPU"), v1beta1.UbuntuImageFamily, "2004gen2CVMcontainerd", "Standard_DC4as_v5", "RUN_UBUNTU_CVM", false),
+		Entry("CPU Ubuntu 24.04", Label("Ubuntu-CVM-CPU"), v1beta1.Ubuntu2404ImageFamily, "2404gen2CVMcontainerd", "Standard_DC4as_v5", "RUN_UBUNTU_CVM", false),
+		Entry("NCC H100 None provisioning only", Label("Ubuntu-CVM-GPU"), v1beta1.Ubuntu2404ImageFamily, "2404gen2CVMcontainerd", "Standard_NCC40ads_H100_v5", "RUN_UBUNTU_CVM_GPU", false),
+		Entry("NCC H100 None CUDA workload with BYO driver", Label("Ubuntu-CVM-GPU-BYO"), v1beta1.Ubuntu2404ImageFamily, "2404gen2CVMcontainerd", "Standard_NCC40ads_H100_v5", "RUN_UBUNTU_CVM_GPU_BYO", true),
 	)
 
 	It("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu", func() {

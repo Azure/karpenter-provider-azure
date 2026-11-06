@@ -32,6 +32,7 @@ import (
 )
 
 const (
+	Ubuntu2004Gen2CVMImageDefinition  = "2004gen2CVMcontainerd"
 	Ubuntu2004Gen2FIPSImageDefinition = "2004gen2fipscontainerd"
 	Ubuntu2004Gen1FIPSImageDefinition = "2004fipscontainerd"
 )

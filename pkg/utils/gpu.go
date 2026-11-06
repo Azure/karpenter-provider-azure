@@ -247,11 +247,10 @@ func GetGPUManufacturer(vmSize string) string {
 }
 
 // IsDriverInstallSupported returns true if the system knows how to install
-// GPU drivers for this VM SKU. Currently all NVIDIA SKUs have driver installation
-// support, while AMD SKUs do not. This is the single abstraction point for this
-// decision — when AMD driver support is added, only this function needs to change.
+// GPU drivers for this VM SKU. Confidential H100 and AMD SKUs require user-managed
+// drivers; other registered NVIDIA SKUs support driver installation.
 func IsDriverInstallSupported(vmSize string) bool {
-	return IsNvidiaEnabledSKU(vmSize)
+	return normalizeVMSize(vmSize) != "standard_ncc40ads_h100_v5" && IsNvidiaEnabledSKU(vmSize)
 }
 
 // IsGPUSKUSupportedOnOS checks if a GPU SKU supports a given OS identifier (e.g., "ubuntu", "azurelinux", "azurelinux3")

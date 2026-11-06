@@ -3044,6 +3044,7 @@ var _ = Describe("InstanceType Provider", func() {
 					{"Standard_ACLLegacy", "DC4as_v5", "", "x64", "V2", "False", skewer.NestedVirtualization},
 					{"standard_dc4legacy", "D2s_v3", "", "x64", "V2", "False", skewer.NestedVirtualization},
 					{"Standard_ACLNestedSNP", "DC4as_cc_v5", "", "x64", "V2", "False", ""},
+					{"Standard_NCC40ads_H100_v5", "NCC40ads_H100_v5", "SNP", "x64", "V2", "False", skewer.NestedVirtualization},
 				} {
 					capabilities := []compute.ResourceSkuCapabilities{
 						{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("4")},
@@ -3057,6 +3058,11 @@ var _ = Describe("InstanceType Provider", func() {
 						capabilities = append(capabilities, compute.ResourceSkuCapabilities{
 							Name: lo.ToPtr("confidentialcomputingtype"), Value: lo.ToPtr(fixture.confidentialType),
 						})
+					}
+					if fixture.name == "Standard_NCC40ads_H100_v5" {
+						capabilities[0].Value = lo.ToPtr("40")
+						capabilities[1].Value = lo.ToPtr("320")
+						capabilities = append(capabilities, compute.ResourceSkuCapabilities{Name: lo.ToPtr("GPUs"), Value: lo.ToPtr("1")})
 					}
 					azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
 						Name: lo.ToPtr(fixture.name), Size: lo.ToPtr(fixture.size),
@@ -3080,7 +3086,12 @@ var _ = Describe("InstanceType Provider", func() {
 				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 			})
 
-			It("should reevaluate resolved SNP images on cache hits without removing ordinary ACL candidates", func() {
+			DescribeTable("should reevaluate resolved SNP images on cache hits without removing ordinary candidates", func(family string) {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(family)
+				if family != v1beta1.AzureContainerLinuxImageFamily {
+					nodeClass.Spec.Security = nil
+				}
+				nodeClass.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}
 				opts := *testOptions
 				opts.ProvisionMode, opts.UseSIG = consts.ProvisionModeAKSMachineAPI, true
 				cvmImage := nodeClass.Status.Images[0]
@@ -3123,6 +3134,7 @@ var _ = Describe("InstanceType Provider", func() {
 					its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(lo.ContainsBy(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_ACLSNP" })).To(Equal(test.wantSNP), test.name)
+					Expect(lo.ContainsBy(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_NCC40ads_H100_v5" })).To(Equal(test.wantSNP && family != v1beta1.AzureContainerLinuxImageFamily), test.name)
 					Expect(its).To(ContainElement(WithTransform(getName, Equal("Standard_ACLOrdinary"))), test.name)
 					Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1), test.name)
 				}
@@ -3130,8 +3142,9 @@ var _ = Describe("InstanceType Provider", func() {
 				its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(its).ToNot(ContainElement(WithTransform(getName, Equal("Standard_ACLSNP"))))
+				Expect(its).ToNot(ContainElement(WithTransform(getName, Equal("Standard_NCC40ads_H100_v5"))))
 				Expect(its).To(ContainElement(WithTransform(getName, Equal("Standard_ACLOrdinary"))))
-			})
+			}, Entry("ACL", v1beta1.AzureContainerLinuxImageFamily), Entry("Ubuntu", v1beta1.UbuntuImageFamily), Entry("Ubuntu2404", v1beta1.Ubuntu2404ImageFamily))
 
 			DescribeTable("should distinguish TL and SNP images without sharing incompatible cached selections", func(fips bool) {
 				if fips {
@@ -3224,7 +3237,7 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 			})
 
-			It("should reject confidential and nested-SNP SKUs for other image families", func() {
+			It("should allow only approved confidential image families and reject unverified nested-SNP SKUs", func() {
 				opts := *testOptions
 				opts.ProvisionMode, opts.UseSIG = consts.ProvisionModeAKSMachineAPI, true
 				for _, family := range []string{v1beta1.UbuntuImageFamily, v1beta1.Ubuntu2204ImageFamily, v1beta1.Ubuntu2404ImageFamily,
@@ -3236,12 +3249,94 @@ var _ = Describe("InstanceType Provider", func() {
 						its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(its).To(ContainElement(WithTransform(getName, Equal("Standard_ACLOrdinary"))))
-						for _, name := range []string{"Standard_ACLSNP", "Standard_ACLSNPDisabled", "Standard_ACLTDX", "Standard_ACLLegacy", "Standard_ACLNestedSNP"} {
+						for _, name := range []string{"Standard_ACLSNP", "Standard_ACLSNPDisabled"} {
+							Expect(lo.ContainsBy(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == name })).To(Equal(
+								!kata && (family == v1beta1.UbuntuImageFamily || family == v1beta1.Ubuntu2404ImageFamily)), "family=%s kata=%t sku=%s", family, kata, name)
+						}
+						for _, name := range []string{"Standard_ACLTDX", "Standard_ACLLegacy", "Standard_ACLNestedSNP"} {
 							Expect(its).ToNot(ContainElement(WithTransform(getName, Equal(name))))
 						}
 					}
 				}
 			})
+
+			DescribeTable("should offer Ubuntu SNP CPUs and confidential H100 only in supported configurations", func(family string) {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(family)
+				for _, mode := range []string{consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch,
+					consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient} {
+					for _, useSIG := range []bool{true, false} {
+						opts := *testOptions
+						opts.ProvisionMode, opts.UseSIG = mode, useSIG
+						for _, config := range []struct {
+							name     string
+							gpu      *v1beta1.GPU
+							fips     bool
+							security *v1beta1.Security
+							kata     bool
+						}{
+							{name: "default driver"},
+							{name: "explicit driver", gpu: &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeDriver)}},
+							{name: "user-managed driver", gpu: &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}},
+							{name: "FIPS", gpu: &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}, fips: true},
+							{name: "secure boot", gpu: &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}, security: &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}}},
+							{name: "vTPM", gpu: &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}, security: &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}}},
+							{name: "TL disabled", gpu: &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}, security: &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(false), VTPM: lo.ToPtr(false)}}},
+							{name: "Kata", gpu: &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}, kata: true},
+						} {
+							nodeClass.Spec.GPU, nodeClass.Spec.Security = config.gpu, config.security
+							nodeClass.Spec.FIPSMode = lo.ToPtr(lo.Ternary(config.fips, v1beta1.FIPSModeFIPS, v1beta1.FIPSModeDisabled))
+							nodeClass.Spec.WorkloadRuntime = lo.ToPtr(lo.Ternary(config.kata, v1beta1.WorkloadRuntimeKataVMIsolation, v1beta1.WorkloadRuntimeOCIContainer))
+							its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+							Expect(err).ToNot(HaveOccurred())
+							wantCPU := opts.IsAKSMachineAPIMode() && useSIG && family != v1beta1.Ubuntu2204ImageFamily &&
+								!config.fips && !nodeClass.IsTrustedLaunchEnabled() && !config.kata
+							for _, name := range []string{"Standard_ACLSNP", "Standard_ACLSNPDisabled", "Standard_NCC40ads_H100_v5"} {
+								want := wantCPU && (name != "Standard_NCC40ads_H100_v5" || nodeClass.GetGPUMode() == v1beta1.GPUModeNone)
+								it, found := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == name })
+								Expect(found).To(Equal(want), "family=%s mode=%s SIG=%t config=%s sku=%s", family, mode, useSIG, config.name, name)
+								if found {
+									Expect(it.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType).Values()).To(ConsistOf("SNP"))
+									if name == "Standard_NCC40ads_H100_v5" {
+										Expect(it.Capacity.Cpu().Value()).To(Equal(int64(40)))
+										Expect(it.Capacity[v1.ResourceName("nvidia.com/gpu")]).To(Equal(resource.MustParse("1")))
+										Expect(it.Requirements.Get(v1beta1.LabelSKUGPUCount).Values()).To(ConsistOf("1"))
+										Expect(it.Requirements.Get(v1beta1.LabelSKUGPUManufacturer).Values()).To(ConsistOf(v1beta1.ManufacturerNvidia))
+									}
+								}
+							}
+							for _, name := range []string{"Standard_ACLSNPArm", "Standard_ACLSNPGen1", "Standard_ACLTDX", "Standard_ACLLegacy", "standard_dc4legacy", "Standard_ACLNestedSNP"} {
+								Expect(its).ToNot(ContainElement(WithTransform(getName, Equal(name))))
+							}
+						}
+					}
+				}
+			}, Entry("Ubuntu", v1beta1.UbuntuImageFamily), Entry("Ubuntu2404", v1beta1.Ubuntu2404ImageFamily), Entry("Ubuntu2204", v1beta1.Ubuntu2204ImageFamily))
+
+			DescribeTable("should reject confidential H100 without verified amd64 Gen2 SNP support", func(capability, value string) {
+				for i := range azureEnv.SKUsAPI.AdditionalSKUs {
+					if lo.FromPtr(azureEnv.SKUsAPI.AdditionalSKUs[i].Name) == "Standard_NCC40ads_H100_v5" {
+						sku := skewer.SKU(azureEnv.SKUsAPI.AdditionalSKUs[i])
+						azureEnv.SKUsAPI.AdditionalSKUs[i] = compute.ResourceSku(*withSKUCapabilityValue(&sku, capability, lo.EmptyableToPtr(value)))
+					}
+				}
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+				nodeClass.Spec.Security = nil
+				nodeClass.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}
+				for _, family := range []string{v1beta1.UbuntuImageFamily, v1beta1.Ubuntu2404ImageFamily} {
+					nodeClass.Spec.ImageFamily = lo.ToPtr(family)
+					for _, mode := range []string{consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch} {
+						opts := *testOptions
+						opts.ProvisionMode, opts.UseSIG = mode, true
+						its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(its).ToNot(ContainElement(WithTransform(getName, Equal("Standard_NCC40ads_H100_v5"))))
+						Expect(its).To(ContainElement(WithTransform(getName, Equal("Standard_ACLSNP"))))
+					}
+				}
+			}, Entry("missing capability", "confidentialcomputingtype", ""),
+				Entry("None capability", "confidentialcomputingtype", "None"),
+				Entry("TDX", "confidentialcomputingtype", "TDX"),
+				Entry("ARM", "CpuArchitectureType", "Arm64"), Entry("Gen1", "HyperVGenerations", "V1"))
 		})
 
 		Context("Filtering in InstanceType", func() {

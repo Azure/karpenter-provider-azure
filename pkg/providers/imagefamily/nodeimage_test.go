@@ -29,7 +29,11 @@ import (
 	"github.com/blang/semver/v4"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -71,12 +75,13 @@ func renderExpectedSIGNodeImages(
 	fam imagefamily.ImageFamily,
 	fips *v1beta1.FIPSMode,
 	trustedLaunch bool,
+	cvmDefinition ...string,
 ) []imagefamily.NodeImage {
 	version := sigImageVersion
 	if _, ok := fam.(*imagefamily.AzureLinux); ok {
 		version = azureLinuxV2SIGImageVersion
 	}
-	return renderExpectedSIGNodeImagesWithVersion(fam, fips, version, trustedLaunch)
+	return renderExpectedSIGNodeImagesWithVersion(fam, fips, version, trustedLaunch, cvmDefinition...)
 }
 
 func renderExpectedSIGNodeImagesWithVersion(
@@ -84,12 +89,26 @@ func renderExpectedSIGNodeImagesWithVersion(
 	fips *v1beta1.FIPSMode,
 	version string,
 	trustedLaunch bool,
+	cvmDefinition ...string,
 ) []imagefamily.NodeImage {
 	defaultImages := fam.DefaultImages(true, fips, trustedLaunch, false)
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
 		id := imagefamily.BuildImageIDSIG(sigSubscription, img.GalleryResourceGroup, img.GalleryName, img.ImageDefinition, version)
 		out = append(out, imagefamily.NodeImage{ID: id, Requirements: img.Requirements})
+	}
+	if _, ok := fam.(*imagefamily.Ubuntu2404); ok {
+		cvmDefinition = []string{imagefamily.Ubuntu2404Gen2CVMImageDefinition}
+	}
+	if len(cvmDefinition) > 0 && lo.FromPtr(fips) != v1beta1.FIPSModeFIPS && !trustedLaunch {
+		out = append(out, imagefamily.NodeImage{
+			ID: imagefamily.BuildImageIDSIG(sigSubscription, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, cvmDefinition[0], version),
+			Requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, corev1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, "SNP"),
+			),
+		})
 	}
 	return out
 }
@@ -120,6 +139,80 @@ var _ = Describe("NodeImageProvider tests", func() {
 		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 	})
+
+	DescribeTable("should resolve only supported Ubuntu CVM images from List",
+		func(family *string, version string, fips *v1beta1.FIPSMode, trustedLaunch, kata, useSIG bool, cvmDefinition string) {
+			nodeClass.Spec.ImageFamily = family
+			nodeClass.Spec.FIPSMode = fips
+			nodeClass.Spec.Security = nil
+			nodeClass.Spec.WorkloadRuntime = nil
+			nodeClass.Status.KubernetesVersion = lo.ToPtr(version)
+			if trustedLaunch {
+				nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}}
+			}
+			if kata {
+				nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+			}
+			testOptions.UseSIG = useSIG
+			testOptions.SIGSubscriptionID = sigSubscription
+			images, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			nodeClass.Status.Images = nil
+			for _, image := range images {
+				requirements := lo.Map(image.Requirements.NodeSelectorRequirements(), func(requirement karpv1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
+					return corev1.NodeSelectorRequirement{Key: requirement.Key, Operator: requirement.Operator, Values: requirement.Values}
+				})
+				nodeClass.Status.Images = append(nodeClass.Status.Images, v1beta1.NodeImage{ID: image.ID, Requirements: requirements})
+			}
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+			resolver := imagefamily.NewDefaultResolver(nil, nil, nil, nil)
+			for _, arch := range []string{karpv1.ArchitectureAmd64, karpv1.ArchitectureArm64} {
+				for _, generation := range []string{v1beta1.HyperVGenerationV1, v1beta1.HyperVGenerationV2} {
+					instance := &cloudprovider.InstanceType{Name: "test-instance", Requirements: scheduling.NewRequirements(
+						scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, arch),
+						scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, corev1.NodeSelectorOpIn, generation),
+						scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, "SNP"),
+					)}
+					id, err := resolver.ResolveNodeImageFromNodeClass(nodeClass, instance)
+					if cvmDefinition != "" && arch == karpv1.ArchitectureAmd64 && generation == v1beta1.HyperVGenerationV2 {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(id).To(Equal(imagefamily.BuildImageIDSIG(sigSubscription, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, cvmDefinition, sigImageVersion)))
+						Expect(images).To(HaveLen(4))
+						Expect(images[3].ID).To(Equal(id))
+						instance.Requirements[v1beta1.LabelSKUConfidentialComputingType] = scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, "None")
+						ordinaryID, err := resolver.ResolveNodeImageFromNodeClass(nodeClass, instance)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(ordinaryID).To(Equal(images[0].ID))
+						Expect(ordinaryID).ToNot(ContainSubstring("CVM"))
+						for _, image := range images[:3] {
+							Expect(image.Requirements.Has(v1beta1.LabelSKUConfidentialComputingType)).To(BeFalse())
+						}
+					} else {
+						Expect(err).To(HaveOccurred())
+						Expect(id).To(BeEmpty())
+					}
+				}
+			}
+		},
+		Entry("generic before 1.34", lo.ToPtr(v1beta1.UbuntuImageFamily), "1.33.9", nil, false, false, true, imagefamily.Ubuntu2004Gen2CVMImageDefinition),
+		Entry("generic at 1.34", lo.ToPtr(v1beta1.UbuntuImageFamily), "1.34.0", nil, false, false, true, imagefamily.Ubuntu2404Gen2CVMImageDefinition),
+		Entry("generic after 1.34 with FIPS disabled", lo.ToPtr(v1beta1.UbuntuImageFamily), "1.35.0", &v1beta1.FIPSModeDisabled, false, false, true, imagefamily.Ubuntu2404Gen2CVMImageDefinition),
+		Entry("default before 1.34", nil, "1.33.9", nil, false, false, true, imagefamily.Ubuntu2004Gen2CVMImageDefinition),
+		Entry("default at 1.34", nil, "1.34.0", nil, false, false, true, imagefamily.Ubuntu2404Gen2CVMImageDefinition),
+		Entry("explicit 2404 before 1.34", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), "1.33.9", nil, false, false, true, imagefamily.Ubuntu2404Gen2CVMImageDefinition),
+		Entry("explicit 2404 at 1.34", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), "1.34.0", nil, false, false, true, imagefamily.Ubuntu2404Gen2CVMImageDefinition),
+		Entry("explicit 2204 before 1.34", lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), "1.33.9", nil, false, false, true, ""),
+		Entry("explicit 2204 at 1.34", lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), "1.34.0", nil, false, false, true, ""),
+		Entry("generic FIPS", lo.ToPtr(v1beta1.UbuntuImageFamily), "1.34.0", &v1beta1.FIPSModeFIPS, false, false, true, ""),
+		Entry("explicit FIPS", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), "1.34.0", &v1beta1.FIPSModeFIPS, false, false, true, ""),
+		Entry("generic Trusted Launch", lo.ToPtr(v1beta1.UbuntuImageFamily), "1.34.0", nil, true, false, true, ""),
+		Entry("explicit Trusted Launch", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), "1.34.0", nil, true, false, true, ""),
+		Entry("generic Kata", lo.ToPtr(v1beta1.UbuntuImageFamily), "1.34.0", nil, false, true, true, ""),
+		Entry("explicit Kata", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), "1.34.0", nil, false, true, true, ""),
+		Entry("generic CIG before 1.34", lo.ToPtr(v1beta1.UbuntuImageFamily), "1.33.9", nil, false, false, false, ""),
+		Entry("generic CIG at 1.34", lo.ToPtr(v1beta1.UbuntuImageFamily), "1.34.0", nil, false, false, false, ""),
+		Entry("explicit CIG", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), "1.34.0", nil, false, false, false, ""),
+	)
 
 	Context("List CIG Images", func() {
 		It("should fail if KubernetesVersionReady is false", func() {
@@ -414,7 +507,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.Ubuntu2204{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), imagefamily.Ubuntu2004Gen2CVMImageDefinition)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -506,7 +599,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.Ubuntu2204{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), imagefamily.Ubuntu2004Gen2CVMImageDefinition)
 				Expect(foundImages).To(Equal(expectedImages))
 
 			})
@@ -615,7 +708,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 					Expect(version.Minor).To(BeNumerically("<", 34))
 				}
 
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), imagefamily.Ubuntu2004Gen2CVMImageDefinition)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -628,7 +721,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should use Ubuntu2204 for K8s < 1.34
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil, nodeClass.IsTrustedLaunchEnabled())
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil, nodeClass.IsTrustedLaunchEnabled(), imagefamily.Ubuntu2004Gen2CVMImageDefinition)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -655,7 +748,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should default to Ubuntu2204 for K8s < 1.34
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil, nodeClass.IsTrustedLaunchEnabled())
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil, nodeClass.IsTrustedLaunchEnabled(), imagefamily.Ubuntu2004Gen2CVMImageDefinition)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 

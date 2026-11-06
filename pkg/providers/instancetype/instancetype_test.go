@@ -76,6 +76,13 @@ func TestConfidentialComputingType(t *testing.T) {
 		{size: "DC4as_cc_v5", expected: "Unknown"},
 		{size: "EC4as_cc_v5", capability: "None", expected: "Unknown"},
 		{size: "DC4as_cc_v5", capability: "SNP", expected: "SNP"},
+		{name: "standard_ncc40ads_h100_v5", expected: "Unknown"},
+		{name: "Standard_NCC40ads_H100_v5", capability: "None", expected: "Unknown"},
+		{size: "ncc40ads_h100_v5", expected: "Unknown"},
+		{size: "NCC40ads_H100_v5", capability: "None", expected: "Unknown"},
+		{name: "Standard_NCC40ads_H100_v5", capability: "SNP", expected: "SNP"},
+		{name: "Standard_NC40ads_H100_v5", expected: "None"},
+		{size: "NC40ads_H100_v5", capability: "None", expected: "None"},
 	} {
 		t.Run(fmt.Sprintf("%s/%s/%s", test.name, test.size, test.capability), func(t *testing.T) {
 			g := NewWithT(t)

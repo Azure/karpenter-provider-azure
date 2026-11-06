@@ -487,18 +487,29 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 		// as the cause.
 		return nil, fmt.Errorf("resolving node class, %w", err)
 	}
-	// ACL's confidential SKU inventory depends on resolved images. Do not report
-	// those SKUs as removed (and drift existing nodes) during image reconciliation.
-	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily {
-		if _, err := nodeClass.GetImages(); err != nil {
-			return nil, fmt.Errorf("resolving AzureContainerLinux images, %w", err)
-		}
+	if err := validateConfidentialImages(ctx, nodeClass); err != nil {
+		return nil, err
 	}
 	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
 		return nil, err
 	}
 	return instanceTypes, nil
+}
+
+func validateConfidentialImages(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) error {
+	// Confidential SKU inventory depends on resolved images. Do not report
+	// those SKUs as removed (and drift existing nodes) during image reconciliation.
+	family := lo.FromPtr(nodeClass.Spec.ImageFamily)
+	ubuntuCVM := (family == v1beta1.UbuntuImageFamily || family == v1beta1.Ubuntu2404ImageFamily) &&
+		options.FromContext(ctx).IsAKSMachineAPIMode() && options.FromContext(ctx).UseSIG &&
+		!nodeClass.IsFIPSEnabled() && !nodeClass.IsTrustedLaunchEnabled() && !nodeClass.IsKataEnabled()
+	if family == v1beta1.AzureContainerLinuxImageFamily || ubuntuCVM {
+		if _, err := nodeClass.GetImages(); err != nil {
+			return fmt.Errorf("resolving %s images, %w", family, err)
+		}
+	}
+	return nil
 }
 
 // Delete deletes the underlying node
