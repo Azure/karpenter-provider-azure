@@ -30,21 +30,34 @@ import (
 )
 
 func newTestClient(t *testing.T, api *fakeFleetsAPI) *Client {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	return NewClient(ctx, api, "cluster", "node-rg", batcher.Options{
+	t.Helper()
+	return newTestClientWithOptions(t, api, batcher.Options{
 		IdleTimeout:  100 * time.Millisecond,
 		MaxTimeout:   2 * time.Second,
 		MaxBatchSize: 10,
 	})
 }
 
+func newTestClientWithOptions(t *testing.T, api *fakeFleetsAPI, opts batcher.Options) *Client {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	return NewClient(ctx, api, "cluster", "node-rg", opts)
+}
+
 func TestClient_CoalescesCompatibleRequests(t *testing.T) {
 	g := NewWithT(t)
 	api := &fakeFleetsAPI{}
-	client := newTestClient(t, api)
+	const requestCount = 3
+	client := newTestClientWithOptions(t, api, batcher.Options{
+		IdleTimeout:  time.Hour,
+		MaxTimeout:   time.Hour,
+		MaxBatchSize: requestCount,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	responses := make([]FleetBatchResponse, 3)
+	responses := make([]FleetBatchResponse, requestCount)
 	var wg sync.WaitGroup
 	for i := range responses {
 		wg.Add(1)
@@ -52,14 +65,19 @@ func TestClient_CoalescesCompatibleRequests(t *testing.T) {
 			defer wg.Done()
 			req := baseRequest()
 			req.NodeClaimName = fmt.Sprintf("claim-%d", i)
-			responses[i] = client.CreateVM(context.Background(), *req)
+			responses[i] = client.CreateVM(ctx, *req)
 		}()
 	}
-	wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	g.Eventually(done).WithTimeout(15 * time.Second).Should(BeClosed())
 
 	puts := api.recordedPuts()
 	g.Expect(puts).To(HaveLen(1))
-	g.Expect(targetCapacity(puts[0].body)).To(Equal(int32(3)))
+	g.Expect(targetCapacity(puts[0].body)).To(Equal(int32(requestCount)))
 	for i, resp := range responses {
 		g.Expect(resp.Error).NotTo(HaveOccurred())
 		g.Expect(resp.SharedState.GetAssignment(fmt.Sprintf("claim-%d", i))).NotTo(BeNil())
@@ -144,11 +162,20 @@ func TestClient_InvalidRequestFailsBeforeBatching(t *testing.T) {
 
 func TestClient_CallerContextCanceled(t *testing.T) {
 	g := NewWithT(t)
-	client := newTestClient(t, &fakeFleetsAPI{})
+	client := newTestClientWithOptions(t, &fakeFleetsAPI{}, batcher.Options{
+		IdleTimeout:  time.Hour,
+		MaxTimeout:   time.Hour,
+		MaxBatchSize: 2,
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	resp := client.CreateVM(ctx, *baseRequest())
+	responses := make(chan FleetBatchResponse, 1)
+	go func() {
+		responses <- client.CreateVM(ctx, *baseRequest())
+	}()
+	var resp FleetBatchResponse
+	g.Eventually(responses).WithTimeout(5 * time.Second).Should(Receive(&resp))
 
 	g.Expect(resp.Error).To(MatchError(context.Canceled))
 }
