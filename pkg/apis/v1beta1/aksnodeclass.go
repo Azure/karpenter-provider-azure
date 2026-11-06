@@ -418,11 +418,13 @@ type LocalDNSZoneOverride struct {
 // is no field for it to be converted into.
 type LocalDNSHealthCheck struct {
 	// duration is the interval between health check probes sent to the upstream DNS servers.
+	// It must be between 1s and 60s.
 	//
 	// Note: the pattern below is shared with cacheDuration and serveStaleDuration for consistency
 	// across this struct, which means sub-second intervals such as 500ms cannot be expressed here
 	// even though CoreDNS and AgentBaker both accept them.
 	// +kubebuilder:validation:Pattern=`^([0-9]+(s|m|h))+$`
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1s') && duration(self) <= duration('60s')",message="duration must be between 1s and 60s"
 	// +kubebuilder:validation:Type="string"
 	// +kubebuilder:validation:Schemaless
 	// +required

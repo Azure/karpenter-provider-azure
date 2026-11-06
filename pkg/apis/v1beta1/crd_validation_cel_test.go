@@ -809,7 +809,12 @@ var _ = Describe("CEL/Validation", func() {
 			}
 		},
 			Entry("valid duration: 5s", "5s", ""),
-			Entry("valid duration: 1h30m", "1h30m", ""),
+			Entry("valid duration: 1s is the minimum", "1s", ""),
+			Entry("valid duration: 60s is the maximum", "60s", ""),
+			Entry("valid duration: 1m equals the maximum", "1m", ""),
+			Entry("invalid duration: 0s re-probes a down upstream with no pause", "0s", "duration must be between 1s and 60s"),
+			Entry("invalid duration: 61s is above the maximum", "61s", "duration must be between 1s and 60s"),
+			Entry("invalid duration: 1h30m is above the maximum", "1h30m", "duration must be between 1s and 60s"),
 			Entry("invalid duration: 500ms is below the shared pattern's granularity", "500ms", "healthCheck"),
 		)
 
