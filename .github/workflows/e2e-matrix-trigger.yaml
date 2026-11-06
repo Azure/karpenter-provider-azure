@@ -8,14 +8,6 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "westus3"
-      provision_mode:
-        type: choice
-        description: "the karpenter provisioning mode to run the e2e test in"
-        default: aksscriptless
-        options:
-          - aksscriptless
-          - aksmachineapi
-          # - aksmachineapiheaderbatch # Removed currently as only aksmanagedap can do batch anyway
       k8s_version:
         type: choice
         description: "Kubernetes version ('default' = AKS default)"
@@ -47,11 +39,15 @@ jobs:
       contents: read
       statuses: write # ./.github/actions/commit-status/*
     needs: [resolve]
+    strategy:
+      fail-fast: false
+      matrix:
+        provision_mode: [aksscriptless, aksmachineapi]
     uses: ./.github/workflows/e2e-matrix.yaml
     with:
       git_ref: ${{ needs.resolve.outputs.GIT_REF }}
       location: ${{ inputs.location || 'westus3' }}
-      provision_mode: ${{ inputs.provision_mode || 'aksscriptless' }}
+      provision_mode: ${{ matrix.provision_mode }}
       k8s_version: ${{ inputs.k8s_version }}
       azure_vm_size: ${{ inputs.azure_vm_size }}
     secrets:
