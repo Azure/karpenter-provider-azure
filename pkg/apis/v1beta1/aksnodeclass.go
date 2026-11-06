@@ -386,6 +386,52 @@ type LocalDNSZoneOverride struct {
 	// serveStale is the policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +required
 	ServeStale LocalDNSServeStale `json:"serveStale,omitempty"`
+	// failfastAllUnhealthyUpstreams determines the handling of requests when every upstream DNS
+	// server for this zone is unhealthy: fail the query immediately instead of still attempting a
+	// forward and waiting for it to time out. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	//
+	// Warning: on a zone that forwards to ClusterCoreDNS, such as cluster.local, this turns a
+	// transient CoreDNS outage into an immediate SERVFAIL for all in-cluster DNS. It is intended
+	// for zones forwarding to VnetDNS, where failing fast stops localDNS from amplifying an
+	// upstream outage.
+	//
+	// Requires provision-mode bootstrappingclient. In any other provision mode, setting it to true
+	// fails AKSNodeClass validation unless localDNS mode is Disabled, and the AKSNodeClass does not
+	// provision until it is removed.
+	// +optional
+	FailfastAllUnhealthyUpstreams *bool `json:"failfastAllUnhealthyUpstreams,omitempty"`
+	// healthCheck configures how localDNS probes the upstream DNS servers for this zone.
+	// See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	//
+	// Requires provision-mode bootstrappingclient. In any other provision mode, setting it fails
+	// AKSNodeClass validation unless localDNS mode is Disabled, and the AKSNodeClass does not
+	// provision until it is removed.
+	// +optional
+	HealthCheck *LocalDNSHealthCheck `json:"healthCheck,omitempty"`
+}
+
+// LocalDNSHealthCheck configures the CoreDNS forward plugin health check for a zone's upstream
+// DNS servers.
+//
+// The forward plugin also accepts a `domain` knob, and AgentBaker renders it, but it is not
+// exposed here: it is reserved in the AKS control plane's LocalDNSHealthCheck message, so there
+// is no field for it to be converted into.
+type LocalDNSHealthCheck struct {
+	// duration is the interval between health check probes sent to the upstream DNS servers.
+	// It must be between 1s and 60s.
+	//
+	// Note: the pattern below is shared with cacheDuration and serveStaleDuration for consistency
+	// across this struct, which means sub-second intervals such as 500ms cannot be expressed here
+	// even though CoreDNS and AgentBaker both accept them.
+	// +kubebuilder:validation:Pattern=`^([0-9]+(s|m|h))+$`
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1s') && duration(self) <= duration('60s')",message="duration must be between 1s and 60s"
+	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:validation:Schemaless
+	// +required
+	Duration karpv1.NillableDuration `json:"duration"`
+	// noRec sets the RecursionDesired flag of the health check query to false.
+	// +optional
+	NoRec *bool `json:"noRec,omitempty"`
 }
 
 // LocalDNSOverrides specifies DNS override configuration
@@ -1024,6 +1070,20 @@ func (in *AKSNodeClass) Hash() string {
 			spec.NodePublicIP.IPTags = nil
 		}
 	}
+	// failfastAllUnhealthyUpstreams and healthCheck.noRec render nothing in the Corefile when false,
+	// so an explicit false must hash the same as an omitted field and not drift nodes.
+	if spec.LocalDNS != nil {
+		for _, overrides := range [][]LocalDNSZoneOverride{spec.LocalDNS.VnetDNSOverrides, spec.LocalDNS.KubeDNSOverrides} {
+			for i := range overrides {
+				if !lo.FromPtr(overrides[i].FailfastAllUnhealthyUpstreams) {
+					overrides[i].FailfastAllUnhealthyUpstreams = nil
+				}
+				if healthCheck := overrides[i].HealthCheck; healthCheck != nil && !lo.FromPtr(healthCheck.NoRec) {
+					healthCheck.NoRec = nil
+				}
+			}
+		}
+	}
 	return fmt.Sprint(lo.Must(hashstructure.Hash(spec, hashstructure.FormatV2, &hashstructure.HashOptions{
 		SlicesAsSets:    true,
 		IgnoreZeroValue: true,
@@ -1155,6 +1215,19 @@ func (in *AKSNodeClass) IsLocalDNSRequired() bool {
 // the provisioning path will not observe the unresolved state.
 func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	return in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled
+}
+
+// HasLocalDNSForwardHealthKnobs returns whether any LocalDNS zone override sets a forward health
+// knob that changes the node's Corefile: failfastAllUnhealthyUpstreams=true or a healthCheck.
+// failfastAllUnhealthyUpstreams=false matches the CoreDNS default and is not counted.
+func (in *AKSNodeClass) HasLocalDNSForwardHealthKnobs() bool {
+	if in.Spec.LocalDNS == nil {
+		return false
+	}
+	setsKnob := func(o LocalDNSZoneOverride) bool {
+		return lo.FromPtr(o.FailfastAllUnhealthyUpstreams) || o.HealthCheck != nil
+	}
+	return lo.SomeBy(in.Spec.LocalDNS.VnetDNSOverrides, setsKnob) || lo.SomeBy(in.Spec.LocalDNS.KubeDNSOverrides, setsKnob)
 }
 
 // GetGPUMode returns the effective GPU mode.

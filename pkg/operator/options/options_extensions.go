@@ -46,3 +46,11 @@ func (o *Options) SupportsWorkloadRuntime() bool {
 func (o *Options) SupportsNodePublicIP() bool {
 	return o.IsAKSMachineAPIMode()
 }
+
+// SupportsLocalDNSForwardHealthKnobs reports whether the configured provision mode can carry the
+// localDNS forward health knobs (failfastAllUnhealthyUpstreams, healthCheck) to the node. Only the
+// bootstrapping client does. The AKS machine API's LocalDNSOverride has no field for them yet, and
+// the aksscriptless path carries no localDNS at all.
+func (o *Options) SupportsLocalDNSForwardHealthKnobs() bool {
+	return o.ProvisionMode == consts.ProvisionModeBootstrappingClient
+}

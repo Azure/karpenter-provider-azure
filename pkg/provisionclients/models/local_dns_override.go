@@ -23,6 +23,7 @@ package models
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
@@ -38,6 +39,9 @@ type LocalDNSOverride struct {
 	// Cache max TTL in seconds. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	CacheDurationInSeconds *int32 `json:"cacheDurationInSeconds,omitempty"`
 
+	// Determines the handling of requests when all upstream servers are unhealthy. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	FailfastAllUnhealthyUpstreams *bool `json:"failfastAllUnhealthyUpstreams,omitempty"`
+
 	// Destination server for DNS queries to be forwarded from localDNS.
 	// Enum: ["ClusterCoreDNS","VnetDNS"]
 	ForwardDestination *string `json:"forwardDestination,omitempty"`
@@ -45,6 +49,9 @@ type LocalDNSOverride struct {
 	// Forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// Enum: ["Sequential","RoundRobin","Random"]
 	ForwardPolicy *string `json:"forwardPolicy,omitempty"`
+
+	// health check
+	HealthCheck *LocalDNSHealthCheck `json:"healthCheck,omitempty"`
 
 	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
@@ -74,6 +81,10 @@ func (m *LocalDNSOverride) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateForwardPolicy(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateHealthCheck(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -177,6 +188,29 @@ func (m *LocalDNSOverride) validateForwardPolicy(formats strfmt.Registry) error 
 	// value enum
 	if err := m.validateForwardPolicyEnum("forwardPolicy", "body", *m.ForwardPolicy); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (m *LocalDNSOverride) validateHealthCheck(formats strfmt.Registry) error {
+	if swag.IsZero(m.HealthCheck) { // not required
+		return nil
+	}
+
+	if m.HealthCheck != nil {
+		if err := m.HealthCheck.Validate(formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("healthCheck")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("healthCheck")
+			}
+
+			return err
+		}
 	}
 
 	return nil
@@ -311,8 +345,42 @@ func (m *LocalDNSOverride) validateServeStale(formats strfmt.Registry) error {
 	return nil
 }
 
-// ContextValidate validates this local DNS override based on context it is used
+// ContextValidate validate this local DNS override based on the context it is used
 func (m *LocalDNSOverride) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.contextValidateHealthCheck(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+func (m *LocalDNSOverride) contextValidateHealthCheck(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.HealthCheck != nil {
+
+		if swag.IsZero(m.HealthCheck) { // not required
+			return nil
+		}
+
+		if err := m.HealthCheck.ContextValidate(ctx, formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("healthCheck")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("healthCheck")
+			}
+
+			return err
+		}
+	}
+
 	return nil
 }
 

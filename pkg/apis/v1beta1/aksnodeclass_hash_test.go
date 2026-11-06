@@ -82,6 +82,13 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.KubeDNSOverrides", "4529827108104295737", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", Protocol: v1beta1.LocalDNSProtocolForceTCP}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", "11008649797056761238", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", "4895720480850206885", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("30m")}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.FailfastAllUnhealthyUpstreams", "11601214159409099809", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", FailfastAllUnhealthyUpstreams: lo.ToPtr(true)}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.HealthCheck.Duration", "11318899392311327012", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", HealthCheck: &v1beta1.LocalDNSHealthCheck{Duration: karpv1.MustParseNillableDuration("5s")}}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.HealthCheck.NoRec", "4741650227928178047", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", HealthCheck: &v1beta1.LocalDNSHealthCheck{Duration: karpv1.MustParseNillableDuration("5s"), NoRec: lo.ToPtr(true)}}}}}}),
+		// This value was generated before the forward health knobs were added. An override that
+		// sets neither must still hash to it, so adding the fields does not drift the LocalDNS
+		// nodes already running in the fleet.
+		Entry("LocalDNS.VnetDNSOverrides health knobs pre-feature compatibility", "14608914734386108436", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", QueryLogging: v1beta1.LocalDNSQueryLoggingLog}}}}}),
 		Entry("ArtifactStreaming.Enabled", "15355387647114481444", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
 		// This value was generated before NvidiaGPU was added and protects existing
 		// GPU NodeClasses from drifting solely because the nested field now exists.
@@ -122,6 +129,9 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.KubeDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", Protocol: v1beta1.LocalDNSProtocolForceTCP}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("2h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.FailfastAllUnhealthyUpstreams", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", FailfastAllUnhealthyUpstreams: lo.ToPtr(true)}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.HealthCheck.Duration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", HealthCheck: &v1beta1.LocalDNSHealthCheck{Duration: karpv1.MustParseNillableDuration("5s")}}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.HealthCheck.NoRec", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", HealthCheck: &v1beta1.LocalDNSHealthCheck{Duration: karpv1.MustParseNillableDuration("5s"), NoRec: lo.ToPtr(true)}}}}}}),
 		Entry("ArtifactStreaming.Enabled", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
 		Entry("GPU.Nvidia.ManagementMode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged)}}}}),
 		Entry("NodePublicIP.Enabled", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{NodePublicIP: &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}}}),
@@ -244,6 +254,50 @@ var _ = Describe("Hash", func() {
 		_ = nodeClass.Hash()
 
 		Expect(nodeClass).To(Equal(original))
+	})
+	Context("LocalDNS forward health knobs", func() {
+		withOverride := func(override v1beta1.LocalDNSZoneOverride) *v1beta1.LocalDNS {
+			override.Zone = "example.com"
+			return &v1beta1.LocalDNS{
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{override},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{override},
+			}
+		}
+		healthCheck := func(noRec *bool) *v1beta1.LocalDNSHealthCheck {
+			return &v1beta1.LocalDNSHealthCheck{Duration: karpv1.MustParseNillableDuration("5s"), NoRec: noRec}
+		}
+
+		It("should hash explicit failfastAllUnhealthyUpstreams false the same as omitted", func() {
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{})
+			omittedHash := nodeClass.Hash()
+
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{FailfastAllUnhealthyUpstreams: lo.ToPtr(false)})
+			Expect(nodeClass.Hash()).To(Equal(omittedHash))
+
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{FailfastAllUnhealthyUpstreams: lo.ToPtr(true)})
+			Expect(nodeClass.Hash()).ToNot(Equal(omittedHash))
+		})
+		It("should hash explicit noRec false the same as omitted", func() {
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{HealthCheck: healthCheck(nil)})
+			omittedHash := nodeClass.Hash()
+
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{HealthCheck: healthCheck(lo.ToPtr(false))})
+			Expect(nodeClass.Hash()).To(Equal(omittedHash))
+
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{HealthCheck: healthCheck(lo.ToPtr(true))})
+			Expect(nodeClass.Hash()).ToNot(Equal(omittedHash))
+		})
+		It("should not mutate LocalDNS settings while hashing", func() {
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{
+				FailfastAllUnhealthyUpstreams: lo.ToPtr(false),
+				HealthCheck:                   healthCheck(lo.ToPtr(false)),
+			})
+			original := nodeClass.DeepCopy()
+
+			_ = nodeClass.Hash()
+
+			Expect(nodeClass).To(Equal(original))
+		})
 	})
 	It("should not change hash when tags are re-ordered", func() {
 		hash := nodeClass.Hash()
