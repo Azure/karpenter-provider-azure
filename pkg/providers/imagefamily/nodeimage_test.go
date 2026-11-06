@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -97,6 +98,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 	var (
 		testOptions               *options.Options
 		communityImageVersionsAPI *fake.CommunityGalleryImageVersionsAPI
+		nodeImageVersionsAPI      *fake.NodeImageVersionsAPI
 
 		nodeImageProvider imagefamily.NodeImageProvider
 		nodeClass         *v1beta1.AKSNodeClass
@@ -111,7 +113,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		communityImageVersionsAPI = &fake.CommunityGalleryImageVersionsAPI{}
 		cigImageVersionTest := cigImageVersion
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
-		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
+		nodeImageVersionsAPI = &fake.NodeImageVersionsAPI{}
 		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval))
 		kubernetesVersion = lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
 
@@ -668,6 +670,36 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 		It("should return an empty latest image version when no images are available", func() {
 			communityImageVersionsAPI.Reset()
+
+			latestVersion, err := nodeImageProvider.GetLatestVersion(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(latestVersion).To(BeEmpty())
+		})
+
+		It("should return the common base version when security patch versions differ", func() {
+			testOptions.UseSIG = true
+			ctx = options.ToContext(ctx, testOptions)
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			nodeImageVersionsAPI.OverrideNodeImageVersions = []*armcontainerservice.NodeImageVersion{
+				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen2ImageDefinition), Version: lo.ToPtr("202410.27.0-2024.12.01")},
+				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen1ImageDefinition), Version: lo.ToPtr("202410.27.0-2024.12.02")},
+				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen2ArmImageDefinition), Version: lo.ToPtr("202410.27.0-2024.12.03")},
+			}
+
+			latestVersion, err := nodeImageProvider.GetLatestVersion(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(latestVersion).To(Equal("202410.27.0"))
+		})
+
+		It("should return an empty latest image version when base versions differ", func() {
+			testOptions.UseSIG = true
+			ctx = options.ToContext(ctx, testOptions)
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			nodeImageVersionsAPI.OverrideNodeImageVersions = []*armcontainerservice.NodeImageVersion{
+				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen2ImageDefinition), Version: lo.ToPtr("202410.27.0")},
+				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen1ImageDefinition), Version: lo.ToPtr("202410.27.0")},
+				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen2ArmImageDefinition), Version: lo.ToPtr("202411.05.0")},
+			}
 
 			latestVersion, err := nodeImageProvider.GetLatestVersion(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
