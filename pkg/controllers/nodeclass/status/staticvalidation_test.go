@@ -568,6 +568,32 @@ var _ = Describe("Validation Reconciler", func() {
 			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
 		})
 
+		DescribeTable("should not restrict the forward health knobs when localDNS mode is Disabled",
+			func(provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+				nodeClass.Spec.LocalDNS.Mode = v1beta1.LocalDNSModeDisabled
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+			},
+			Entry("aksscriptless", consts.ProvisionModeAKSScriptless),
+			Entry("aksmachineapi", consts.ProvisionModeAKSMachineAPI),
+			Entry("aksmachineapiheaderbatch", consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
+
+		It("should still reject the forward health knobs when localDNS mode is Preferred", func() {
+			ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeAKSMachineAPI})
+			nodeClass.Spec.LocalDNS.Mode = v1beta1.LocalDNSModePreferred
+
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.LocalDNSHealthKnobsUnsupportedProvisionMode))
+		})
+
 		DescribeTable("should not restrict configurations that do not set a forward health knob",
 			func(provisionMode string) {
 				explicitFalse := func(o *v1beta1.LocalDNSZoneOverride) { o.FailfastAllUnhealthyUpstreams = lo.ToPtr(false) }

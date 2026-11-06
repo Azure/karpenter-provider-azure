@@ -396,14 +396,16 @@ type LocalDNSZoneOverride struct {
 	// upstream outage.
 	//
 	// Requires provision-mode bootstrappingclient. In any other provision mode, setting it to true
-	// fails AKSNodeClass validation, and the AKSNodeClass does not provision until it is removed.
+	// fails AKSNodeClass validation unless localDNS mode is Disabled, and the AKSNodeClass does not
+	// provision until it is removed.
 	// +optional
 	FailfastAllUnhealthyUpstreams *bool `json:"failfastAllUnhealthyUpstreams,omitempty"`
 	// healthCheck configures how localDNS probes the upstream DNS servers for this zone.
 	// See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	//
 	// Requires provision-mode bootstrappingclient. In any other provision mode, setting it fails
-	// AKSNodeClass validation, and the AKSNodeClass does not provision until it is removed.
+	// AKSNodeClass validation unless localDNS mode is Disabled, and the AKSNodeClass does not
+	// provision until it is removed.
 	// +optional
 	HealthCheck *LocalDNSHealthCheck `json:"healthCheck,omitempty"`
 }

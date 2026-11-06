@@ -245,6 +245,10 @@ func (r *StaticValidationReconciler) validateNodePublicIPProvisionMode(ctx conte
 }
 
 func (r *StaticValidationReconciler) validateLocalDNSHealthKnobsProvisionMode(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (validationResult, error) {
+	// With localDNS disabled the knobs never reach a Corefile, so there is nothing to reject.
+	if nodeClass.Spec.LocalDNS != nil && nodeClass.Spec.LocalDNS.Mode == v1beta1.LocalDNSModeDisabled {
+		return pass(), nil
+	}
 	if nodeClass.HasLocalDNSForwardHealthKnobs() && !options.FromContext(ctx).SupportsLocalDNSForwardHealthKnobs() {
 		return fail(
 			LocalDNSHealthKnobsUnsupportedProvisionMode,

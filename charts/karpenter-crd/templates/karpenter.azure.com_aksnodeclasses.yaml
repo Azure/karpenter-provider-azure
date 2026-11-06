@@ -2098,7 +2098,8 @@ spec:
                             upstream outage.
 
                             Requires provision-mode bootstrappingclient. In any other provision mode, setting it to true
-                            fails AKSNodeClass validation, and the AKSNodeClass does not provision until it is removed.
+                            fails AKSNodeClass validation unless localDNS mode is Disabled, and the AKSNodeClass does not
+                            provision until it is removed.
                           type: boolean
                         forwardDestination:
                           description: forwardDestination is the destination server
@@ -2122,7 +2123,8 @@ spec:
                             See [forward plugin](https://coredns.io/plugins/forward) for more information.
 
                             Requires provision-mode bootstrappingclient. In any other provision mode, setting it fails
-                            AKSNodeClass validation, and the AKSNodeClass does not provision until it is removed.
+                            AKSNodeClass validation unless localDNS mode is Disabled, and the AKSNodeClass does not
+                            provision until it is removed.
                           properties:
                             duration:
                               description: |-
@@ -2240,7 +2242,8 @@ spec:
                             upstream outage.
 
                             Requires provision-mode bootstrappingclient. In any other provision mode, setting it to true
-                            fails AKSNodeClass validation, and the AKSNodeClass does not provision until it is removed.
+                            fails AKSNodeClass validation unless localDNS mode is Disabled, and the AKSNodeClass does not
+                            provision until it is removed.
                           type: boolean
                         forwardDestination:
                           description: forwardDestination is the destination server
@@ -2264,7 +2267,8 @@ spec:
                             See [forward plugin](https://coredns.io/plugins/forward) for more information.
 
                             Requires provision-mode bootstrappingclient. In any other provision mode, setting it fails
-                            AKSNodeClass validation, and the AKSNodeClass does not provision until it is removed.
+                            AKSNodeClass validation unless localDNS mode is Disabled, and the AKSNodeClass does not
+                            provision until it is removed.
                           properties:
                             duration:
                               description: |-
