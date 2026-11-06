@@ -109,6 +109,65 @@ func TestResolveFIPS1403Encryption(t *testing.T) {
 	}
 }
 
+func TestResolveAzureContainerLinuxPersistedImages(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		instanceType string
+		imageType    *corev1.NodeSelectorRequirement
+		addCVM       bool
+		want         string
+	}{
+		{name: "legacy TL rejects SNP", instanceType: "SNP"},
+		{name: "legacy TL still supports ordinary instances", instanceType: "None", want: "legacy-tl"},
+		{name: "legacy TL still supports instances without discriminator", want: "legacy-tl"},
+		{name: "SNP skips legacy TL for explicit CVM", instanceType: "SNP", addCVM: true, want: "cvm"},
+		{name: "explicit TL rejects SNP", instanceType: "SNP", imageType: &corev1.NodeSelectorRequirement{Operator: corev1.NodeSelectorOpIn, Values: []string{"None"}}},
+		{name: "Exists does not explicitly require SNP", instanceType: "SNP", imageType: &corev1.NodeSelectorRequirement{Operator: corev1.NodeSelectorOpExists}},
+		{name: "NotIn does not explicitly require SNP", instanceType: "SNP", imageType: &corev1.NodeSelectorRequirement{Operator: corev1.NodeSelectorOpNotIn, Values: []string{"None"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			legacyRequirements := []corev1.NodeSelectorRequirement{
+				{Key: corev1.LabelArchStable, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.ArchitectureAmd64}},
+				{Key: v1beta1.LabelSKUHyperVGeneration, Operator: corev1.NodeSelectorOpIn, Values: []string{v1beta1.HyperVGenerationV2}},
+			}
+			instanceType := &cloudprovider.InstanceType{
+				Name:         "test-instance",
+				Requirements: scheduling.NewNodeSelectorRequirements(legacyRequirements...),
+			}
+			if tc.instanceType != "" {
+				instanceType.Requirements.Add(scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, tc.instanceType))
+			}
+			nodeClass := &v1beta1.AKSNodeClass{
+				Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)},
+				Status: v1beta1.AKSNodeClassStatus{Images: []v1beta1.NodeImage{{
+					ID: "legacy-tl", Requirements: legacyRequirements,
+				}}},
+			}
+			if tc.imageType != nil {
+				tc.imageType.Key = v1beta1.LabelSKUConfidentialComputingType
+				nodeClass.Status.Images[0].Requirements = append(nodeClass.Status.Images[0].Requirements, *tc.imageType)
+			}
+			if tc.addCVM {
+				nodeClass.Status.Images = append(nodeClass.Status.Images, v1beta1.NodeImage{
+					ID: "cvm",
+					Requirements: append(legacyRequirements, corev1.NodeSelectorRequirement{
+						Key: v1beta1.LabelSKUConfidentialComputingType, Operator: corev1.NodeSelectorOpIn, Values: []string{"SNP"},
+					}),
+				})
+			}
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+			imageID, err := NewDefaultResolver(nil, nil, nil, nil).ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+			if tc.want == "" {
+				g.Expect(err).To(MatchError(ContainSubstring("no compatible images found")))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(imageID).To(Equal(tc.want))
+		})
+	}
+}
+
 func prepareTestKubeletConfiguration(enableNodeHardening bool, provisionMode string) *bootstrap.KubeletConfiguration {
 	return prepareTestKubeletConfigurationWithOverrides(enableNodeHardening, provisionMode, nil)
 }

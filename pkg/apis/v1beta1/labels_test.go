@@ -22,7 +22,23 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
+
+func TestConfidentialComputingLabelIsInternal(t *testing.T) {
+	g := NewWithT(t)
+	label := v1beta1.LabelSKUConfidentialComputingType
+	g.Expect(v1beta1.RestrictedLabels.Has(label)).To(BeTrue())
+	g.Expect(karpv1.RestrictedLabels.Has(label)).To(BeTrue())
+	g.Expect(karpv1.WellKnownLabels.Has(label)).To(BeFalse())
+	g.Expect(v1beta1.AzureWellKnownLabels.Has(label)).To(BeFalse())
+	instanceRequirements := scheduling.NewRequirements(scheduling.NewRequirement(label, corev1.NodeSelectorOpIn, "SNP"))
+	g.Expect(scheduling.NewRequirements().Compatible(instanceRequirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels)).To(Succeed())
+	g.Expect(scheduling.NewRequirements(scheduling.NewRequirement(label, corev1.NodeSelectorOpIn, "None")).
+		Compatible(instanceRequirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels)).ToNot(Succeed())
+}
 
 func TestGetOSSKUFromImageFamily(t *testing.T) {
 	cases := []struct {

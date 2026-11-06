@@ -61,6 +61,41 @@ func TestKubeReservedResources(t *testing.T) {
 	}
 }
 
+func TestConfidentialComputingType(t *testing.T) {
+	for _, test := range []struct {
+		name, size, capability, expected string
+	}{
+		{expected: "None"},
+		{name: "standard_dc4as_v5", expected: "Unknown"},
+		{size: "ec4as_v5", expected: "Unknown"},
+		{capability: "sNp", expected: "SNP"},
+		{name: "Standard_D4s_v3", capability: "TDX", expected: "TDX"},
+		{capability: "NotSNP", expected: "NOTSNP"},
+		{capability: "SNP,TDX", expected: "SNP,TDX"},
+		{name: "Standard_DC4as_v5", capability: "None", expected: "Unknown"},
+		{size: "DC4as_cc_v5", expected: "Unknown"},
+		{size: "EC4as_cc_v5", capability: "None", expected: "Unknown"},
+		{size: "DC4as_cc_v5", capability: "SNP", expected: "SNP"},
+	} {
+		t.Run(fmt.Sprintf("%s/%s/%s", test.name, test.size, test.capability), func(t *testing.T) {
+			g := NewWithT(t)
+			sku := &skewer.SKU{}
+			if test.name != "" {
+				sku.Name = lo.ToPtr(test.name)
+			}
+			if test.size != "" {
+				sku.Size = lo.ToPtr(test.size)
+			}
+			if test.capability != "" {
+				sku.Capabilities = &[]compute.ResourceSkuCapabilities{
+					{Name: lo.ToPtr("confidentialcomputingtype"), Value: lo.ToPtr(test.capability)},
+				}
+			}
+			g.Expect(confidentialComputingType(sku)).To(Equal(test.expected))
+		})
+	}
+}
+
 func TestInstanceTypeMemoryReservations(t *testing.T) {
 	// Synthetic 10-CPU/42-GiB pods plus 1 CPU/3 GiB of per-node overhead.
 	requestsFor := func(pods int64) corev1.ResourceList {
