@@ -243,7 +243,6 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
 				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-				Expect(len(nodeClass.Status.Images)).To(Equal(3))
 				Expect(nodeClass.Status.Images).To(HaveExactElements(testCase.expectedImages(testCase.latestVersion)))
 				Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeImagesReady)).To(BeTrue())
 			})
@@ -496,7 +495,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		})
 	}
 
-	DescribeTable("should refresh legacy ACL requirements without upgrading images outside maintenance", func(fipsMode v1beta1.FIPSMode) {
+	DescribeTable("should refresh legacy requirements without upgrading existing images outside maintenance", func(family, kubernetesVersion string, fipsMode v1beta1.FIPSMode, cvmDefinition string) {
 		ctx = test.Options(test.OptionsFields{
 			UseSIG:            lo.ToPtr(true),
 			SIGSubscriptionID: lo.ToPtr("10945678-1234-1234-1234-123456789012"),
@@ -513,16 +512,19 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				Version:  lo.ToPtr(newSIGImageVersion),
 			})
 		}
-		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+		nodeClass.Spec.ImageFamily = lo.ToPtr(family)
 		nodeClass.Spec.FIPSMode = lo.ToPtr(fipsMode)
-		nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
-		nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
+		if family == v1beta1.AzureContainerLinuxImageFamily {
+			nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+		}
+		nodeClass.Status.KubernetesVersion = lo.ToPtr(kubernetesVersion)
 		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 		test.ApplySIGImagesWithVersion(nodeClass, newSIGImageVersion)
 		expectedImages := nodeClass.Status.Images
+		cvmIndex := len(expectedImages) - 1
 		test.ApplySIGImagesWithVersion(nodeClass, oldSIGImageVersion)
-		// Pre-upgrade status contains only TL images, without the new SNP/None discriminator.
-		nodeClass.Status.Images = nodeClass.Status.Images[:2]
+		// Pre-upgrade status contains only ordinary images, without the new SNP/None discriminator.
+		nodeClass.Status.Images = nodeClass.Status.Images[:cvmIndex]
 		for i := range nodeClass.Status.Images {
 			expectedImages[i].ID = nodeClass.Status.Images[i].ID
 			nodeClass.Status.Images[i].Requirements = lo.Filter(nodeClass.Status.Images[i].Requirements, func(req corev1.NodeSelectorRequirement, _ int) bool {
@@ -551,8 +553,17 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		Expect(lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)).To(Equal(newSIGImageVersion))
 		for i, image := range nodeClass.Status.Images {
 			expectedType := "None"
-			if i == 2 {
+			if i == cvmIndex {
 				expectedType = "SNP"
+				Expect(image.ID).To(HaveSuffix("/versions/" + newSIGImageVersion))
+			} else {
+				Expect(image.ID).To(HaveSuffix("/versions/" + oldSIGImageVersion))
+				if family != v1beta1.AzureContainerLinuxImageFamily {
+					Expect(lo.ContainsBy(image.Requirements, func(req corev1.NodeSelectorRequirement) bool {
+						return req.Key == v1beta1.LabelSKUConfidentialComputingType
+					})).To(BeFalse())
+					continue
+				}
 			}
 			Expect(image.Requirements).To(ContainElement(corev1.NodeSelectorRequirement{
 				Key: v1beta1.LabelSKUConfidentialComputingType, Operator: corev1.NodeSelectorOpIn, Values: []string{expectedType},
@@ -560,12 +571,8 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		}
 		imageID, err := resolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(imageID).To(Equal(expectedImages[2].ID))
-		definition := imagefamily.AzureContainerLinuxGen2CVMImageDefinition
-		if fipsMode == v1beta1.FIPSModeFIPS {
-			definition = imagefamily.AzureContainerLinuxGen2FIPSCVMImageDefinition
-		}
-		Expect(imageID).To(HaveSuffix("/images/" + definition + "/versions/" + newSIGImageVersion))
+		Expect(imageID).To(Equal(expectedImages[cvmIndex].ID))
+		Expect(imageID).To(HaveSuffix("/images/" + cvmDefinition + "/versions/" + newSIGImageVersion))
 		instanceType.Requirements[v1beta1.LabelSKUConfidentialComputingType] = scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, "None")
 		imageID, err = resolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
 		Expect(err).ToNot(HaveOccurred())
@@ -575,8 +582,11 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(nodeClass.Status.Images).To(HaveExactElements(expectedImages))
 	},
-		Entry("non-FIPS", v1beta1.FIPSModeDisabled),
-		Entry("FIPS", v1beta1.FIPSModeFIPS),
+		Entry("ACL non-FIPS", v1beta1.AzureContainerLinuxImageFamily, "1.34.0", v1beta1.FIPSModeDisabled, imagefamily.AzureContainerLinuxGen2CVMImageDefinition),
+		Entry("ACL FIPS", v1beta1.AzureContainerLinuxImageFamily, "1.34.0", v1beta1.FIPSModeFIPS, imagefamily.AzureContainerLinuxGen2FIPSCVMImageDefinition),
+		Entry("generic Ubuntu before 1.34", v1beta1.UbuntuImageFamily, "1.33.9", v1beta1.FIPSModeDisabled, imagefamily.Ubuntu2004Gen2CVMImageDefinition),
+		Entry("generic Ubuntu at 1.34", v1beta1.UbuntuImageFamily, "1.34.0", v1beta1.FIPSModeDisabled, imagefamily.Ubuntu2404Gen2CVMImageDefinition),
+		Entry("explicit Ubuntu2404", v1beta1.Ubuntu2404ImageFamily, "1.34.0", v1beta1.FIPSModeDisabled, imagefamily.Ubuntu2404Gen2CVMImageDefinition),
 	)
 
 	Context("FIPS Validation With UseSIG", func() {

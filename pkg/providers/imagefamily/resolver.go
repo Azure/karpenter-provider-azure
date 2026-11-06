@@ -347,10 +347,32 @@ func evictionGracePeriodMap(config *v1beta1.EvictionSoftGracePeriod) map[string]
 	return result
 }
 
-func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
+// GetSupportedImages composes the supported image variants for a node class configuration.
+func GetSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
 	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
 	imageFamily := GetImageFamily(familyName, fipsMode, trustedLaunch, kubernetesVersion, nil)
-	return imageFamily.DefaultImages(useSIG, fipsMode, trustedLaunch, kataEnabled)
+	images := imageFamily.DefaultImages(useSIG, fipsMode, trustedLaunch, kataEnabled)
+	family := lo.FromPtr(familyName)
+	supportsCVM := family == "" || family == v1beta1.UbuntuImageFamily || family == v1beta1.Ubuntu2404ImageFamily
+	if !supportsCVM || !useSIG || lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS || trustedLaunch || kataEnabled {
+		return images
+	}
+	// Generic Ubuntu uses 20.04 for CVM before 1.34, while ordinary nodes retain 22.04.
+	definition, distro := Ubuntu2004Gen2CVMImageDefinition, "aks-ubuntu-containerd-20.04-cvm-gen2"
+	if family == v1beta1.Ubuntu2404ImageFamily || UseUbuntu2404(kubernetesVersion) {
+		definition, distro = Ubuntu2404Gen2CVMImageDefinition, "aks-ubuntu-containerd-24.04-cvm-gen2"
+	}
+	return append(images, types.DefaultImageOutput{
+		GalleryResourceGroup: AKSUbuntuResourceGroup,
+		GalleryName:          AKSUbuntuGalleryName,
+		ImageDefinition:      definition,
+		Distro:               distro,
+		Requirements: scheduling.NewRequirements(
+			scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+			scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, corev1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+			scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, "SNP"),
+		),
+	})
 }
 
 func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
@@ -401,14 +423,14 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 	if err != nil {
 		return "", err
 	}
-	requiresSNP := lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily &&
-		instanceType.Requirements.Has(v1beta1.LabelSKUConfidentialComputingType) &&
+	requiresSNP := instanceType.Requirements.Has(v1beta1.LabelSKUConfidentialComputingType) &&
 		instanceType.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType).Has("SNP")
 	for _, availableImage := range nodeImages {
 		imageRequirements := scheduling.NewNodeSelectorRequirements(availableImage.Requirements...)
-		// Persisted pre-upgrade TL images lack the discriminator and must not match SNP instances.
-		if requiresSNP && (!imageRequirements.Has(v1beta1.LabelSKUConfidentialComputingType) ||
+		// Persisted pre-upgrade ordinary images lack the discriminator and must not match SNP instances.
+		if requiresSNP && (availableImage.ID == "" || !imageRequirements.Has(v1beta1.LabelSKUConfidentialComputingType) ||
 			imageRequirements.Get(v1beta1.LabelSKUConfidentialComputingType).Operator() != corev1.NodeSelectorOpIn ||
+			imageRequirements.Get(v1beta1.LabelSKUConfidentialComputingType).Len() != 1 ||
 			!imageRequirements.Get(v1beta1.LabelSKUConfidentialComputingType).Has("SNP")) {
 			continue
 		}

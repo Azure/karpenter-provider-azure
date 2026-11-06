@@ -84,6 +84,7 @@ func TestIsNvidiaEnabledSKU(t *testing.T) {
 		output bool
 	}{
 		{"Valid SKU - NC Series", "standard_nc6s_v3", true},
+		{"Confidential H100", "Standard_NCC40ads_H100_v5", true},
 		{"Valid SKU with Promo", "standard_nc6s_v2_promo", true},
 		{"Non-Existent SKU", "non_existent_sku", false},
 		{"Valid SKU - NV Series", "standard_nv6", true},
@@ -135,6 +136,7 @@ func TestIsGPUSKU(t *testing.T) {
 		output bool
 	}{
 		{"NVIDIA SKU - NC Series", "standard_nc6s_v3", true},
+		{"Confidential H100", "Standard_NCC40ads_H100_v5", true},
 		{"NVIDIA SKU with Promo", "standard_nc6_promo", true},
 		{"AMD SKU - V710", "standard_nv4ads_v710_v5", true},
 		{"AMD SKU - MI300X", "standard_nd96isr_mi300x_v5", true},
@@ -194,6 +196,7 @@ func TestGetGPUManufacturer(t *testing.T) {
 		output string
 	}{
 		{"NVIDIA SKU", "standard_nc6s_v3", "nvidia"},
+		{"Confidential H100", "Standard_NCC40ads_H100_v5", "nvidia"},
 		{"NVIDIA SKU with Promo", "standard_nc6_promo", "nvidia"},
 		{"NVIDIA SKU - RTX PRO 6000 BSE ds", "standard_nc144ds_xl_rtxpro6000bse_v6", "nvidia"},
 		{"NVIDIA SKU - RTX PRO 6000 BSE lds", "standard_nc144lds_xl_rtxpro6000bse_v6", "nvidia"},
@@ -220,6 +223,11 @@ func TestIsGPUSKUSupportedOnOS(t *testing.T) {
 		output bool
 	}{
 		{"NVIDIA on Ubuntu", "standard_nc6s_v3", "ubuntu", true},
+		{"Confidential H100 on Ubuntu", "Standard_NCC40ads_H100_v5", "ubuntu", true},
+		{"Confidential H100 on ACL", "Standard_NCC40ads_H100_v5", "azurecontainerlinux", false},
+		{"Confidential H100 on AzureLinux", "Standard_NCC40ads_H100_v5", "azurelinux", false},
+		{"Confidential H100 on AzureLinux3", "Standard_NCC40ads_H100_v5", "azurelinux3", false},
+		{"Confidential H100 on Windows", "Standard_NCC40ads_H100_v5", "windows", false},
 		{"NVIDIA on AzureLinux", "standard_nc6s_v3", "azurelinux", true},
 		{"NVIDIA Ubuntu-only on AzureLinux", "standard_nc6", "azurelinux", false},
 		{"NVIDIA Ubuntu-only on Ubuntu", "standard_nc6", "ubuntu", true},
@@ -253,6 +261,9 @@ func TestIsDriverInstallSupported(t *testing.T) {
 		output bool
 	}{
 		{"NVIDIA SKU - has support", "standard_nc6s_v3", true},
+		{"Confidential H100 - no support", "Standard_NCC40ads_H100_v5", false},
+		{"Confidential H100 normalized - no support", "standard_ncc40ads_h100_v5_promo", false},
+		{"Ordinary H100 - has support", "Standard_NC40ads_H100_v5", true},
 		{"NVIDIA SKU with Promo - has support", "standard_nc6s_v2_promo", true},
 		{"NVIDIA T4 - has support", "standard_nc4as_t4_v3", true},
 		{"NVIDIA A10 converged - has support", "standard_nv6ads_a10_v5", true},

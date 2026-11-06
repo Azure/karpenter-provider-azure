@@ -251,6 +251,27 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 		})
 	})
 
+	DescribeTable("configureMachineOSSKUAndFIPs",
+		func(family, kubernetesVersion string, confidentialTypes []string, expected armcontainerservice.OSSKU) {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(family)
+			if len(confidentialTypes) > 0 {
+				instanceType.Requirements.Add(scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, v1.NodeSelectorOpIn, confidentialTypes...))
+			}
+			osSKU, enableFIPS, err := configureMachineOSSKUAndFIPs(nodeClass, kubernetesVersion, instanceType)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(osSKU).To(Equal(lo.ToPtr(expected)))
+			Expect(enableFIPS).To(Equal(lo.ToPtr(false)))
+		},
+		Entry("generic Ubuntu SNP before 1.34", v1beta1.UbuntuImageFamily, "1.33.0", []string{"SNP"}, armcontainerservice.OSSKUUbuntu),
+		Entry("generic Ubuntu SNP at 1.34", v1beta1.UbuntuImageFamily, "1.34.0", []string{"SNP"}, armcontainerservice.OSSKUUbuntu2404),
+		Entry("explicit Ubuntu2404 SNP before 1.34", v1beta1.Ubuntu2404ImageFamily, "1.33.0", []string{"SNP"}, armcontainerservice.OSSKUUbuntu2404),
+		Entry("ordinary Ubuntu", v1beta1.UbuntuImageFamily, "1.33.0", []string{"None"}, armcontainerservice.OSSKUUbuntu2204),
+		Entry("missing confidential capability", v1beta1.UbuntuImageFamily, "1.33.0", []string{}, armcontainerservice.OSSKUUbuntu2204),
+		Entry("ambiguous confidential capability", v1beta1.UbuntuImageFamily, "1.33.0", []string{"None", "SNP"}, armcontainerservice.OSSKUUbuntu2204),
+		Entry("explicit Ubuntu2204 unchanged", v1beta1.Ubuntu2204ImageFamily, "1.33.0", []string{"SNP"}, armcontainerservice.OSSKUUbuntu2204),
+		Entry("ACL unchanged", v1beta1.AzureContainerLinuxImageFamily, "1.33.0", []string{"SNP"}, armcontainerservice.OSSKUAzureContainerLinux),
+	)
+
 	Context("configureOSSKUAndFIPs", func() {
 		Context("Ubuntu2204 Image Family", func() {
 			BeforeEach(func() {
@@ -1215,6 +1236,16 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 	})
 
 	Context("configureGPUProfile", func() {
+		It("should explicitly skip NVIDIA driver installation for the confidential H100 SKU", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}
+			instanceType.Name = "Standard_NCC40ads_H100_v5"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(profile.Driver).To(Equal(lo.ToPtr(armcontainerservice.GPUDriverNone)))
+			Expect(profile.Nvidia).To(BeNil())
+		})
+
 		It("should return GPUDriverInstall for NVIDIA SKU with default (Install) mode", func() {
 			instanceType.Name = "Standard_NC6s_v3"
 			profile := configureGPUProfile(instanceType, nodeClass)

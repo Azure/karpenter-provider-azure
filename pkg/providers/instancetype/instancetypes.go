@@ -609,9 +609,18 @@ func (p *DefaultProvider) isInstanceTypeSupportedByConfidentialComputing(sku *sk
 	if confidentialType == "None" {
 		return true
 	}
-	return confidentialType == skewer.ConfidentialComputingTypeSNP &&
-		params.ImageFamily == v1beta1.AzureContainerLinuxImageFamily && params.ManagedSIG && !params.KataEnabled &&
-		getArchitecture(architecture) == karpv1.ArchitectureAmd64 && sku.IsHyperVGen2Supported()
+	if confidentialType != skewer.ConfidentialComputingTypeSNP || !params.ManagedSIG || params.KataEnabled ||
+		getArchitecture(architecture) != karpv1.ArchitectureAmd64 || !sku.IsHyperVGen2Supported() {
+		return false
+	}
+	switch params.ImageFamily {
+	case v1beta1.AzureContainerLinuxImageFamily:
+		return true
+	case v1beta1.UbuntuImageFamily, v1beta1.Ubuntu2404ImageFamily:
+		return params.FIPSMode != v1beta1.FIPSModeFIPS && !params.TrustedLaunch
+	default:
+		return false
+	}
 }
 
 func confidentialComputingType(sku *skewer.SKU) string {
