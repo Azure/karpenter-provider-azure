@@ -46,15 +46,17 @@ type AzureResourceGraphBehavior struct {
 var _ azapi.AzureResourceGraphAPI = &AzureResourceGraphAPI{}
 
 type AzureResourceGraphAPI struct {
-	vmListQuery  string
-	nicListQuery string
+	vmListQuery                 string
+	nicListQuery                string
+	nicListQueryWithAKSMachines string
 	AzureResourceGraphBehavior
 }
 
 func NewAzureResourceGraphAPI(resourceGroup string, virtualMachinesAPI *VirtualMachinesAPI, networkInterfacesAPI *NetworkInterfacesAPI) *AzureResourceGraphAPI {
 	return &AzureResourceGraphAPI{
-		vmListQuery:  instance.GetVMListQueryBuilder(resourceGroup).String(),
-		nicListQuery: instance.GetNICListQueryBuilder(resourceGroup).String(),
+		vmListQuery:                 instance.GetVMListQueryBuilder(resourceGroup).String(),
+		nicListQuery:                instance.GetNICListQueryBuilder(resourceGroup, false).String(),
+		nicListQueryWithAKSMachines: instance.GetNICListQueryBuilder(resourceGroup, true).String(),
 		AzureResourceGraphBehavior: AzureResourceGraphBehavior{
 			VirtualMachinesAPI:   virtualMachinesAPI,
 			NetworkInterfacesAPI: networkInterfacesAPI,
@@ -98,6 +100,15 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 		nicList := lo.Filter(c.loadNicObjects(), func(nic armnetwork.Interface, _ int) bool {
 			return nic.Tags != nil && nic.Tags[launchtemplate.NodePoolTagKey] != nil &&
 				nic.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] == nil
+		})
+		resourceList := lo.Map(nicList, func(nic armnetwork.Interface, _ int) interface{} {
+			b, _ := json.Marshal(nic)
+			return convertBytesToInterface(b)
+		})
+		return resourceList
+	case c.nicListQueryWithAKSMachines:
+		nicList := lo.Filter(c.loadNicObjects(), func(nic armnetwork.Interface, _ int) bool {
+			return nic.Tags != nil && nic.Tags[launchtemplate.NodePoolTagKey] != nil
 		})
 		resourceList := lo.Map(nicList, func(nic armnetwork.Interface, _ int) interface{} {
 			b, _ := json.Marshal(nic)
