@@ -199,9 +199,19 @@ func configureHardwareProfile(instanceType *corecloudprovider.InstanceType, node
 		GpuProfile:      configureGPUProfile(instanceType, nodeClass),
 		UltraSsdEnabled: lo.ToPtr(ultraSSD),
 	}
-	// Send the partition size only when the guarded GPU profile enables managed MIG.
-	if hardware.GpuProfile != nil && hardware.GpuProfile.Nvidia != nil && hardware.GpuProfile.Nvidia.MigStrategy != nil {
-		hardware.GpuInstanceProfile = lo.ToPtr(armcontainerservice.GPUInstanceProfile(nodeClass.GetGPUInstanceProfile()))
+	// Single retains the scalar contract; Mixed uses a partition list instead.
+	if hardware.GpuProfile != nil && hardware.GpuProfile.Nvidia != nil {
+		switch lo.FromPtr(hardware.GpuProfile.Nvidia.MigStrategy) {
+		case armcontainerservice.MigStrategySingle:
+			hardware.GpuInstanceProfile = lo.ToPtr(armcontainerservice.GPUInstanceProfile(nodeClass.GetGPUInstanceProfile()))
+		case armcontainerservice.MigStrategyMixed:
+			// The same layout is applied to each GPU, not multiplied by the VM's GPU count.
+			_, partitions := utils.GetMIGProfile(instanceType.Name, nodeClass.GetGPUInstanceProfile())
+			hardware.GpuProfile.Nvidia.MigProfiles = make([]*armcontainerservice.GPUInstanceProfile, partitions)
+			for i := range hardware.GpuProfile.Nvidia.MigProfiles {
+				hardware.GpuProfile.Nvidia.MigProfiles[i] = lo.ToPtr(armcontainerservice.GPUInstanceProfile(nodeClass.GetGPUInstanceProfile()))
+			}
+		}
 	}
 	return hardware
 }

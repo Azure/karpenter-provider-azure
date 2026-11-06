@@ -1216,10 +1216,10 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 	})
 
 	Context("configureHardwareProfile", func() {
-		It("should map both static managed MIG settings for every supported profile", func() {
-			instanceType.Name = "Standard_NC24ads_A100_v4"
+		DescribeTable("should map both static managed MIG settings for every supported profile", func(sku string) {
+			instanceType.Name = sku
 			for _, strategy := range []v1beta1.MigStrategy{v1beta1.MigStrategySingle, v1beta1.MigStrategyMixed} {
-				for _, profile := range []v1beta1.GPUInstanceProfile{v1beta1.GPUInstanceProfileMIG1g, v1beta1.GPUInstanceProfileMIG2g, v1beta1.GPUInstanceProfileMIG3g, v1beta1.GPUInstanceProfileMIG4g, v1beta1.GPUInstanceProfileMIG7g} {
+				for profile, count := range map[v1beta1.GPUInstanceProfile]int{v1beta1.GPUInstanceProfileMIG1g: 7, v1beta1.GPUInstanceProfileMIG2g: 3, v1beta1.GPUInstanceProfileMIG3g: 2, v1beta1.GPUInstanceProfileMIG4g: 1, v1beta1.GPUInstanceProfileMIG7g: 1} {
 					nodeClass.Spec.GPU = &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{
 						ManagementMode:     lo.ToPtr(v1beta1.ManagementModeManaged),
 						MigStrategy:        lo.ToPtr(strategy),
@@ -1228,22 +1228,42 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					hardware := configureHardwareProfile(instanceType, nodeClass, true)
 					Expect(hardware.VMSize).To(Equal(lo.ToPtr(instanceType.Name)))
 					Expect(hardware.UltraSsdEnabled).To(Equal(lo.ToPtr(true)))
-					Expect(hardware.GpuInstanceProfile).To(Equal(lo.ToPtr(armcontainerservice.GPUInstanceProfile(profile))))
-					Expect(hardware.GpuProfile).To(Equal(&armcontainerservice.GPUProfile{
+					expectedGPU := &armcontainerservice.GPUProfile{
 						Driver: lo.ToPtr(armcontainerservice.GPUDriverInstall),
 						Nvidia: &armcontainerservice.NvidiaGPUProfile{
 							ManagementMode: lo.ToPtr(armcontainerservice.ManagementModeManaged),
 							MigStrategy:    lo.ToPtr(armcontainerservice.MigStrategy(strategy)),
 						},
-					}))
+					}
+					if strategy == v1beta1.MigStrategyMixed {
+						Expect(hardware.GpuInstanceProfile).To(BeNil())
+						for range count {
+							expectedGPU.Nvidia.MigProfiles = append(expectedGPU.Nvidia.MigProfiles, lo.ToPtr(armcontainerservice.GPUInstanceProfile(profile)))
+						}
+					} else {
+						Expect(hardware.GpuInstanceProfile).To(Equal(lo.ToPtr(armcontainerservice.GPUInstanceProfile(profile))))
+					}
+					Expect(hardware.GpuProfile).To(Equal(expectedGPU))
 					payload := lo.Must(json.Marshal(hardware))
 					var wire map[string]any
 					Expect(json.Unmarshal(payload, &wire)).To(Succeed())
-					Expect(wire["gpuInstanceProfile"]).To(Equal(string(profile)))
-					Expect(wire["gpuProfile"].(map[string]any)["nvidia"].(map[string]any)["migStrategy"]).To(Equal(string(strategy)))
+					nvidia := wire["gpuProfile"].(map[string]any)["nvidia"].(map[string]any)
+					Expect(nvidia["migStrategy"]).To(Equal(string(strategy)))
+					if strategy == v1beta1.MigStrategyMixed {
+						Expect(wire).ToNot(HaveKey("gpuInstanceProfile"))
+						Expect(nvidia["migProfiles"]).To(HaveLen(count))
+						Expect(nvidia["migProfiles"]).To(HaveEach(Equal(string(profile))))
+					} else {
+						Expect(wire["gpuInstanceProfile"]).To(Equal(string(profile)))
+						Expect(nvidia).ToNot(HaveKey("migProfiles"))
+					}
 				}
 			}
-		})
+		},
+			Entry("one GPU", "Standard_NC24ads_A100_v4"),
+			Entry("two GPUs", "Standard_NC48ads_A100_v4"),
+			Entry("eight GPUs", "Standard_ND96isr_H100_v5"),
+		)
 		DescribeTable("should omit both MIG fields when static managed MIG is not enabled",
 			func(sku string, mode *v1beta1.GPUMode, management *v1beta1.ManagementMode, strategy *v1beta1.MigStrategy, profile *v1beta1.GPUInstanceProfile) {
 				instanceType.Name = sku
@@ -1258,6 +1278,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				payload := string(lo.Must(json.Marshal(hardware)))
 				Expect(payload).ToNot(ContainSubstring("gpuInstanceProfile"))
 				Expect(payload).ToNot(ContainSubstring("migStrategy"))
+				Expect(payload).ToNot(ContainSubstring("migProfiles"))
 			},
 			Entry("default", "Standard_NC24ads_A100_v4", nil, nil, nil, nil),
 			Entry("managed default", "Standard_NC24ads_A100_v4", nil, lo.ToPtr(v1beta1.ManagementModeManaged), nil, nil),

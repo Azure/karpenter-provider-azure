@@ -782,7 +782,10 @@ func validateExistingAKSMachineForReuse(aksMachineName string, nodeClass *v1beta
 	}
 	// Reuse stamps the current NodeClass hash, so accepting a different immutable
 	// layout would hide the mismatch from drift and advertise the wrong GPU capacity.
-	actualStrategy, actualProfile := MIGConfigurationFromAKSMachine(existingAKSMachine)
+	actualStrategy, actualProfile, err := MIGConfigurationFromAKSMachine(existingAKSMachine)
+	if err != nil {
+		return fmt.Errorf("found existing AKS machine %s with invalid MIG configuration: %w", aksMachineName, err)
+	}
 	desiredStrategy := nodeClass.GetMigStrategy()
 	if desiredStrategy == "" {
 		desiredStrategy = v1beta1.MigStrategyNone

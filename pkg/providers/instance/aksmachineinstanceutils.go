@@ -154,17 +154,60 @@ func ultraSSDLabelFromAKSMachineTemplate(aksMachineTemplate *armcontainerservice
 	return fmt.Sprint(aksMachineTemplate != nil && aksMachineTemplate.Properties != nil && aksMachineTemplate.Properties.Hardware != nil && lo.FromPtr(aksMachineTemplate.Properties.Hardware.UltraSsdEnabled))
 }
 
-// MIGConfigurationFromAKSMachine returns the persisted layout, defaulting an omitted strategy to None.
-func MIGConfigurationFromAKSMachine(machine *armcontainerservice.Machine) (v1beta1.MigStrategy, v1beta1.GPUInstanceProfile) {
+// MIGConfigurationFromAKSMachine normalizes a persisted uniform layout, rejecting lists
+// that cannot be represented by the NodeClass scalar. An omitted strategy defaults to None.
+func MIGConfigurationFromAKSMachine(machine *armcontainerservice.Machine) (v1beta1.MigStrategy, v1beta1.GPUInstanceProfile, error) {
 	strategy := v1beta1.MigStrategyNone
-	if machine.Properties == nil || machine.Properties.Hardware == nil {
-		return strategy, ""
+	if machine == nil || machine.Properties == nil || machine.Properties.Hardware == nil {
+		return strategy, "", nil
 	}
 	hardware := machine.Properties.Hardware
-	if hardware.GpuProfile != nil && hardware.GpuProfile.Nvidia != nil && lo.FromPtr(hardware.GpuProfile.Nvidia.MigStrategy) != "" {
-		strategy = v1beta1.MigStrategy(*hardware.GpuProfile.Nvidia.MigStrategy)
+	var profiles []*armcontainerservice.GPUInstanceProfile
+	if hardware.GpuProfile != nil && hardware.GpuProfile.Nvidia != nil {
+		if lo.FromPtr(hardware.GpuProfile.Nvidia.MigStrategy) != "" {
+			strategy = v1beta1.MigStrategy(*hardware.GpuProfile.Nvidia.MigStrategy)
+		}
+		profiles = hardware.GpuProfile.Nvidia.MigProfiles
 	}
-	return strategy, v1beta1.GPUInstanceProfile(lo.FromPtr(hardware.GpuInstanceProfile))
+	if len(profiles) == 0 {
+		if strategy == v1beta1.MigStrategyMixed {
+			return strategy, "", fmt.Errorf("mixed MIG requires a per-GPU profile list")
+		}
+		return strategy, v1beta1.GPUInstanceProfile(lo.FromPtr(hardware.GpuInstanceProfile)), nil
+	}
+	if lo.FromPtr(hardware.GpuInstanceProfile) != "" {
+		return strategy, "", fmt.Errorf("MIG profile list conflicts with scalar gpuInstanceProfile")
+	}
+	profile, err := validateUniformMIGProfiles(lo.FromPtr(hardware.VMSize), strategy, profiles)
+	return strategy, profile, err
+}
+
+// validateUniformMIGProfiles accepts only a complete layout representable by a NodeClass.
+func validateUniformMIGProfiles(vmSize string, strategy v1beta1.MigStrategy, profiles []*armcontainerservice.GPUInstanceProfile) (v1beta1.GPUInstanceProfile, error) {
+	if len(profiles) == 0 {
+		return "", fmt.Errorf("MIG profile list is empty")
+	}
+	profile := v1beta1.GPUInstanceProfile(lo.FromPtr(profiles[0]))
+	_, partitions := utils.GetMIGProfile(vmSize, profile)
+	if partitions == 0 {
+		return "", fmt.Errorf("unsupported MIG profile %q for VM size %q", profile, vmSize)
+	}
+	switch strategy {
+	case v1beta1.MigStrategySingle:
+		partitions = 1 // The API may canonicalize the Single scalar to a singleton list.
+	case v1beta1.MigStrategyMixed:
+	default:
+		return "", fmt.Errorf("MIG profile list requires Single or Mixed strategy, got %q", strategy)
+	}
+	if int64(len(profiles)) != partitions {
+		return "", fmt.Errorf("MIG profile list has %d partitions per GPU, expected %d for %s %s", len(profiles), partitions, strategy, profile)
+	}
+	for _, p := range profiles {
+		if p == nil || v1beta1.GPUInstanceProfile(*p) != profile {
+			return "", fmt.Errorf("MIG profile list must be uniform and contain no nil entries")
+		}
+	}
+	return profile, nil
 }
 
 // Expect AKS machine struct to be fully populated as if it comes from GET.
