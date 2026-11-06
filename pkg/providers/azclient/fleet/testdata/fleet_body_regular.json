@@ -1,0 +1,119 @@
+{
+  "identity": {
+    "type": "UserAssigned",
+    "userAssignedIdentities": {
+      "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id1": {}
+    }
+  },
+  "location": "eastus",
+  "properties": {
+    "computeProfile": {
+      "baseVirtualMachineProfile": {
+        "extensionProfile": {
+          "extensions": [
+            {
+              "name": "CustomScript",
+              "properties": {
+                "autoUpgradeMinorVersion": true,
+                "publisher": "Microsoft.Azure.Extensions",
+                "settings": {
+                  "commandToExecute": "echo sample"
+                },
+                "type": "CustomScript",
+                "typeHandlerVersion": "2.1"
+              }
+            }
+          ]
+        },
+        "networkProfile": {
+          "networkApiVersion": "2020-11-01",
+          "networkInterfaceConfigurations": [
+            {
+              "name": "nic",
+              "properties": {
+                "deleteOption": "Delete",
+                "enableAcceleratedNetworking": true,
+                "enableIPForwarding": false,
+                "ipConfigurations": [
+                  {
+                    "name": "ipconfig1",
+                    "properties": {
+                      "loadBalancerBackendAddressPools": [
+                        {
+                          "id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/loadBalancers/lb/backendAddressPools/pool"
+                        }
+                      ],
+                      "primary": true,
+                      "subnet": {
+                        "id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet1"
+                      }
+                    }
+                  }
+                ],
+                "networkSecurityGroup": {
+                  "id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg1"
+                },
+                "primary": true
+              }
+            }
+          ]
+        },
+        "osProfile": {
+          "adminUsername": "azureuser",
+          "computerNamePrefix": "aks-",
+          "customData": "Y3VzdG9tZGF0YQ==",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true,
+            "ssh": {
+              "publicKeys": [
+                {
+                  "keyData": "ssh-rsa AAAAB3...",
+                  "path": "/home/azureuser/.ssh/authorized_keys"
+                }
+              ]
+            }
+          }
+        },
+        "storageProfile": {
+          "imageReference": {
+            "communityGalleryImageId": "/CommunityGalleries/sample/Images/ubuntu/Versions/1.0.0"
+          },
+          "osDisk": {
+            "createOption": "FromImage",
+            "diskSizeGB": 128,
+            "managedDisk": {
+              "diskEncryptionSet": {
+                "id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/diskEncryptionSets/des"
+              },
+              "storageAccountType": "Standard_LRS"
+            },
+            "osType": "Linux"
+          }
+        }
+      }
+    },
+    "mode": "Launch",
+    "regularPriorityProfile": {
+      "allocationStrategy": "LowestPrice",
+      "capacity": 5,
+      "minCapacity": 0
+    },
+    "vmNamePrefix": "aks",
+    "vmSizesProfile": [
+      {
+        "name": "Standard_D4s_v3"
+      },
+      {
+        "name": "Standard_D8s_v3"
+      }
+    ]
+  },
+  "tags": {
+    "environment": "sample",
+    "karpenter.sh_nodepool": "default"
+  },
+  "zones": [
+    "1",
+    "2"
+  ]
+}

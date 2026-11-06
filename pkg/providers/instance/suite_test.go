@@ -18,6 +18,7 @@ package instance_test
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"time"
 
 	"github.com/awslabs/operatorpkg/object"
+	corestatus "github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -42,6 +44,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
@@ -52,6 +55,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computefleet/armcomputefleet/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute" //nolint:staticcheck // deprecated package used by the SKU fakes
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
@@ -59,6 +63,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/fleet"
 	instancemetrics "github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -82,6 +87,12 @@ var cloudProviderNonZonal *cloudprovider.CloudProvider
 var fakeClock *clock.FakeClock
 var cluster *state.Cluster
 var coreProvisioner *provisioning.Provisioner
+
+type fleetCandidateRankerFunc func(context.Context, []allocationstrategy.InstanceOffering, scheduling.Requirements) []allocationstrategy.InstanceOffering
+
+func (f fleetCandidateRankerFunc) FilterInstanceOfferings(ctx context.Context, instanceOfferings []allocationstrategy.InstanceOffering, requirements scheduling.Requirements) []allocationstrategy.InstanceOffering {
+	return f(ctx, instanceOfferings, requirements)
+}
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -940,14 +951,20 @@ var _ = Describe("VMInstanceProvider", func() {
 				)
 				Expect(err).NotTo(HaveOccurred())
 				body, err := fleet.BuildFleetBody(&fleet.FleetVMProvisionRequest{
-					NetworkPlugin:     fleetOptions.NetworkPlugin,
-					NetworkPluginMode: fleetOptions.NetworkPluginMode,
-					MaxPods:           utils.GetMaxPods(nodeClass, fleetOptions.NetworkPlugin, fleetOptions.NetworkPluginMode),
-					LaunchTemplate:    template,
-					AcceptableSKUs:    candidates,
-					ResolvedSKUs:      resolvedSKUs,
-					CapacityType:      karpv1.CapacityTypeOnDemand,
-					AdminUsername:     "azureuser",
+					NetworkPlugin:              fleetOptions.NetworkPlugin,
+					NetworkPluginMode:          fleetOptions.NetworkPluginMode,
+					MaxPods:                    utils.GetMaxPods(nodeClass, fleetOptions.NetworkPlugin, fleetOptions.NetworkPluginMode),
+					LaunchTemplate:             template,
+					TrustedLaunchEnabled:       nodeClass.IsTrustedLaunchEnabled(),
+					SecureBootEnabled:          nodeClass.IsSecureBootEnabled(),
+					VTPMEnabled:                nodeClass.IsVTPMEnabled(),
+					CapacityReservationGroupID: nodeClass.GetCapacityReservationGroupID(),
+					AcceptableSKUs:             candidates,
+					ResolvedSKUs:               resolvedSKUs,
+					CapacityType:               karpv1.CapacityTypeOnDemand,
+					AdminUsername:              "azureuser",
+					SSHPublicKey:               "ssh-rsa AAAAB3...",
+					Location:                   "eastus",
 				}, 1, template.Tags)
 				Expect(err).NotTo(HaveOccurred())
 
@@ -985,6 +1002,419 @@ var _ = Describe("VMInstanceProvider", func() {
 		Entry("with encryption at host enabled", &v1beta1.Security{EncryptionAtHost: lo.ToPtr(true)}),
 		Entry("with encryption at host disabled", &v1beta1.Security{EncryptionAtHost: lo.ToPtr(false)}),
 	)
+
+	Context("FleetRequestBuilder", func() {
+		var fleetCtx context.Context
+
+		newFleetRequestBuilder := func(azEnv *test.Environment, rankers ...instancemetrics.FleetCandidateRanker) *instancemetrics.FleetRequestBuilder {
+			ranker := instancemetrics.FleetCandidateRanker(azEnv.AllocationStrategyProvider.(*allocationstrategy.DefaultProvider))
+			if len(rankers) > 0 {
+				ranker = rankers[0]
+			}
+			return instancemetrics.NewFleetRequestBuilder(
+				ranker,
+				azEnv.InstanceTypesProvider,
+				azEnv.LaunchTemplateProvider,
+				azEnv.LoadBalancerProvider,
+				azEnv.NetworkSecurityGroupProvider,
+				fake.Region,
+				"",
+			)
+		}
+
+		newFleetOffering := func(zone, capacityType, placementScope string, available bool) *corecloudprovider.Offering {
+			return &corecloudprovider.Offering{
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelTopologyZone, v1.NodeSelectorOpIn, zone),
+					scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, v1.NodeSelectorOpIn, capacityType),
+					scheduling.NewRequirement(v1beta1.LabelPlacementScope, v1.NodeSelectorOpIn, placementScope),
+				),
+				Available: available,
+			}
+		}
+
+		BeforeEach(func() {
+			fleetOptions := *options.FromContext(ctx)
+			fleetOptions.UseSIG = false
+			fleetCtx = options.ToContext(ctx, &fleetOptions)
+			test.ApplyDefaultStatus(nodeClass, env, false)
+		})
+
+		It("should build a zonal Fleet request from the NodeClaim's requested zone", func() {
+			zone := fake.Region + "-2"
+			nodeClaim.Spec.Requirements = append(nodeClaim.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{zone},
+			})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).NotTo(HaveOccurred())
+
+			req, body, err := newFleetRequestBuilder(azureEnv).Build(fleetCtx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(req.FleetBody).To(BeIdenticalTo(body))
+			Expect(req.NodeClaimName).To(Equal(nodeClaim.Name))
+			Expect(req.NodePoolName).To(Equal(nodePool.Name))
+			Expect(req.AcceptableZones).To(Equal([]string{zone}))
+			Expect(body.Zones).To(Equal([]*string{lo.ToPtr("2")}))
+			Expect(req.AcceptableSKUs).NotTo(BeEmpty())
+			Expect(len(req.AcceptableSKUs)).To(BeNumerically("<=", 10))
+			Expect(req.ResolvedSKUs).To(HaveLen(len(req.AcceptableSKUs)))
+			actualSKUs := lo.Map(body.Properties.VMSizesProfile, func(sku *armcomputefleet.VMSizeProfile, _ int) string {
+				return lo.FromPtr(sku.Name)
+			})
+			Expect(actualSKUs).To(ConsistOf(req.AcceptableSKUs))
+			Expect(body.Tags).To(HaveKeyWithValue(launchtemplate.NodePoolTagKey, lo.ToPtr(nodePool.Name)))
+		})
+
+		It("should include all NodeClaim-compatible zones from ranked offerings", func() {
+			zone1, zone2 := fake.Region+"-1", fake.Region+"-2"
+			nodeClaim.Spec.Requirements = append(nodeClaim.Spec.Requirements,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{zone1, zone2},
+				},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand},
+				},
+			)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).NotTo(HaveOccurred())
+			instanceTypes = lo.Filter(instanceTypes, func(instanceType *corecloudprovider.InstanceType, _ int) bool {
+				return instanceType.Name == "Standard_D2s_v3" || instanceType.Name == "Standard_D4s_v3"
+			})
+			Expect(instanceTypes).To(HaveLen(2))
+
+			req, body, err := newFleetRequestBuilder(azureEnv).Build(fleetCtx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(req.AcceptableSKUs).To(ConsistOf("Standard_D2s_v3", "Standard_D4s_v3"))
+			Expect(req.AcceptableZones).To(Equal([]string{zone1, zone2}))
+			Expect(body.Zones).To(Equal([]*string{lo.ToPtr("1"), lo.ToPtr("2")}))
+		})
+
+		It("should build a regional Fleet request without zones in a non-zonal region", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProviderNonZonal.GetInstanceTypes(ctx, nodePool)
+			Expect(err).NotTo(HaveOccurred())
+
+			req, body, err := newFleetRequestBuilder(azureEnvNonZonal).Build(fleetCtx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(req.AcceptableZones).To(Equal([]string{zones.Regional}))
+			Expect(body.Zones).To(BeNil())
+			Expect(req.AcceptableSKUs).NotTo(BeEmpty())
+		})
+
+		It("should use the top-ranked offering's capacity type", func() {
+			nodeClaim.Spec.Requirements = append(nodeClaim.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot},
+			})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).NotTo(HaveOccurred())
+
+			req, body, err := newFleetRequestBuilder(azureEnv).Build(fleetCtx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(req.CapacityType).To(Equal(karpv1.CapacityTypeSpot))
+			Expect(body.Properties.SpotPriorityProfile).NotTo(BeNil())
+			Expect(body.Properties.SpotPriorityProfile.Capacity).To(Equal(lo.ToPtr(int32(1))))
+			Expect(body.Properties.RegularPriorityProfile).To(BeNil())
+		})
+
+		DescribeTable("should limit ranked SKUs and their zones to the first ten candidates",
+			func(candidateCount, expectedCount int) {
+				nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+				baseSKU, found := lo.Find(fake.ResourceSkus[fake.Region], func(sku compute.ResourceSku) bool {
+					return lo.FromPtr(sku.Name) == "Standard_D2s_v3"
+				})
+				Expect(found).To(BeTrue())
+
+				skuNames := make([]string, 0, candidateCount)
+				for i := 0; i < candidateCount; i++ {
+					size := fmt.Sprintf("D%ds_v3", 110-i)
+					name := "Standard_" + size
+					sku := baseSKU
+					sku.Name = lo.ToPtr(name)
+					sku.Size = lo.ToPtr(size)
+					azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, sku)
+					skuNames = append(skuNames, name)
+				}
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+				Expect(err).NotTo(HaveOccurred())
+
+				zone1, zone2, zone3 := fake.Region+"-1", fake.Region+"-2", fake.Region+"-3"
+				candidates := make([]allocationstrategy.InstanceOffering, 0, candidateCount)
+				for i, name := range skuNames {
+					instanceType, ok := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+						return instanceType.Name == name
+					})
+					Expect(ok).To(BeTrue(), "expected instance type %s", name)
+					zone := zone1
+					switch i {
+					case 1:
+						zone = zone2
+					case candidateCount - 1:
+						zone = zone3
+					}
+					candidates = append(candidates, allocationstrategy.InstanceOffering{
+						InstanceType: instanceType,
+						Offerings: []*corecloudprovider.Offering{
+							newFleetOffering(zone, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, true),
+						},
+					})
+				}
+				forcedRanker := fleetCandidateRankerFunc(func(context.Context, []allocationstrategy.InstanceOffering, scheduling.Requirements) []allocationstrategy.InstanceOffering {
+					return candidates
+				})
+				req, body, err := newFleetRequestBuilder(azureEnv, forcedRanker).Build(fleetCtx, nodeClass, nodeClaim, instanceTypes)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(req.AcceptableSKUs).To(Equal(skuNames[:expectedCount]))
+				Expect(req.ResolvedSKUs).To(HaveLen(expectedCount))
+				actualSKUs := lo.Map(body.Properties.VMSizesProfile, func(sku *armcomputefleet.VMSizeProfile, _ int) string {
+					return lo.FromPtr(sku.Name)
+				})
+				Expect(actualSKUs).To(ConsistOf(skuNames[:expectedCount]))
+
+				expectedZones := []string{zone1, zone2}
+				expectedARMZones := []*string{lo.ToPtr("1"), lo.ToPtr("2")}
+				if candidateCount == expectedCount {
+					expectedZones = append(expectedZones, zone3)
+					expectedARMZones = append(expectedARMZones, lo.ToPtr("3"))
+				}
+				Expect(req.AcceptableZones).To(Equal(expectedZones))
+				Expect(body.Zones).To(Equal(expectedARMZones))
+			},
+			Entry("fewer than ten candidates", 9, 9),
+			Entry("exactly ten candidates", 10, 10),
+			Entry("more than ten candidates", 11, 10),
+		)
+
+		It("should include available zones from all selected SKUs", func() {
+			zone1, zone2, zone3 := fake.Region+"-1", fake.Region+"-2", fake.Region+"-3"
+			nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+			nodeClaim.Spec.Requirements = append(nodeClaim.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{zone1, zone2},
+			})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).NotTo(HaveOccurred())
+			instanceTypes = lo.Filter(instanceTypes, func(instanceType *corecloudprovider.InstanceType, _ int) bool {
+				return instanceType.Name == "Standard_D2s_v3" || instanceType.Name == "Standard_D4s_v3"
+			})
+			Expect(instanceTypes).To(HaveLen(2))
+
+			ranked := azureEnv.AllocationStrategyProvider.(*allocationstrategy.DefaultProvider).FilterInstanceOfferings(
+				fleetCtx,
+				allocationstrategy.NewInstanceOfferings(instanceTypes),
+				scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
+			)
+			Expect(len(ranked)).To(BeNumerically(">=", 2))
+			topOffering := newFleetOffering(zone1, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, true)
+
+			forcedRanker := fleetCandidateRankerFunc(func(context.Context, []allocationstrategy.InstanceOffering, scheduling.Requirements) []allocationstrategy.InstanceOffering {
+				return []allocationstrategy.InstanceOffering{
+					{InstanceType: ranked[0].InstanceType, Offerings: []*corecloudprovider.Offering{topOffering}},
+					{InstanceType: ranked[1].InstanceType, Offerings: []*corecloudprovider.Offering{
+						newFleetOffering(zone2, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, true),
+						newFleetOffering(zone2, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, true),
+						newFleetOffering(zone3, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false),
+					}},
+				}
+			})
+			req, body, err := newFleetRequestBuilder(azureEnv, forcedRanker).Build(fleetCtx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(req.AcceptableSKUs).To(Equal([]string{ranked[0].InstanceType.Name, ranked[1].InstanceType.Name}))
+			Expect(req.AcceptableZones).To(Equal([]string{zone1, zone2}))
+			Expect(body.Zones).To(Equal([]*string{lo.ToPtr("1"), lo.ToPtr("2")}))
+			actualSKUs := lo.Map(body.Properties.VMSizesProfile, func(sku *armcomputefleet.VMSizeProfile, _ int) string {
+				return lo.FromPtr(sku.Name)
+			})
+			Expect(actualSKUs).To(ConsistOf(ranked[0].InstanceType.Name, ranked[1].InstanceType.Name))
+			Expect(topOffering.Requirements.Get(v1.LabelTopologyZone).Any()).To(Equal(zone1))
+		})
+
+		It("should not stamp one SKU's CPU, memory, or kubelet reservations into the shared template", func() {
+			nodeClaim.Spec.Requirements = append(nodeClaim.Spec.Requirements,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: v1beta1.LabelSKUCPU, Operator: v1.NodeSelectorOpIn, Values: []string{"2", "4"},
+				},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: v1beta1.LabelSKUMemory, Operator: v1.NodeSelectorOpIn, Values: []string{"8192", "16384"},
+				},
+			)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).NotTo(HaveOccurred())
+			instanceTypes = lo.Filter(instanceTypes, func(instanceType *corecloudprovider.InstanceType, _ int) bool {
+				return instanceType.Name == "Standard_D2s_v3" || instanceType.Name == "Standard_D4s_v3"
+			})
+			Expect(instanceTypes).To(HaveLen(2))
+
+			req, _, err := newFleetRequestBuilder(azureEnv).Build(fleetCtx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(req.AcceptableSKUs).To(ConsistOf("Standard_D2s_v3", "Standard_D4s_v3"))
+
+			userData, err := base64.StdEncoding.DecodeString(req.LaunchTemplate.ScriptlessCustomData)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(userData)).NotTo(ContainSubstring(v1beta1.LabelSKUCPU))
+			Expect(string(userData)).NotTo(ContainSubstring(v1beta1.LabelSKUMemory))
+			Expect(string(userData)).NotTo(ContainSubstring("kubeReserved"))
+			Expect(string(userData)).NotTo(ContainSubstring("systemReserved"))
+		})
+
+		It("should exclude SKUs without an offering matching the selected capacity type and placement scope", func() {
+			nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).NotTo(HaveOccurred())
+			instanceTypes = lo.Filter(instanceTypes, func(instanceType *corecloudprovider.InstanceType, _ int) bool {
+				return instanceType.Name == "Standard_D2s_v3" || instanceType.Name == "Standard_D4s_v3"
+			})
+			Expect(instanceTypes).To(HaveLen(2))
+			ranked := azureEnv.AllocationStrategyProvider.(*allocationstrategy.DefaultProvider).FilterInstanceOfferings(
+				fleetCtx,
+				allocationstrategy.NewInstanceOfferings(instanceTypes),
+				scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
+			)
+			Expect(ranked).To(HaveLen(2))
+			zone1, zone2, zone3 := fake.Region+"-1", fake.Region+"-2", fake.Region+"-3"
+			forcedRanker := fleetCandidateRankerFunc(func(context.Context, []allocationstrategy.InstanceOffering, scheduling.Requirements) []allocationstrategy.InstanceOffering {
+				return []allocationstrategy.InstanceOffering{
+					{InstanceType: ranked[0].InstanceType, Offerings: []*corecloudprovider.Offering{
+						newFleetOffering(zone1, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, true),
+						newFleetOffering(zone3, karpv1.CapacityTypeSpot, v1beta1.PlacementScopeZonal, true),
+					}},
+					{InstanceType: ranked[1].InstanceType, Offerings: []*corecloudprovider.Offering{
+						newFleetOffering(zone2, karpv1.CapacityTypeSpot, v1beta1.PlacementScopeZonal, true),
+						newFleetOffering(zones.Regional, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeRegional, true),
+					}},
+				}
+			})
+			req, _, err := newFleetRequestBuilder(azureEnv, forcedRanker).Build(fleetCtx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(req.AcceptableSKUs).To(Equal([]string{ranked[0].InstanceType.Name}))
+			Expect(req.AcceptableZones).To(Equal([]string{zone1}))
+		})
+
+		It("should return a NodeClassNotReady error when cluster FIPS is enabled and the NodeClass is not FIPS", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).NotTo(HaveOccurred())
+			fipsOptions := *options.FromContext(fleetCtx)
+			fipsOptions.EnableFIPS = true
+			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeDisabled)
+
+			req, body, err := newFleetRequestBuilder(azureEnv).Build(options.ToContext(fleetCtx, &fipsOptions), nodeClass, nodeClaim, instanceTypes)
+			Expect(corecloudprovider.IsNodeClassNotReadyError(err)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring("spec.fipsMode must be set to FIPS"))
+			Expect(req).To(BeNil())
+			Expect(body).To(BeNil())
+		})
+
+		It("should return a NodeClassNotReady error when the NodeClass is not ready", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).NotTo(HaveOccurred())
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "ValidationFailed", "test validation failure")
+			Expect(nodeClass.StatusConditions().Get(corestatus.ConditionReady).IsFalse()).To(BeTrue())
+
+			req, body, err := newFleetRequestBuilder(azureEnv).Build(fleetCtx, nodeClass, nodeClaim, instanceTypes)
+			Expect(corecloudprovider.IsNodeClassNotReadyError(err)).To(BeTrue())
+			Expect(req).To(BeNil())
+			Expect(body).To(BeNil())
+		})
+
+		It("should return a CreateError when NodeClass readiness is Unknown", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).NotTo(HaveOccurred())
+			nodeClass.StatusConditions().SetUnknown(corestatus.ConditionReady)
+
+			req, body, err := newFleetRequestBuilder(azureEnv).Build(fleetCtx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
+			Expect(err.Error()).To(ContainSubstring("resolving NodeClass readiness, NodeClass is in Ready=Unknown"))
+			Expect(req).To(BeNil())
+			Expect(body).To(BeNil())
+		})
+
+		Context("Trusted Launch", func() {
+			var instanceTypes []*corecloudprovider.InstanceType
+
+			BeforeEach(func() {
+				nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				var err error
+				instanceTypes, err = cloudProvider.GetInstanceTypes(ctx, nodePool)
+				Expect(err).NotTo(HaveOccurred())
+				instanceTypes = lo.Filter(instanceTypes, func(instanceType *corecloudprovider.InstanceType, _ int) bool {
+					return instanceType.Name == "Standard_D2s_v3" || instanceType.Name == "Standard_D4s_v3"
+				})
+				Expect(instanceTypes).To(HaveLen(2))
+				nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+				// Trusted Launch NodeClasses resolve to the Trusted Launch image variant.
+				for i := range nodeClass.Status.Images {
+					nodeClass.Status.Images[i].ID = strings.Replace(nodeClass.Status.Images[i].ID, "/2204gen2containerd/", "/2204gen2TLcontainerd/", 1)
+				}
+			})
+
+			AfterEach(func() {
+				azureEnv.SKUsAPI.AdditionalSKUs = nil
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+			})
+
+			// Re-adds the fake SKU with TrustedLaunchDisabled=True; the later entry replaces the cached SKU.
+			disableTrustedLaunchForSKUs := func(skuNames ...string) {
+				for _, sku := range fake.ResourceSkus[fake.Region] {
+					if !lo.Contains(skuNames, lo.FromPtr(sku.Name)) {
+						continue
+					}
+					capabilities := lo.Reject(lo.FromPtr(sku.Capabilities), func(capability compute.ResourceSkuCapabilities, _ int) bool {
+						return lo.FromPtr(capability.Name) == "TrustedLaunchDisabled"
+					})
+					capabilities = append(capabilities, compute.ResourceSkuCapabilities{Name: lo.ToPtr("TrustedLaunchDisabled"), Value: lo.ToPtr("True")})
+					sku.Capabilities = &capabilities
+					azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, sku)
+				}
+				Expect(azureEnv.SKUsAPI.AdditionalSKUs).To(HaveLen(len(skuNames)))
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+			}
+
+			It("should exclude SKUs that do not support Trusted Launch", func() {
+				disableTrustedLaunchForSKUs("Standard_D4s_v3")
+
+				req, body, err := newFleetRequestBuilder(azureEnv).Build(fleetCtx, nodeClass, nodeClaim, instanceTypes)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(req.AcceptableSKUs).To(Equal([]string{"Standard_D2s_v3"}))
+				Expect(body.Properties.ComputeProfile.BaseVirtualMachineProfile.SecurityProfile.SecurityType).To(Equal(lo.ToPtr(armcomputefleet.SecurityTypesTrustedLaunch)))
+			})
+
+			It("should return an insufficient capacity error when no SKU supports Trusted Launch", func() {
+				disableTrustedLaunchForSKUs("Standard_D2s_v3", "Standard_D4s_v3")
+
+				req, body, err := newFleetRequestBuilder(azureEnv).Build(fleetCtx, nodeClass, nodeClaim, instanceTypes)
+				Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
+				Expect(err.Error()).To(ContainSubstring("Trusted Launch"))
+				Expect(req).To(BeNil())
+				Expect(body).To(BeNil())
+			})
+		})
+
+		It("should return an insufficient capacity error when no instance types are available", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			req, body, err := newFleetRequestBuilder(azureEnv).Build(fleetCtx, nodeClass, nodeClaim, nil)
+			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
+			Expect(req).To(BeNil())
+			Expect(body).To(BeNil())
+		})
+	})
 
 	Context("EncryptionAtHost", func() {
 		It("should create VM with EncryptionAtHost enabled when specified in AKSNodeClass", func() {

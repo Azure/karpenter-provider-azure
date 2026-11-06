@@ -19,6 +19,8 @@ package fleet
 import (
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computefleet/armcomputefleet/v2"
@@ -29,10 +31,11 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 const (
-	vmNamePrefix       = "aks"
+	vmNamePrefix       = "aks-"
 	computerNamePrefix = "aks-"
 	nicConfigName      = "nic"
 	sshKeyPathTemplate = "/home/%s/.ssh/authorized_keys"
@@ -44,10 +47,17 @@ func BuildFleetBody(req *FleetVMProvisionRequest, targetCapacity int32, tags map
 	if req == nil || req.LaunchTemplate == nil {
 		return nil, fmt.Errorf("building Fleet body: request and launch template are required")
 	}
+	if err := validateFleetRequest(req, targetCapacity); err != nil {
+		return nil, fmt.Errorf("building Fleet body: %w", err)
+	}
 	if len(req.AcceptableSKUs) == 0 {
 		return nil, fmt.Errorf("building Fleet body: no candidate SKUs")
 	}
-	req, err := filterSKUsForEncryptionAtHost(req)
+	armZones, err := buildZones(req.AcceptableZones)
+	if err != nil {
+		return nil, fmt.Errorf("building Fleet body: %w", err)
+	}
+	req, err = filterSKUsForEncryptionAtHost(req)
 	if err != nil {
 		return nil, fmt.Errorf("building Fleet body: %w", err)
 	}
@@ -55,12 +65,50 @@ func BuildFleetBody(req *FleetVMProvisionRequest, targetCapacity int32, tags map
 	fleet := &armcomputefleet.Fleet{
 		Location:   lo.ToPtr(req.Location),
 		Tags:       tags,
-		Zones:      buildZones(req.AcceptableZones),
+		Zones:      armZones,
 		Identity:   buildIdentity(req.NodeIdentities),
 		Properties: buildFleetProperties(req, req.LaunchTemplate, targetCapacity),
 	}
-
 	return fleet, nil
+}
+
+func validateFleetRequest(req *FleetVMProvisionRequest, targetCapacity int32) error {
+	if targetCapacity <= 0 {
+		return fmt.Errorf("target capacity must be positive")
+	}
+	if req.Location == "" {
+		return fmt.Errorf("location is required")
+	}
+	if err := validateFleetComputeProfile(req); err != nil {
+		return err
+	}
+	if req.NetworkPlugin == consts.NetworkPluginAzure && req.NetworkPluginMode != consts.NetworkPluginModeOverlay &&
+		(req.MaxPods < 1 || req.MaxPods > consts.DefaultOverlayMaxPods) {
+		return fmt.Errorf("max pods must be between 1 and %d for Azure node subnet networking", consts.DefaultOverlayMaxPods)
+	}
+	return nil
+}
+
+func validateFleetComputeProfile(req *FleetVMProvisionRequest) error {
+	if req.LaunchTemplate.ImageID == "" {
+		return fmt.Errorf("launch template image ID is required")
+	}
+	if req.LaunchTemplate.SubnetID == "" {
+		return fmt.Errorf("launch template subnet ID is required")
+	}
+	if req.AdminUsername == "" || req.SSHPublicKey == "" {
+		return fmt.Errorf("linux admin username and SSH public key are required")
+	}
+	if req.CapacityType != karpv1.CapacityTypeSpot && req.CapacityType != karpv1.CapacityTypeOnDemand {
+		return fmt.Errorf("unsupported capacity type %q", req.CapacityType)
+	}
+	if req.LaunchTemplate.IsWindows {
+		return fmt.Errorf("windows launch templates are not supported by Fleet")
+	}
+	if req.LaunchTemplate.EnableFIPS1403Encryption {
+		return fmt.Errorf("fleet SDK does not support FIPS 140-3 encryption")
+	}
+	return nil
 }
 
 func filterSKUsForEncryptionAtHost(req *FleetVMProvisionRequest) (*FleetVMProvisionRequest, error) {
@@ -84,19 +132,55 @@ func filterSKUsForEncryptionAtHost(req *FleetVMProvisionRequest) (*FleetVMProvis
 	return &filteredReq, nil
 }
 
-// buildZones sorts and converts zone strings to ARM zone pointers. Returns nil for regional Fleet.
-func buildZones(zones []string) []*string {
-	if len(zones) == 0 {
-		return nil
+// buildZones converts AKS zone labels to ARM zone IDs and sorts them deterministically.
+func buildZones(acceptableZones []string) ([]*string, error) {
+	if len(acceptableZones) == 0 {
+		return nil, nil
 	}
-	sortedZones := slices.Clone(zones)
+	zoneIDs := make(map[string]struct{}, len(acceptableZones))
+	hasRegional, hasZonal := false, false
+	for _, zone := range acceptableZones {
+		if zone == zones.Regional {
+			hasRegional = true
+			continue
+		}
+		armZone, err := fleetARMZone(zone)
+		if err != nil {
+			return nil, err
+		}
+		zoneIDs[armZone] = struct{}{}
+		hasZonal = true
+	}
+	if hasRegional && hasZonal {
+		return nil, fmt.Errorf("regional and zonal offerings cannot share one Fleet request")
+	}
+	if hasRegional {
+		return nil, nil
+	}
+	sortedZones := make([]string, 0, len(zoneIDs))
+	for zoneID := range zoneIDs {
+		sortedZones = append(sortedZones, zoneID)
+	}
 	slices.Sort(sortedZones)
 
 	zoneRefs := make([]*string, 0, len(sortedZones))
 	for _, zone := range sortedZones {
 		zoneRefs = append(zoneRefs, lo.ToPtr(zone))
 	}
-	return zoneRefs
+	return zoneRefs, nil
+}
+
+func fleetARMZone(zone string) (string, error) {
+	lastSeparator := strings.LastIndexByte(zone, '-')
+	zoneID := zone
+	if lastSeparator >= 0 {
+		zoneID = zone[lastSeparator+1:]
+	}
+	parsedZoneID, err := strconv.Atoi(zoneID)
+	if err != nil || len(zoneID) != 1 || parsedZoneID < 1 {
+		return "", fmt.Errorf("invalid AKS zone label %q", zone)
+	}
+	return lo.FromPtr(zones.MakeARMZonesFromAKSLabelZone(zone)[0]), nil
 }
 
 func buildIdentity(identities []string) *armcomputefleet.ManagedServiceIdentity {
@@ -173,19 +257,32 @@ func buildRegularProfile(capacity int32) *armcomputefleet.RegularPriorityProfile
 	}
 }
 
-// buildComputeProfile constructs the BaseVirtualMachineProfile.
+// buildComputeProfile constructs the Fleet compute profile.
 func buildComputeProfile(req *FleetVMProvisionRequest, lt *launchtemplate.Template) *armcomputefleet.ComputeProfile {
 	baseProfile := &armcomputefleet.BaseVirtualMachineProfile{
 		OSProfile:        buildOSProfile(req, lt),
 		StorageProfile:   buildStorageProfile(lt, req.DiskEncryptionSetID),
 		NetworkProfile:   BuildFleetNetworkProfile(lt.SubnetID, req.NSG, req.LBBackendPools, allSKUsSupportCapability(req, skewer.AcceleratedNetworking), req.NetworkPlugin, req.NetworkPluginMode, req.MaxPods),
-		SecurityProfile:  buildSecurityProfile(lt.EncryptionAtHost),
+		SecurityProfile:  buildSecurityProfile(lt.EncryptionAtHost, req),
 		ExtensionProfile: extensionsToProfile(req.Extensions),
 	}
+	if req.CapacityReservationGroupID != "" {
+		baseProfile.CapacityReservation = &armcomputefleet.CapacityReservationProfile{
+			CapacityReservationGroup: &armcomputefleet.SubResource{
+				ID: lo.ToPtr(req.CapacityReservationGroupID),
+			},
+		}
+	}
 
-	return &armcomputefleet.ComputeProfile{
+	computeProfile := &armcomputefleet.ComputeProfile{
 		BaseVirtualMachineProfile: baseProfile,
 	}
+	if req.UltraSSDEnabled {
+		computeProfile.AdditionalVirtualMachineCapabilities = &armcomputefleet.AdditionalCapabilities{
+			UltraSSDEnabled: lo.ToPtr(true),
+		}
+	}
+	return computeProfile
 }
 
 // A shared Fleet profile can enable a capability only when every candidate supports it.
@@ -312,14 +409,22 @@ func BuildFleetNetworkProfile(subnetID, nsgID string, lbBackendPools []string, e
 	}
 }
 
-// buildSecurityProfile returns the security profile when encryption at host is configured.
-func buildSecurityProfile(encryptionAtHost *bool) *armcomputefleet.SecurityProfile {
-	if encryptionAtHost == nil {
+// buildSecurityProfile maps encryption-at-host and Trusted Launch settings.
+func buildSecurityProfile(encryptionAtHost *bool, req *FleetVMProvisionRequest) *armcomputefleet.SecurityProfile {
+	if encryptionAtHost == nil && !req.TrustedLaunchEnabled {
 		return nil
 	}
-	return &armcomputefleet.SecurityProfile{
+	profile := &armcomputefleet.SecurityProfile{
 		EncryptionAtHost: encryptionAtHost,
 	}
+	if req.TrustedLaunchEnabled {
+		profile.SecurityType = lo.ToPtr(armcomputefleet.SecurityTypesTrustedLaunch)
+		profile.UefiSettings = &armcomputefleet.UefiSettings{
+			SecureBootEnabled: lo.ToPtr(req.SecureBootEnabled),
+			VTpmEnabled:       lo.ToPtr(req.VTPMEnabled),
+		}
+	}
+	return profile
 }
 
 // extensionsToProfile converts armcompute VM extensions to the armcomputefleet VMSS extension profile format.
