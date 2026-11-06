@@ -180,6 +180,9 @@ type DefaultVMProvider struct {
 	vmListQuery, nicListQuery string
 	deletingVMs               sets.Set[string] // tracks in-flight delete operations by VM name
 	deletingVMsMu             sync.RWMutex
+
+	nicListQueryWithAKSMachines string // Temporary. This is to help mitigate CCM bug where it incorrectly creates unused NICs by enabling garbage collection from Karpenter.
+	// Should be safe to remove once https://github.com/kubernetes-sigs/cloud-provider-azure/pull/11267 is rolled out.
 }
 
 func NewDefaultVMProvider(
@@ -211,8 +214,9 @@ func NewDefaultVMProvider(
 		diskEncryptionSetID:          diskEncryptionSetID,
 		env:                          env,
 
-		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
-		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
+		vmListQuery:                 GetVMListQueryBuilder(resourceGroup).String(),
+		nicListQuery:                GetNICListQueryBuilder(resourceGroup, false).String(),
+		nicListQueryWithAKSMachines: GetNICListQueryBuilder(resourceGroup, true).String(),
 
 		errorHandling: offerings.NewResponseErrorHandler(offeringsCache),
 		deletingVMs:   sets.New[string](),
@@ -393,7 +397,14 @@ func (p *DefaultVMProvider) GetNic(ctx context.Context, rg, nicName string) (*ar
 
 // ListNics returns all network interfaces in the resource group that have the nodepool tag
 func (p *DefaultVMProvider) ListNics(ctx context.Context) ([]*armnetwork.Interface, error) {
-	req := NewQueryRequest(&(p.subscriptionID), p.nicListQuery)
+	nicListQuery := p.nicListQuery
+	// Temporary. This is to help mitigate CCM bug where it incorrectly creates unused NICs by enabling garbage collection from Karpenter.
+	// Should be safe to remove once https://github.com/kubernetes-sigs/cloud-provider-azure/pull/11267 is rolled out.
+	// ASSUMPTION: This ListNics is only used for NIC garbage collection only or won't hurt seeing NICs from machine path.
+	if shouldAKSMachinesBeVisible(ctx) {
+		nicListQuery = p.nicListQueryWithAKSMachines
+	}
+	req := NewQueryRequest(&(p.subscriptionID), nicListQuery)
 	client := p.azClient.AzureResourceGraphClient()
 	data, err := GetResourceData(ctx, client, *req)
 	if err != nil {
