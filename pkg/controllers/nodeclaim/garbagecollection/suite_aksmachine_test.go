@@ -501,6 +501,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		})
 
 		// Temporary. This is to help mitigate CCM bug where it incorrectly creates unused NICs by enabling garbage collection from Karpenter.
+		// Should be safe to remove once https://github.com/kubernetes-sigs/cloud-provider-azure/pull/11267 is rolled out.
 		var _ = Context("AKS machine instances NIC garbage collection (temporary)", func() {
 			It("should exclude AKS Machine NICs when AKS Machine management is disabled", func() {
 				testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{

@@ -57,6 +57,7 @@ func NewNetworkInterface(kubeClient client.Client, vmInstanceProvider instance.V
 	}
 }
 
+// populateUnremovableVMNICNames returns NICs that should not be deleted. Scoped to NICs associated with VM instances only (i.e., not AKS machine instances).
 func (c *NetworkInterface) populateUnremovableVMNICNames(ctx context.Context, nodeClaimList *karpv1.NodeClaimList) (sets.Set[string], error) {
 	unremovableInterfaces := sets.New[string]()
 	vms, err := c.vmInstanceProvider.List(ctx)
@@ -88,20 +89,21 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconciler.Result, er
 	if err != nil {
 		return reconciler.Result{}, fmt.Errorf("error listing resources needed to populate unremovable nics %w", err)
 	}
-	nodeclaimNames := sets.New[string]()
+	nodeClaimNames := sets.New[string]()
 	for _, nc := range nodeClaimList.Items {
-		nodeclaimNames.Insert(nc.Name)
+		nodeClaimNames.Insert(nc.Name)
 	}
 
 	workqueue.ParallelizeUntil(ctx, 100, len(nics), func(i int) {
 		nicName := lo.FromPtr(nics[i].Name)
 		machineNodeClaimName, isMachineNIC := nics[i].Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]
 		// Temporary. This is to help mitigate CCM bug where it incorrectly creates unused NICs by enabling garbage collection from Karpenter.
+		// Should be safe to remove once https://github.com/kubernetes-sigs/cloud-provider-azure/pull/11267 is rolled out.
 		// Machine NICs use their tag to name the owning NodeClaim.
 		if isMachineNIC {
-			// AKS machine instance NIC garbage collection here will delete NIC if (no NodeClaim of the name tagged on NIC object exists).
+			// AKS machine instance NIC garbage collection here will delete NIC if no NodeClaim of the name tagged on NIC object exists.
 			// That relies on the assumption that we tag AKS machine instance accordingly, and AKS Machine API correctly propagates it to underlying NIC.
-			if !nodeclaimNames.Has(lo.FromPtr(machineNodeClaimName)) {
+			if !nodeClaimNames.Has(lo.FromPtr(machineNodeClaimName)) {
 				err := c.vmInstanceProvider.DeleteNic(ctx, nicName)
 				if err != nil {
 					log.FromContext(ctx).Error(err, "")
@@ -114,7 +116,7 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconciler.Result, er
 			return
 		}
 
-		// VM instance NIC garbage collection will delete NIC if (no VM of the same name exists AND no NodeClaim of the matching name (i.e., once removing "aks-" prefix) exists).
+		// VM instance NIC garbage collection will delete NIC if no VM of the same name exists AND no NodeClaim of the matching name (i.e., once removing "aks-" prefix) exists.
 		// That relies on naming assumptions between the three.
 		if !unremovableInterfaces.Has(nicName) {
 			err := c.vmInstanceProvider.DeleteNic(ctx, nicName)
