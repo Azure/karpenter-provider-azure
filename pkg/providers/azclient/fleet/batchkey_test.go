@@ -70,11 +70,65 @@ func testSKU(name string) *skewer.SKU {
 }
 
 func batchKey(req *FleetVMProvisionRequest) (string, error) {
+	return DetermineRequestBatchKey(req)
+}
+
+func TestDetermineRequestBatchKey_NilRequest(t *testing.T) {
+	g := NewWithT(t)
+
+	_, err := DetermineRequestBatchKey(nil)
+
+	g.Expect(err).To(MatchError("nil fleet request"))
+}
+
+func TestDetermineRequestBatchKey_UsesPreparedBody(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
 	body, err := BuildFleetBody(req, 1, req.Tags)
-	if err != nil {
-		return "", err
-	}
-	return DetermineBatchKey(req.NodePoolName, body)
+	g.Expect(err).NotTo(HaveOccurred())
+	body.Properties.VMNamePrefix = lo.ToPtr("prepared-prefix")
+	req.FleetBody = body
+	req.LaunchTemplate = nil
+
+	expected, err := DetermineBatchKey(req.NodePoolName, body)
+	g.Expect(err).NotTo(HaveOccurred())
+	actual, err := DetermineRequestBatchKey(req)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(actual).To(Equal(expected))
+}
+
+func TestPrepareRequestBatchKey_RetainsBuiltBody(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	key, err := prepareRequestBatchKey(req)
+	g.Expect(err).NotTo(HaveOccurred())
+	body := req.FleetBody
+	g.Expect(body).NotTo(BeNil())
+
+	expected, err := DetermineBatchKey(req.NodePoolName, body)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(key).To(Equal(expected))
+
+	req.LaunchTemplate = nil
+	again, err := prepareRequestBatchKey(req)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(again).To(Equal(key))
+	g.Expect(req.FleetBody).To(BeIdenticalTo(body))
+}
+
+func TestDetermineRequestBatchKey_IgnoresNodeClaimName(t *testing.T) {
+	g := NewWithT(t)
+	first := baseRequest()
+	second := baseRequest()
+	second.NodeClaimName = "test-claim-2"
+
+	firstKey, err := batchKey(first)
+	g.Expect(err).NotTo(HaveOccurred())
+	secondKey, err := batchKey(second)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	g.Expect(secondKey).To(Equal(firstKey))
+	g.Expect(firstKey).To(HavePrefix("default/"))
 }
 
 func TestDetermineBatchKey_BuildError(t *testing.T) {

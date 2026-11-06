@@ -47,6 +47,7 @@ type VirtualMachinesAPI interface {
 
 type FleetsAPI interface {
 	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, fleetName string, properties armcomputefleet.Fleet, options *armcomputefleet.FleetsClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcomputefleet.FleetsClientCreateOrUpdateResponse], error)
+	NewListVirtualMachinesPager(resourceGroupName string, name string, options *armcomputefleet.FleetsClientListVirtualMachinesOptions) *runtime.Pager[armcomputefleet.FleetsClientListVirtualMachinesResponse]
 }
 
 type AKSManagedClustersAPI interface {

@@ -27,6 +27,36 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computefleet/armcomputefleet/v2"
 )
 
+// DetermineRequestBatchKey hashes the request's single-VM Fleet body, building one if needed.
+// Requests with identical bodies share a key and can be combined into one Fleet.
+func DetermineRequestBatchKey(req *FleetVMProvisionRequest) (string, error) {
+	body, err := fleetBodyForRequest(req)
+	if err != nil {
+		return "", err
+	}
+	return DetermineBatchKey(req.NodePoolName, body)
+}
+
+// prepareRequestBatchKey retains the body used for hashing for later batch execution.
+func prepareRequestBatchKey(req *FleetVMProvisionRequest) (string, error) {
+	body, err := fleetBodyForRequest(req)
+	if err != nil {
+		return "", err
+	}
+	req.FleetBody = body
+	return DetermineBatchKey(req.NodePoolName, body)
+}
+
+func fleetBodyForRequest(req *FleetVMProvisionRequest) (*armcomputefleet.Fleet, error) {
+	if req == nil {
+		return nil, fmt.Errorf("nil fleet request")
+	}
+	if req.FleetBody != nil {
+		return req.FleetBody, nil
+	}
+	return BuildFleetBody(req, 1, req.Tags)
+}
+
 // DetermineBatchKey hashes a pre-built Fleet body and returns "{nodePoolName}/{hash16}".
 func DetermineBatchKey(nodePoolName string, fleetBody *armcomputefleet.Fleet) (string, error) {
 	if fleetBody == nil {

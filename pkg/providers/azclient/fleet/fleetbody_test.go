@@ -31,12 +31,46 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 func spotRequest() *FleetVMProvisionRequest {
 	req := baseRequest()
 	req.CapacityType = "spot"
 	return req
+}
+
+func TestBuildFleetBody_UnsupportedRequestConfiguration(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		mutate      func(*FleetVMProvisionRequest)
+		capacity    int32
+		errorString string
+	}{
+		{name: "nonpositive capacity", capacity: 0, errorString: "target capacity must be positive"},
+		{name: "missing location", capacity: 1, mutate: func(req *FleetVMProvisionRequest) { req.Location = "" }, errorString: "location is required"},
+		{name: "missing image", capacity: 1, mutate: func(req *FleetVMProvisionRequest) { req.LaunchTemplate.ImageID = "" }, errorString: "launch template image ID is required"},
+		{name: "missing subnet", capacity: 1, mutate: func(req *FleetVMProvisionRequest) { req.LaunchTemplate.SubnetID = "" }, errorString: "launch template subnet ID is required"},
+		{name: "missing SSH credentials", capacity: 1, mutate: func(req *FleetVMProvisionRequest) { req.SSHPublicKey = "" }, errorString: "linux admin username and SSH public key are required"},
+		{name: "unsupported capacity type", capacity: 1, mutate: func(req *FleetVMProvisionRequest) { req.CapacityType = "unknown" }, errorString: `unsupported capacity type "unknown"`},
+		{name: "Windows template", capacity: 1, mutate: func(req *FleetVMProvisionRequest) { req.LaunchTemplate.IsWindows = true }, errorString: "windows launch templates are not supported by Fleet"},
+		{name: "FIPS encryption", capacity: 1, mutate: func(req *FleetVMProvisionRequest) { req.LaunchTemplate.EnableFIPS1403Encryption = true }, errorString: "fleet SDK does not support FIPS 140-3 encryption"},
+		{name: "too many node subnet pods", capacity: 1, mutate: func(req *FleetVMProvisionRequest) {
+			req.NetworkPluginMode = consts.NetworkPluginModeNone
+			req.MaxPods = consts.DefaultOverlayMaxPods + 1
+		}, errorString: "max pods must be between 1 and 250 for Azure node subnet networking"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			req := baseRequest()
+			if tt.mutate != nil {
+				tt.mutate(req)
+			}
+			body, err := BuildFleetBody(req, tt.capacity, req.Tags)
+			g.Expect(err).To(MatchError(ContainSubstring(tt.errorString)))
+			g.Expect(body).To(BeNil())
+		})
+	}
 }
 
 func TestBuildFleetBody_SpotProfile(t *testing.T) {
@@ -268,16 +302,17 @@ func TestBuildFleetBody_IPConfigurationsByNetworkMode(t *testing.T) {
 		name, plugin, mode string
 		maxPods            int32
 		expected           int
+		expectError        bool
 	}{
-		{"node subnet", consts.NetworkPluginAzure, consts.NetworkPluginModeNone, 30, 30},
-		{"node subnet custom", consts.NetworkPluginAzure, consts.NetworkPluginModeNone, 11, 11},
-		{"overlay", consts.NetworkPluginAzure, consts.NetworkPluginModeOverlay, 250, 1},
-		{"overlay custom", consts.NetworkPluginAzure, consts.NetworkPluginModeOverlay, 30, 1},
-		{"kubenet", "kubenet", "", 110, 1},
-		{"none", consts.NetworkPluginNone, "", 250, 1},
-		{"unspecified", "", "", 0, 1},
-		{"node subnet zero still has primary", consts.NetworkPluginAzure, "", 0, 1},
-		{"node subnet negative still has primary", consts.NetworkPluginAzure, "", -1, 1},
+		{"node subnet", consts.NetworkPluginAzure, consts.NetworkPluginModeNone, 30, 30, false},
+		{"node subnet custom", consts.NetworkPluginAzure, consts.NetworkPluginModeNone, 11, 11, false},
+		{"overlay", consts.NetworkPluginAzure, consts.NetworkPluginModeOverlay, 250, 1, false},
+		{"overlay custom", consts.NetworkPluginAzure, consts.NetworkPluginModeOverlay, 30, 1, false},
+		{"kubenet", "kubenet", "", 110, 1, false},
+		{"none", consts.NetworkPluginNone, "", 250, 1, false},
+		{"unspecified", "", "", 0, 1, false},
+		{"node subnet zero rejected", consts.NetworkPluginAzure, "", 0, 0, true},
+		{"node subnet negative rejected", consts.NetworkPluginAzure, "", -1, 0, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
@@ -286,6 +321,11 @@ func TestBuildFleetBody_IPConfigurationsByNetworkMode(t *testing.T) {
 			req.NetworkPluginMode = tc.mode
 			req.MaxPods = tc.maxPods
 			body, err := BuildFleetBody(req, 1, req.Tags)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(body).To(BeNil())
+				return
+			}
 			g.Expect(err).NotTo(HaveOccurred())
 			configs := body.Properties.ComputeProfile.BaseVirtualMachineProfile.NetworkProfile.NetworkInterfaceConfigurations[0].Properties.IPConfigurations
 			g.Expect(configs).To(HaveLen(tc.expected))
@@ -354,13 +394,35 @@ func TestConvertToScaleSetExtension_NilInput(t *testing.T) {
 func TestBuildFleetBody_Zones(t *testing.T) {
 	g := NewWithT(t)
 	req := baseRequest()
-	req.AcceptableZones = []string{"3", "1"}
+	req.AcceptableZones = []string{"eastus-3", "eastus-1", "eastus-3"}
 	fleet, err := BuildFleetBody(req, 1, req.Tags)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	g.Expect(fleet.Zones).To(HaveLen(2))
 	g.Expect(*fleet.Zones[0]).To(Equal("1"))
 	g.Expect(*fleet.Zones[1]).To(Equal("3"))
+}
+
+func TestBuildFleetBody_RegionalZone(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.AcceptableZones = []string{zones.Regional}
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(fleet.Zones).To(BeNil())
+}
+
+func TestBuildFleetBody_InvalidZones(t *testing.T) {
+	for _, zones := range [][]string{{""}, {"eastus-10"}, {zones.Regional, "eastus-1"}} {
+		t.Run(fmt.Sprint(zones), func(t *testing.T) {
+			g := NewWithT(t)
+			req := baseRequest()
+			req.AcceptableZones = zones
+			fleet, err := BuildFleetBody(req, 1, req.Tags)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(fleet).To(BeNil())
+		})
+	}
 }
 
 func TestBuildFleetBody_NoZones(t *testing.T) {
@@ -467,6 +529,34 @@ func TestBuildFleetBody_ImageReference(t *testing.T) {
 	g.Expect(image.ID).To(BeNil())
 	g.Expect(image.SharedGalleryImageID).To(BeNil())
 	g.Expect(image.CommunityGalleryImageID).To(Equal(lo.ToPtr(req.LaunchTemplate.ImageID)))
+}
+
+func TestBuildFleetBody_TrustedLaunch(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.TrustedLaunchEnabled = true
+	req.SecureBootEnabled = true
+	req.VTPMEnabled = false
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	profile := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.SecurityProfile
+	g.Expect(profile.SecurityType).To(Equal(lo.ToPtr(armcomputefleet.SecurityTypesTrustedLaunch)))
+	g.Expect(profile.UefiSettings.SecureBootEnabled).To(Equal(lo.ToPtr(true)))
+	g.Expect(profile.UefiSettings.VTpmEnabled).To(Equal(lo.ToPtr(false)))
+}
+
+func TestBuildFleetBody_CapacityReservationAndUltraSSD(t *testing.T) {
+	g := NewWithT(t)
+	req := baseRequest()
+	req.CapacityReservationGroupID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/group"
+	req.UltraSSDEnabled = true
+	fleet, err := BuildFleetBody(req, 1, req.Tags)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	profile := fleet.Properties.ComputeProfile
+	g.Expect(profile.BaseVirtualMachineProfile.CapacityReservation.CapacityReservationGroup.ID).To(Equal(lo.ToPtr(req.CapacityReservationGroupID)))
+	g.Expect(profile.AdditionalVirtualMachineCapabilities.UltraSSDEnabled).To(Equal(lo.ToPtr(true)))
 }
 
 func TestBuildFleetBody_AcceleratedNetworking(t *testing.T) {
