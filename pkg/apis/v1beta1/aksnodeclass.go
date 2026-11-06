@@ -1070,6 +1070,20 @@ func (in *AKSNodeClass) Hash() string {
 			spec.NodePublicIP.IPTags = nil
 		}
 	}
+	// failfastAllUnhealthyUpstreams and healthCheck.noRec render nothing in the Corefile when false,
+	// so an explicit false must hash the same as an omitted field and not drift nodes.
+	if spec.LocalDNS != nil {
+		for _, overrides := range [][]LocalDNSZoneOverride{spec.LocalDNS.VnetDNSOverrides, spec.LocalDNS.KubeDNSOverrides} {
+			for i := range overrides {
+				if !lo.FromPtr(overrides[i].FailfastAllUnhealthyUpstreams) {
+					overrides[i].FailfastAllUnhealthyUpstreams = nil
+				}
+				if healthCheck := overrides[i].HealthCheck; healthCheck != nil && !lo.FromPtr(healthCheck.NoRec) {
+					healthCheck.NoRec = nil
+				}
+			}
+		}
+	}
 	return fmt.Sprint(lo.Must(hashstructure.Hash(spec, hashstructure.FormatV2, &hashstructure.HashOptions{
 		SlicesAsSets:    true,
 		IgnoreZeroValue: true,

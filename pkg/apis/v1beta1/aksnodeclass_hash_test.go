@@ -255,6 +255,50 @@ var _ = Describe("Hash", func() {
 
 		Expect(nodeClass).To(Equal(original))
 	})
+	Context("LocalDNS forward health knobs", func() {
+		withOverride := func(override v1beta1.LocalDNSZoneOverride) *v1beta1.LocalDNS {
+			override.Zone = "example.com"
+			return &v1beta1.LocalDNS{
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{override},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{override},
+			}
+		}
+		healthCheck := func(noRec *bool) *v1beta1.LocalDNSHealthCheck {
+			return &v1beta1.LocalDNSHealthCheck{Duration: karpv1.MustParseNillableDuration("5s"), NoRec: noRec}
+		}
+
+		It("should hash explicit failfastAllUnhealthyUpstreams false the same as omitted", func() {
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{})
+			omittedHash := nodeClass.Hash()
+
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{FailfastAllUnhealthyUpstreams: lo.ToPtr(false)})
+			Expect(nodeClass.Hash()).To(Equal(omittedHash))
+
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{FailfastAllUnhealthyUpstreams: lo.ToPtr(true)})
+			Expect(nodeClass.Hash()).ToNot(Equal(omittedHash))
+		})
+		It("should hash explicit noRec false the same as omitted", func() {
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{HealthCheck: healthCheck(nil)})
+			omittedHash := nodeClass.Hash()
+
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{HealthCheck: healthCheck(lo.ToPtr(false))})
+			Expect(nodeClass.Hash()).To(Equal(omittedHash))
+
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{HealthCheck: healthCheck(lo.ToPtr(true))})
+			Expect(nodeClass.Hash()).ToNot(Equal(omittedHash))
+		})
+		It("should not mutate LocalDNS settings while hashing", func() {
+			nodeClass.Spec.LocalDNS = withOverride(v1beta1.LocalDNSZoneOverride{
+				FailfastAllUnhealthyUpstreams: lo.ToPtr(false),
+				HealthCheck:                   healthCheck(lo.ToPtr(false)),
+			})
+			original := nodeClass.DeepCopy()
+
+			_ = nodeClass.Hash()
+
+			Expect(nodeClass).To(Equal(original))
+		})
+	})
 	It("should not change hash when tags are re-ordered", func() {
 		hash := nodeClass.Hash()
 		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}
