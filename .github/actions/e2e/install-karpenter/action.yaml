@@ -21,7 +21,7 @@ inputs:
     default: "eastus"
   provision_mode:
     description: "the Karpenter provisioning mode to run the e2e test in"
-    default: "aksscriptless"
+    default: "aksmachineapi"
   aks_machines_pool_name:
     description: "Name of the AKS 'machines' mode agent pool (machine API modes only). Must match the pool created at cluster-create time."
     required: false
