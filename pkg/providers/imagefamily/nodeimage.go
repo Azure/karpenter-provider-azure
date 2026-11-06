@@ -148,6 +148,7 @@ func getLatestImageVersion(nodeImages []NodeImage) string {
 	}
 
 	firstVersion := nodeImages[0].Version
+	// Strip away the Security Patch section from the version string
 	if strings.Contains(firstVersion, "-") {
 		firstVersion = strings.Split(firstVersion, "-")[0]
 	}
@@ -156,6 +157,7 @@ func getLatestImageVersion(nodeImages []NodeImage) string {
 		if strings.Contains(version, "-") {
 			version = strings.Split(version, "-")[0]
 		}
+		// If there are multiple different versions, we cannot determine a single latest version, so return an empty string.
 		if version != firstVersion {
 			return ""
 		}
