@@ -54,6 +54,7 @@ const (
 
 type NodeImage struct {
 	ID           string
+	Version      string
 	Requirements scheduling.Requirements
 }
 
@@ -134,17 +135,32 @@ func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSN
 		return latestImage.suffix, latestImage.err
 	}
 
-	// Update the latest image version based on the retrieved node images.
-	latestImage.suffix = ""
-	if len(nodeImages) > 0 {
-		// All node images in a region share the same version, so the first image is representative.
-		imageIDParts := strings.Split(nodeImages[0].ID, "/")
-		latestImage.suffix = imageIDParts[len(imageIDParts)-1]
-	}
+	latestImage.suffix = getLatestImageVersion(nodeImages)
 	latestImage.err = nil
 	latestImage.lastUpdate = time.Now()
 
 	return latestImage.suffix, nil
+}
+
+func getLatestImageVersion(nodeImages []NodeImage) string {
+	if len(nodeImages) == 0 {
+		return ""
+	}
+
+	firstVersion := nodeImages[0].Version
+	if strings.Contains(firstVersion, "-") {
+		firstVersion = strings.Split(firstVersion, "-")[0]
+	}
+	for _, nodeImage := range nodeImages[1:] {
+		version := nodeImage.Version
+		if strings.Contains(version, "-") {
+			version = strings.Split(version, "-")[0]
+		}
+		if version != firstVersion {
+			return ""
+		}
+	}
+	return firstVersion
 }
 
 func (p *provider) getLatestImageState(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (*latestImageState, error) {
@@ -254,6 +270,7 @@ func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultI
 
 		nodeImages = append(nodeImages, NodeImage{
 			ID:           imageID,
+			Version:      lo.FromPtr(nextImage.Version),
 			Requirements: supportedImage.Requirements,
 		})
 	}
@@ -263,13 +280,14 @@ func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultI
 func (p *provider) listCIG(_ context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	nodeImages := []NodeImage{}
 	for _, supportedImage := range supportedImages {
-		cigImageID, err := p.getCIGImageID(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition)
+		imageVersion, err := p.latestNodeImageVersionCommunity(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition)
 		if err != nil {
 			return nil, err
 		}
 
 		nodeImages = append(nodeImages, NodeImage{
-			ID:           cigImageID,
+			ID:           BuildImageIDCIG(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition, imageVersion),
+			Version:      imageVersion,
 			Requirements: supportedImage.Requirements,
 		})
 	}
@@ -287,14 +305,6 @@ func (p *provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersi
 		return "", err
 	}
 	return fmt.Sprintf("%016x", hash), nil
-}
-
-func (p *provider) getCIGImageID(publicGalleryURL, communityImageName string) (string, error) {
-	imageVersion, err := p.latestNodeImageVersionCommunity(publicGalleryURL, communityImageName)
-	if err != nil {
-		return "", err
-	}
-	return BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion), nil
 }
 
 func (p *provider) latestNodeImageVersionCommunity(publicGalleryURL, communityImageName string) (string, error) {

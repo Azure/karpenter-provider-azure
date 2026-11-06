@@ -61,7 +61,7 @@ func renderExpectedCIGNodeImages(
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
 		id := imagefamily.BuildImageIDCIG(img.PublicGalleryURL, img.ImageDefinition, version)
-		out = append(out, imagefamily.NodeImage{ID: id, Requirements: img.Requirements})
+		out = append(out, imagefamily.NodeImage{ID: id, Version: version, Requirements: img.Requirements})
 	}
 	return out
 }
@@ -88,7 +88,7 @@ func renderExpectedSIGNodeImagesWithVersion(
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
 		id := imagefamily.BuildImageIDSIG(sigSubscription, img.GalleryResourceGroup, img.GalleryName, img.ImageDefinition, version)
-		out = append(out, imagefamily.NodeImage{ID: id, Requirements: img.Requirements})
+		out = append(out, imagefamily.NodeImage{ID: id, Version: version, Requirements: img.Requirements})
 	}
 	return out
 }
