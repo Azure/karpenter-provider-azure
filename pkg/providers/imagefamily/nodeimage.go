@@ -19,6 +19,8 @@ package imagefamily
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -35,8 +37,16 @@ import (
 )
 
 const (
-	ImageExpirationInterval    = time.Hour * 24 * 3
+	// ImageExpirationInterval controls how often images used for automatic rollout are refreshed.
+	ImageExpirationInterval = time.Hour * 24 * 3
+	// ImageCacheCleaningInterval controls how often expired rollout image entries are removed from memory.
 	ImageCacheCleaningInterval = time.Hour * 1
+	// LatestImageRefreshInterval controls how often the latest available image version is refreshed.
+	LatestImageRefreshInterval = 15 * time.Minute
+	// LatestImageRetryInterval controls how often a failed latest image version refresh is retried.
+	LatestImageRetryInterval = 5 * time.Minute
+	// LatestImageGracePeriod controls how long a successfully retrieved image version can be reused after refresh failures.
+	LatestImageGracePeriod = 8 * time.Hour
 
 	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
 	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
@@ -44,11 +54,24 @@ const (
 
 type NodeImage struct {
 	ID           string
+	Version      string
 	Requirements scheduling.Requirements
 }
 
 type NodeImageProvider interface {
 	List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error)
+	// GetLatestVersion returns the latest image version available for the NodeClass.
+	GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (string, error)
+}
+
+type latestImageState struct {
+	mu     sync.Mutex
+	suffix string
+	err    error
+	// lastAttempt records the last time an attempt was made to refresh the latest image version.
+	lastAttempt time.Time
+	// lastUpdate records the last time the latest image version was successfully refreshed.
+	lastUpdate time.Time
 }
 
 type provider struct {
@@ -59,6 +82,7 @@ type provider struct {
 	nodeImageVersions   types.NodeImageVersionsAPI
 
 	nodeImagesCache *cache.Cache
+	latestImageMu   sync.Mutex
 	cm              *pretty.ChangeMonitor
 }
 
@@ -75,6 +99,96 @@ func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location
 
 // Returns the list of available NodeImages for the given AKSNodeClass sorted in priority ordering
 func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
+	return p.listNodeImages(ctx, nodeClass, true)
+}
+
+// GetLatestVersion returns the latest image version available for the NodeClass.
+func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (string, error) {
+	latestImage, err := p.getLatestImageState(ctx, nodeClass)
+	if err != nil {
+		return "", err
+	}
+
+	latestImage.mu.Lock()
+	defer latestImage.mu.Unlock()
+
+	sinceLastUpdate := time.Since(latestImage.lastUpdate)
+	// If the latest image was successfully retrieved recently, return it to avoid unnecessary API calls.
+	if latestImage.err == nil && sinceLastUpdate < LatestImageRefreshInterval {
+		return latestImage.suffix, nil
+	}
+	// If the latest image retrieval was attempted recently, return its cached result to avoid hammering the API.
+	if time.Since(latestImage.lastAttempt) < LatestImageRetryInterval {
+		return latestImage.suffix, latestImage.err
+	}
+
+	latestImage.lastAttempt = time.Now()
+	nodeImages, err := p.listNodeImages(ctx, nodeClass, false)
+	if err != nil {
+		// If the last successful update was recent enough, use it instead of failing immediately.
+		if sinceLastUpdate < LatestImageGracePeriod {
+			log.FromContext(ctx).Error(err, "failed to refresh latest node image version, using last successfully retrieved version", "lastUpdated", latestImage.lastUpdate)
+			return latestImage.suffix, nil
+		}
+		latestImage.suffix = ""
+		latestImage.err = err
+		return latestImage.suffix, latestImage.err
+	}
+
+	latestImage.suffix = getLatestImageVersion(nodeImages)
+	latestImage.err = nil
+	latestImage.lastUpdate = time.Now()
+
+	return latestImage.suffix, nil
+}
+
+func getLatestImageVersion(nodeImages []NodeImage) string {
+	if len(nodeImages) == 0 {
+		return ""
+	}
+
+	firstVersion := nodeImages[0].Version
+	// Strip away the Security Patch section from the version string
+	if strings.Contains(firstVersion, "-") {
+		firstVersion = strings.Split(firstVersion, "-")[0]
+	}
+	for _, nodeImage := range nodeImages[1:] {
+		version := nodeImage.Version
+		if strings.Contains(version, "-") {
+			version = strings.Split(version, "-")[0]
+		}
+		// If there are multiple different versions, we cannot determine a single latest version, so return an empty string.
+		if version != firstVersion {
+			return ""
+		}
+	}
+	return firstVersion
+}
+
+func (p *provider) getLatestImageState(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (*latestImageState, error) {
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return nil, err
+	}
+	useSIG := options.FromContext(ctx).UseSIG
+	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled())
+	key, err := p.cacheKey(supportedImages, kubernetesVersion)
+	if err != nil {
+		return nil, err
+	}
+	key = fmt.Sprintf("latest-%t-%s", useSIG, key)
+
+	p.latestImageMu.Lock()
+	defer p.latestImageMu.Unlock()
+	if cached, ok := p.nodeImagesCache.Get(key); ok {
+		return cached.(*latestImageState), nil
+	}
+	latestImage := &latestImageState{}
+	p.nodeImagesCache.Set(key, latestImage, cache.NoExpiration)
+	return latestImage, nil
+}
+
+func (p *provider) listNodeImages(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, useCache bool) ([]NodeImage, error) {
 	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.
 	useSIG := options.FromContext(ctx).UseSIG
 
@@ -94,19 +208,31 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 
 	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled())
 
-	key, err := p.cacheKey(
-		supportedImages,
-		kubernetesVersion,
-	)
+	var key string
+	if useCache {
+		key, err = p.cacheKey(supportedImages, kubernetesVersion)
+		if err != nil {
+			return []NodeImage{}, err
+		}
+		if nodeImages, ok := p.nodeImagesCache.Get(key); ok {
+			return nodeImages.([]NodeImage), nil
+		}
+	}
+
+	nodeImages, err := p.listImages(ctx, useSIG, supportedImages)
 	if err != nil {
 		return []NodeImage{}, err
 	}
-
-	if nodeImages, ok := p.nodeImagesCache.Get(key); ok {
-		return nodeImages.([]NodeImage), nil
+	if useCache {
+		p.nodeImagesCache.Set(key, nodeImages, cache.DefaultExpiration)
 	}
 
+	return nodeImages, nil
+}
+
+func (p *provider) listImages(ctx context.Context, useSIG bool, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	var nodeImages []NodeImage
+	var err error
 	if useSIG {
 		log.FromContext(ctx).V(1).Info("using SIG to list node images")
 		nodeImages, err = p.listSIG(ctx, supportedImages)
@@ -119,7 +245,6 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 			return []NodeImage{}, err
 		}
 	}
-	p.nodeImagesCache.Set(key, nodeImages, cache.DefaultExpiration)
 
 	return nodeImages, nil
 }
@@ -147,6 +272,7 @@ func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultI
 
 		nodeImages = append(nodeImages, NodeImage{
 			ID:           imageID,
+			Version:      lo.FromPtr(nextImage.Version),
 			Requirements: supportedImage.Requirements,
 		})
 	}
@@ -156,13 +282,14 @@ func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultI
 func (p *provider) listCIG(_ context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	nodeImages := []NodeImage{}
 	for _, supportedImage := range supportedImages {
-		cigImageID, err := p.getCIGImageID(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition)
+		imageVersion, err := p.latestNodeImageVersionCommunity(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition)
 		if err != nil {
 			return nil, err
 		}
 
 		nodeImages = append(nodeImages, NodeImage{
-			ID:           cigImageID,
+			ID:           BuildImageIDCIG(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition, imageVersion),
+			Version:      imageVersion,
 			Requirements: supportedImage.Requirements,
 		})
 	}
@@ -180,14 +307,6 @@ func (p *provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersi
 		return "", err
 	}
 	return fmt.Sprintf("%016x", hash), nil
-}
-
-func (p *provider) getCIGImageID(publicGalleryURL, communityImageName string) (string, error) {
-	imageVersion, err := p.latestNodeImageVersionCommunity(publicGalleryURL, communityImageName)
-	if err != nil {
-		return "", err
-	}
-	return BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion), nil
 }
 
 func (p *provider) latestNodeImageVersionCommunity(publicGalleryURL, communityImageName string) (string, error) {
