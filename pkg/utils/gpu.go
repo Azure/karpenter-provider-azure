@@ -254,6 +254,46 @@ func IsDriverInstallSupported(vmSize string) bool {
 	return IsNvidiaEnabledSKU(vmSize)
 }
 
+// GetMIGProfile returns the device-plugin profile name and static partitions per GPU.
+// Unknown sizes/profiles are unsupported; do not infer support from a GPU family or promo alias.
+func GetMIGProfile(vmSize string, profile v1beta1.GPUInstanceProfile) (string, int64) {
+	var gpuMemoryGB int
+	switch strings.ToLower(vmSize) {
+	// Hardware: https://learn.microsoft.com/azure/virtual-machines/sizes/gpu-accelerated/ndasra100v4-series
+	case "standard_nd96asr_v4": // A100 40GB
+		gpuMemoryGB = 40
+	// https://learn.microsoft.com/azure/virtual-machines/sizes/gpu-accelerated/nca100v4-series
+	// https://learn.microsoft.com/azure/virtual-machines/sizes/gpu-accelerated/ndma100v4-series
+	// https://learn.microsoft.com/azure/virtual-machines/sizes/gpu-accelerated/ndh100v5-series
+	case "standard_nc24ads_a100_v4", "standard_nc48ads_a100_v4", "standard_nc96ads_a100_v4",
+		"standard_nd96amsr_a100_v4", "standard_nd96isr_h100_v5": // A100/H100 80GB
+		gpuMemoryGB = 80
+	// https://learn.microsoft.com/azure/virtual-machines/sizes/gpu-accelerated/ncadsh100v5-series
+	case "standard_nc40ads_h100_v5", "standard_nc80adis_h100_v5": // H100 NVL 94GB
+		gpuMemoryGB = 94
+	default:
+		return "", 0
+	}
+	// Names: https://docs.nvidia.com/datacenter/tesla/mig-user-guide/supported-mig-profiles.html
+	// Counts match AgentBaker's uniform layout (profile IDs 19,14,9,5,0), not leftover slices:
+	// https://github.com/Azure/AgentBaker/blob/204c19efaacce5ea616dd03bcab5a94f92933d8a/parts/linux/cloud-init/artifacts/mig-partition.sh#L5-L52
+	layout := map[v1beta1.GPUInstanceProfile]struct {
+		names map[int]string // Physical GPU memory in GB.
+		count int64
+	}{
+		v1beta1.GPUInstanceProfileMIG1g: {names: map[int]string{40: "1g.5gb", 80: "1g.10gb", 94: "1g.12gb"}, count: 7},
+		v1beta1.GPUInstanceProfileMIG2g: {names: map[int]string{40: "2g.10gb", 80: "2g.20gb", 94: "2g.24gb"}, count: 3},
+		v1beta1.GPUInstanceProfileMIG3g: {names: map[int]string{40: "3g.20gb", 80: "3g.40gb", 94: "3g.47gb"}, count: 2},
+		v1beta1.GPUInstanceProfileMIG4g: {names: map[int]string{40: "4g.20gb", 80: "4g.40gb", 94: "4g.47gb"}, count: 1},
+		v1beta1.GPUInstanceProfileMIG7g: {names: map[int]string{40: "7g.40gb", 80: "7g.80gb", 94: "7g.94gb"}, count: 1},
+	}[profile]
+	name, ok := layout.names[gpuMemoryGB]
+	if !ok {
+		return "", 0
+	}
+	return name, layout.count
+}
+
 // IsGPUSKUSupportedOnOS checks if a GPU SKU supports a given OS identifier (e.g., "ubuntu", "azurelinux", "azurelinux3")
 func IsGPUSKUSupportedOnOS(vmSize string, osName string) bool {
 	vmSize = normalizeVMSize(vmSize)
