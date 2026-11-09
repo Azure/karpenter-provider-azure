@@ -31,11 +31,13 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
@@ -221,7 +223,7 @@ var _ = Describe("CloudProvider", func() {
 								return
 							}
 							for _, staleGeneration := range []bool{false, true} {
-								By(fmt.Sprintf("deferring CVM inventory drift while images are unready (stale generation=%t)", staleGeneration))
+								By(fmt.Sprintf("retaining unavailable CVM inventory while images are unready (stale generation=%t)", staleGeneration))
 								nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 								if staleGeneration {
 									for i := range nodeClass.Status.Conditions {
@@ -234,13 +236,17 @@ var _ = Describe("CloudProvider", func() {
 								}
 								Expect(env.Client.Status().Update(ctx, nodeClass)).To(Succeed())
 								instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
-								Expect(err).To(MatchError(ContainSubstring("resolving " + family + " images")))
-								Expect(instanceTypes).To(BeNil())
+								Expect(err).ToNot(HaveOccurred())
+								snpType, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == instanceType })
+								Expect(found).To(BeTrue())
+								Expect(snpType.Offerings.Available()).To(BeEmpty())
 								nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 								Expect(env.Client.Status().Update(ctx, nodeClass)).To(Succeed())
 								instanceTypes, err = cloudProvider.GetInstanceTypes(ctx, nodePool)
 								Expect(err).ToNot(HaveOccurred())
-								Expect(instanceTypes).To(ContainElement(HaveField("Name", instanceType)))
+								snpType, found = lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == instanceType })
+								Expect(found).To(BeTrue())
+								Expect(snpType.Offerings.Available()).ToNot(BeEmpty())
 							}
 						},
 						Entry("generic Ubuntu CPU CVM 20.04", v1beta1.UbuntuImageFamily, "1.33.0", "Standard_UbuntuSNP", "2004gen2CVMcontainerd", armcontainerservice.OSSKUUbuntu),
@@ -403,8 +409,20 @@ var _ = Describe("CloudProvider", func() {
 						instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(instanceTypes).To(ContainElement(HaveField("Name", instanceType)))
+						runningClaims, err := cloudProvider.List(ctx)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(runningClaims).To(HaveLen(1))
+						runningClaim := runningClaims[0]
+
+						By("also creating an unrelated Trusted Launch machine")
+						nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{{
+							Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{"Standard_D2_v5"},
+						}}
+						ExpectApplied(ctx, env.Client, nodeClaim)
+						trustedLaunchClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+						Expect(err).ToNot(HaveOccurred())
 						for _, staleGeneration := range []bool{false, true} {
-							By(fmt.Sprintf("returning an inventory error during image reconciliation (stale generation=%t)", staleGeneration))
+							By(fmt.Sprintf("retaining unavailable SNP inventory during image reconciliation (stale generation=%t)", staleGeneration))
 							nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 							if staleGeneration {
 								for i := range nodeClass.Status.Conditions {
@@ -416,16 +434,92 @@ var _ = Describe("CloudProvider", func() {
 								nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesReconciling", "refreshing CVM images")
 							}
 							Expect(env.Client.Status().Update(ctx, nodeClass)).To(Succeed())
-							// A successful inventory missing SNP would make core drift report InstanceTypeNotFound.
 							instanceTypes, err = cloudProvider.GetInstanceTypes(ctx, nodePool)
-							Expect(err).To(MatchError(ContainSubstring("resolving AzureContainerLinux images")))
-							Expect(instanceTypes).To(BeNil())
+							Expect(err).ToNot(HaveOccurred())
+							snpType, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == instanceType })
+							Expect(found).To(BeTrue())
+							Expect(snpType.Offerings.Available()).To(BeEmpty())
+							// Core's InstanceTypeNotFound drift check uses compatibility, not availability.
+							Expect(snpType.Offerings.HasCompatible(scheduling.NewLabelRequirements(runningClaim.Labels))).To(BeTrue())
+
+							By("converting existing machines through List and Get despite unready images")
+							listedClaims, err := cloudProvider.List(ctx)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(listedClaims).To(HaveLen(2))
+							for _, expected := range []*karpv1.NodeClaim{runningClaim, trustedLaunchClaim} {
+								listed, listedFound := lo.Find(listedClaims, func(claim *karpv1.NodeClaim) bool { return claim.Status.ProviderID == expected.Status.ProviderID })
+								Expect(listedFound).To(BeTrue())
+								got, err := cloudProvider.Get(ctx, expected.Status.ProviderID)
+								Expect(err).ToNot(HaveOccurred())
+								for _, actual := range []*karpv1.NodeClaim{listed, got} {
+									Expect(actual.Labels[v1.LabelInstanceTypeStable]).To(Equal(expected.Labels[v1.LabelInstanceTypeStable]))
+									Expect(actual.Status.Capacity).To(Equal(expected.Status.Capacity))
+									Expect(actual.Status.Allocatable).To(Equal(expected.Status.Allocatable))
+									Expect(actual.Status.ImageID).To(Equal(expected.Status.ImageID))
+								}
+							}
 
 							By("restoring the SNP inventory after image status reconciliation")
 							ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 							instanceTypes, err = cloudProvider.GetInstanceTypes(ctx, nodePool)
 							Expect(err).ToNot(HaveOccurred())
-							Expect(instanceTypes).To(ContainElement(HaveField("Name", instanceType)))
+							snpType, found = lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == instanceType })
+							Expect(found).To(BeTrue())
+							Expect(snpType.Offerings.Available()).ToNot(BeEmpty())
+						}
+
+						for _, mixedClaim := range []bool{false, true} {
+							By(fmt.Sprintf("creating an SNP machine before Launched is persisted (mixed claim=%t)", mixedClaim))
+							requestedTypes := []string{instanceType}
+							if mixedClaim {
+								requestedTypes = append(requestedTypes, "Standard_D2_v5")
+							}
+							retryClaim := coretest.NodeClaim(karpv1.NodeClaim{
+								ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name}},
+								Spec: karpv1.NodeClaimSpec{
+									NodeClassRef: nodeClaim.Spec.NodeClassRef,
+									Requirements: []karpv1.NodeSelectorRequirementWithMinValues{{
+										Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: requestedTypes,
+									}},
+								},
+							})
+							ExpectApplied(ctx, env.Client, retryClaim)
+							// Force the original selection to SNP while retaining the claim's mixed candidates for retry.
+							nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+							promise, err := azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, retryClaim, lo.Filter(instanceTypes, func(it *corecloudprovider.InstanceType, _ int) bool { return it.Name == instanceType }))
+							Expect(err).ToNot(HaveOccurred())
+							Expect(promise.Wait()).To(Succeed())
+							Expect(ExpectExists(ctx, env.Client, retryClaim).StatusConditions().Get(karpv1.ConditionTypeLaunched).IsUnknown()).To(BeTrue())
+							createCalls := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()
+
+							By("removing CVM images while Trusted Launch images remain ready")
+							nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+							nodeClass.Status.Images = lo.Filter(nodeClass.Status.Images, func(image v1beta1.NodeImage, _ int) bool {
+								return !scheduling.NewNodeSelectorRequirements(image.Requirements...).Get(v1beta1.LabelSKUConfidentialComputingType).Has("SNP")
+							})
+							Expect(nodeClass.GetImages()).ToNot(BeEmpty())
+							Expect(env.Client.Status().Update(ctx, nodeClass)).To(Succeed())
+							Expect(cloudProvider.validateNodeClass(ctx, nodeClass)).To(Succeed())
+
+							By("adopting the existing SNP machine without another PUT or a panic")
+							adopted, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, retryClaim)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(adopted.Labels[v1.LabelInstanceTypeStable]).To(Equal(instanceType))
+							Expect(adopted.Status.ProviderID).To(Equal(utils.VMResourceIDToProviderID(ctx, promise.VMResourceID)))
+							Expect(adopted.Status.Capacity).To(Equal(runningClaim.Status.Capacity))
+							Expect(adopted.Status.ImageID).To(Equal(runningClaim.Status.ImageID))
+							Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(createCalls))
+
+							By("blocking a new SNP launch while CVM images are absent")
+							newClaim := coretest.NodeClaim(karpv1.NodeClaim{Spec: retryClaim.Spec})
+							newClaim.Spec.Requirements[0].Values = []string{instanceType}
+							_, err = cloudProvider.Create(ctx, newClaim)
+							Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
+							Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(createCalls))
+
+							ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+							instanceTypes, err = cloudProvider.GetInstanceTypes(ctx, nodePool)
+							Expect(err).ToNot(HaveOccurred())
 						}
 					}
 				},

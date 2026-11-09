@@ -3086,7 +3086,7 @@ var _ = Describe("InstanceType Provider", func() {
 				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 			})
 
-			DescribeTable("should reevaluate resolved SNP images on cache hits without removing ordinary candidates", func(family string) {
+			DescribeTable("should reevaluate SNP image availability on cache hits without removing instance types or mutating prior results", func(family string) {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(family)
 				if family != v1beta1.AzureContainerLinuxImageFamily {
 					nodeClass.Spec.Security = nil
@@ -3113,10 +3113,18 @@ var _ = Describe("InstanceType Provider", func() {
 				ambiguousImage.Requirements[0].Values = []string{"None", "SNP"}
 				emptyIDImage := *cvmImage.DeepCopy()
 				emptyIDImage.ID = ""
+				its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				base, found := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_ACLSNP" })
+				Expect(found).To(BeTrue())
+				Expect(base.Offerings.Available()).ToNot(BeEmpty())
+				priorResults := make([]*corecloudprovider.InstanceType, 1, 12)
+				priorSnapshots := make([]*corecloudprovider.InstanceType, 1, 12)
+				priorResults[0], priorSnapshots[0] = base, base.DeepCopy()
 				for _, test := range []struct {
-					name    string
-					images  []v1beta1.NodeImage
-					wantSNP bool
+					name      string
+					images    []v1beta1.NodeImage
+					available bool
 				}{
 					{name: "initial empty status"},
 					{name: "partial TL-only feed", images: []v1beta1.NodeImage{tlImage}},
@@ -3126,24 +3134,47 @@ var _ = Describe("InstanceType Provider", func() {
 					{name: "other incompatible requirement", images: []v1beta1.NodeImage{tlImage, wrongSKUImage}},
 					{name: "ambiguous discriminator", images: []v1beta1.NodeImage{ambiguousImage}},
 					{name: "unresolved image ID", images: []v1beta1.NodeImage{emptyIDImage}},
-					{name: "CVM becomes available", images: []v1beta1.NodeImage{tlImage, cvmImage}, wantSNP: true},
+					{name: "CVM becomes available", images: []v1beta1.NodeImage{tlImage, cvmImage}, available: true},
 					{name: "CVM disappears", images: []v1beta1.NodeImage{tlImage}},
-					{name: "CVM returns", images: []v1beta1.NodeImage{cvmImage}, wantSNP: true},
+					{name: "CVM returns", images: []v1beta1.NodeImage{cvmImage}, available: true},
 				} {
 					nodeClass.Status.Images = test.images
-					its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+					its, err = azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(lo.ContainsBy(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_ACLSNP" })).To(Equal(test.wantSNP), test.name)
-					Expect(lo.ContainsBy(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_NCC40ads_H100_v5" })).To(Equal(test.wantSNP && family != v1beta1.AzureContainerLinuxImageFamily), test.name)
-					Expect(its).To(ContainElement(WithTransform(getName, Equal("Standard_ACLOrdinary"))), test.name)
+					snp, snpFound := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_ACLSNP" })
+					Expect(snpFound).To(BeTrue(), test.name)
+					Expect(snp.Offerings).ToNot(BeEmpty())
+					for i, offering := range snp.Offerings {
+						Expect(offering.Available).To(Equal(test.available && base.Offerings[i].Available), test.name)
+					}
+					gpu, gpuFound := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_NCC40ads_H100_v5" })
+					Expect(gpuFound).To(Equal(family != v1beta1.AzureContainerLinuxImageFamily), test.name)
+					if gpuFound {
+						Expect(len(gpu.Offerings.Available()) > 0).To(Equal(test.available), test.name)
+						priorResults = append(priorResults, gpu)
+						priorSnapshots = append(priorSnapshots, gpu.DeepCopy())
+					}
+					ordinary, ordinaryFound := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_ACLOrdinary" })
+					Expect(ordinaryFound).To(BeTrue(), test.name)
+					Expect(ordinary.Offerings.Available()).ToNot(BeEmpty(), test.name)
+					priorResults = append(priorResults, snp)
+					priorSnapshots = append(priorSnapshots, snp.DeepCopy())
+					Expect(priorResults).To(Equal(priorSnapshots), test.name)
 					Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1), test.name)
 				}
 				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNotFound", "images unavailable")
-				its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+				its, err = azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(its).ToNot(ContainElement(WithTransform(getName, Equal("Standard_ACLSNP"))))
-				Expect(its).ToNot(ContainElement(WithTransform(getName, Equal("Standard_NCC40ads_H100_v5"))))
+				snp, found := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_ACLSNP" })
+				Expect(found).To(BeTrue())
+				Expect(snp.Offerings.Available()).To(BeEmpty())
+				gpu, gpuFound := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_NCC40ads_H100_v5" })
+				Expect(gpuFound).To(Equal(family != v1beta1.AzureContainerLinuxImageFamily))
+				if gpuFound {
+					Expect(gpu.Offerings.Available()).To(BeEmpty())
+				}
 				Expect(its).To(ContainElement(WithTransform(getName, Equal("Standard_ACLOrdinary"))))
+				Expect(priorResults).To(Equal(priorSnapshots))
 			}, Entry("ACL", v1beta1.AzureContainerLinuxImageFamily), Entry("Ubuntu", v1beta1.UbuntuImageFamily), Entry("Ubuntu2404", v1beta1.Ubuntu2404ImageFamily))
 
 			DescribeTable("should distinguish TL and SNP images without sharing incompatible cached selections", func(fips bool) {
