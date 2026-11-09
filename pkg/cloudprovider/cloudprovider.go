@@ -487,13 +487,6 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 		// as the cause.
 		return nil, fmt.Errorf("resolving node class, %w", err)
 	}
-	// ACL's confidential SKU inventory depends on resolved images. Do not report
-	// those SKUs as removed (and drift existing nodes) during image reconciliation.
-	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily {
-		if _, err := nodeClass.GetImages(); err != nil {
-			return nil, fmt.Errorf("resolving AzureContainerLinux images, %w", err)
-		}
-	}
 	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
 		return nil, err

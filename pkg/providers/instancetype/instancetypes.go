@@ -217,10 +217,10 @@ func (p *DefaultProvider) List(
 		cached.quota, cached.quotaSeqNum = p.applyQuota(ctx, slices.Clone(cached.base), instanceTypeParams.CapacityReservationGroupID)
 	}
 
-	return filterByConfidentialImages(cached.quota, nodeClass), nil
+	return applyConfidentialImageAvailability(cached.quota, nodeClass), nil
 }
 
-func filterByConfidentialImages(instanceTypes []*cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) []*cloudprovider.InstanceType {
+func applyConfidentialImageAvailability(instanceTypes []*cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) []*cloudprovider.InstanceType {
 	// Image availability can change independently of the instance-type cache. Legacy
 	// images without a discriminator must not implicitly match a confidential SKU.
 	images, _ := nodeClass.GetImages()
@@ -233,14 +233,22 @@ func filterByConfidentialImages(instanceTypes []*cloudprovider.InstanceType, nod
 			snpImages = append(snpImages, requirements)
 		}
 	}
-	// Filter into a new slice so callers cannot reorder or truncate cached results.
-	return lo.Filter(instanceTypes, func(instanceType *cloudprovider.InstanceType, _ int) bool {
+	// Retain types and requirements for existing-node compatibility, but disable new
+	// launches without an image. Copy changed types and offerings to preserve cached and prior results.
+	return lo.Map(instanceTypes, func(instanceType *cloudprovider.InstanceType, _ int) *cloudprovider.InstanceType {
 		if !instanceType.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType).Has(skewer.ConfidentialComputingTypeSNP) {
-			return true
+			return instanceType
 		}
-		return lo.ContainsBy(snpImages, func(requirements scheduling.Requirements) bool {
+		if lo.ContainsBy(snpImages, func(requirements scheduling.Requirements) bool {
 			return instanceType.Requirements.Compatible(requirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil
-		})
+		}) || !slices.ContainsFunc(instanceType.Offerings, func(offering *cloudprovider.Offering) bool { return offering.Available }) {
+			return instanceType
+		}
+		copied := instanceType.DeepCopy()
+		for _, offering := range copied.Offerings {
+			offering.Available = false
+		}
+		return copied
 	})
 }
 
