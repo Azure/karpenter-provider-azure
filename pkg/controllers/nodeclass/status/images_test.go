@@ -124,7 +124,7 @@ func getExpectedTestCommunityImages(
 }
 
 func getExpectedTestSIGImages(version string) []v1beta1.NodeImage {
-	nodeClass := test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
+	nodeClass := test.AKSNodeClass()
 	nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
 	test.ApplySIGImagesWithVersion(nodeClass, version)
 	return nodeClass.Status.Images
