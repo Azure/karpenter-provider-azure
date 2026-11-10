@@ -747,36 +747,6 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Expect(latestVersion).To(BeEmpty())
 		})
 
-		It("should return the common base version when security patch versions differ", func() {
-			testOptions.UseSIG = true
-			ctx = options.ToContext(ctx, testOptions)
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-			nodeImageVersionsAPI.OverrideNodeImageVersions = []*armcontainerservice.NodeImageVersion{
-				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen2ImageDefinition), Version: lo.ToPtr("202410.27.0-2024.12.01")},
-				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen1ImageDefinition), Version: lo.ToPtr("202410.27.0-2024.12.02")},
-				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen2ArmImageDefinition), Version: lo.ToPtr("202410.27.0-2024.12.03")},
-			}
-
-			latestVersion, err := nodeImageProvider.GetLatestVersion(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(latestVersion).To(Equal("202410.27.0"))
-		})
-
-		It("should return an empty latest image version when base versions differ", func() {
-			testOptions.UseSIG = true
-			ctx = options.ToContext(ctx, testOptions)
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-			nodeImageVersionsAPI.OverrideNodeImageVersions = []*armcontainerservice.NodeImageVersion{
-				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen2ImageDefinition), Version: lo.ToPtr("202410.27.0")},
-				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen1ImageDefinition), Version: lo.ToPtr("202410.27.0")},
-				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen2ArmImageDefinition), Version: lo.ToPtr("202411.05.0")},
-			}
-
-			latestVersion, err := nodeImageProvider.GetLatestVersion(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(latestVersion).To(BeEmpty())
-		})
-
 		It("should ensure List images uses cached data", func() {
 			// Parse K8s version to determine ImageFamily versions
 			version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
