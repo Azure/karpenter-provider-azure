@@ -19,7 +19,6 @@ package imagefamily
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -147,22 +146,8 @@ func getLatestImageVersion(nodeImages []NodeImage) string {
 		return ""
 	}
 
-	firstVersion := nodeImages[0].Version
-	// Strip away the Security Patch section from the version string
-	if strings.Contains(firstVersion, "-") {
-		firstVersion = strings.Split(firstVersion, "-")[0]
-	}
-	for _, nodeImage := range nodeImages[1:] {
-		version := nodeImage.Version
-		if strings.Contains(version, "-") {
-			version = strings.Split(version, "-")[0]
-		}
-		// If there are multiple different versions, we cannot determine a single latest version, so return an empty string.
-		if version != firstVersion {
-			return ""
-		}
-	}
-	return firstVersion
+	// TODO: Handle image definitions with different latest versions, including frozen images and security-patch variants.
+	return nodeImages[0].Version
 }
 
 func (p *provider) getLatestImageState(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (*latestImageState, error) {
