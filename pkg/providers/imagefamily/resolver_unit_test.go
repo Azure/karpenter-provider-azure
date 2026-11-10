@@ -182,61 +182,98 @@ func TestResolveFIPS1403Encryption(t *testing.T) {
 	}
 }
 
-func TestResolveAzureContainerLinuxPersistedImages(t *testing.T) {
+func TestUbuntuCVMImageComposition(t *testing.T) {
 	for _, tc := range []struct {
-		name         string
-		instanceType string
-		imageType    *corev1.NodeSelectorRequirement
-		addCVM       bool
-		want         string
+		family, version, definition, distro string
 	}{
-		{name: "legacy TL rejects SNP", instanceType: "SNP"},
-		{name: "legacy TL still supports ordinary instances", instanceType: "None", want: "legacy-tl"},
-		{name: "legacy TL still supports instances without discriminator", want: "legacy-tl"},
-		{name: "SNP skips legacy TL for explicit CVM", instanceType: "SNP", addCVM: true, want: "cvm"},
-		{name: "explicit TL rejects SNP", instanceType: "SNP", imageType: &corev1.NodeSelectorRequirement{Operator: corev1.NodeSelectorOpIn, Values: []string{"None"}}},
-		{name: "Exists does not explicitly require SNP", instanceType: "SNP", imageType: &corev1.NodeSelectorRequirement{Operator: corev1.NodeSelectorOpExists}},
-		{name: "NotIn does not explicitly require SNP", instanceType: "SNP", imageType: &corev1.NodeSelectorRequirement{Operator: corev1.NodeSelectorOpNotIn, Values: []string{"None"}}},
+		{v1beta1.UbuntuImageFamily, "1.33.9", Ubuntu2004Gen2CVMImageDefinition, "aks-ubuntu-containerd-20.04-cvm-gen2"},
+		{v1beta1.UbuntuImageFamily, "1.34.0", Ubuntu2404Gen2CVMImageDefinition, "aks-ubuntu-containerd-24.04-cvm-gen2"},
+		{v1beta1.Ubuntu2404ImageFamily, "1.33.9", Ubuntu2404Gen2CVMImageDefinition, "aks-ubuntu-containerd-24.04-cvm-gen2"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.family+"/"+tc.version, func(t *testing.T) {
 			g := NewWithT(t)
-			legacyRequirements := []corev1.NodeSelectorRequirement{
-				{Key: corev1.LabelArchStable, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.ArchitectureAmd64}},
-				{Key: v1beta1.LabelSKUHyperVGeneration, Operator: corev1.NodeSelectorOpIn, Values: []string{v1beta1.HyperVGenerationV2}},
+			ordinary := GetImageFamily(&tc.family, nil, false, tc.version, nil).DefaultImages(true, nil, false, false)
+			images := GetSupportedImages(&tc.family, nil, tc.version, true, false, false)
+			g.Expect(images).To(HaveLen(len(ordinary) + 1))
+			cvm := images[len(ordinary)]
+			g.Expect(cvm.ImageDefinition).To(Equal(tc.definition))
+			g.Expect(cvm.Distro).To(Equal(tc.distro))
+			g.Expect(cvm.PublicGalleryURL).To(BeEmpty())
+			for i := range ordinary {
+				g.Expect(images[i].Requirements.Has(v1beta1.LabelSKUConfidentialComputingType)).To(BeFalse())
+				delete(images[i].Requirements, v1beta1.LabelSKUConfidentialComputingType)
+				g.Expect(images[i]).To(Equal(ordinary[i]))
 			}
-			instanceType := &cloudprovider.InstanceType{
-				Name:         "test-instance",
-				Requirements: scheduling.NewNodeSelectorRequirements(legacyRequirements...),
-			}
-			if tc.instanceType != "" {
-				instanceType.Requirements.Add(scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, tc.instanceType))
-			}
-			nodeClass := &v1beta1.AKSNodeClass{
-				Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)},
-				Status: v1beta1.AKSNodeClassStatus{Images: []v1beta1.NodeImage{{
-					ID: "legacy-tl", Requirements: legacyRequirements,
-				}}},
-			}
-			if tc.imageType != nil {
-				tc.imageType.Key = v1beta1.LabelSKUConfidentialComputingType
-				nodeClass.Status.Images[0].Requirements = append(nodeClass.Status.Images[0].Requirements, *tc.imageType)
-			}
-			if tc.addCVM {
-				nodeClass.Status.Images = append(nodeClass.Status.Images, v1beta1.NodeImage{
-					ID: "cvm",
-					Requirements: append(legacyRequirements, corev1.NodeSelectorRequirement{
-						Key: v1beta1.LabelSKUConfidentialComputingType, Operator: corev1.NodeSelectorOpIn, Values: []string{"SNP"},
-					}),
+		})
+	}
+}
+
+func TestResolvePersistedImages(t *testing.T) {
+	for _, family := range []string{v1beta1.AzureContainerLinuxImageFamily, v1beta1.UbuntuImageFamily, v1beta1.Ubuntu2204ImageFamily, v1beta1.Ubuntu2404ImageFamily} {
+		t.Run(family, func(t *testing.T) {
+			for _, tc := range []struct {
+				name         string
+				instanceType string
+				imageType    *corev1.NodeSelectorRequirement
+				addCVM       bool
+				emptyID      bool
+				want         string
+			}{
+				{name: "legacy TL rejects SNP", instanceType: "SNP"},
+				{name: "legacy TL still supports ordinary instances", instanceType: "None", want: "legacy-tl"},
+				{name: "legacy TL still supports instances without discriminator", want: "legacy-tl"},
+				{name: "SNP skips legacy TL for explicit CVM", instanceType: "SNP", addCVM: true, want: "cvm"},
+				{name: "explicit TL rejects SNP", instanceType: "SNP", imageType: &corev1.NodeSelectorRequirement{Operator: corev1.NodeSelectorOpIn, Values: []string{"None"}}},
+				{name: "Exists does not explicitly require SNP", instanceType: "SNP", imageType: &corev1.NodeSelectorRequirement{Operator: corev1.NodeSelectorOpExists}},
+				{name: "NotIn does not explicitly require SNP", instanceType: "SNP", imageType: &corev1.NodeSelectorRequirement{Operator: corev1.NodeSelectorOpNotIn, Values: []string{"None"}}},
+				{name: "mixed types do not exclusively require SNP", instanceType: "SNP", imageType: &corev1.NodeSelectorRequirement{Operator: corev1.NodeSelectorOpIn, Values: []string{"None", "SNP"}}},
+				{name: "empty CVM ID rejects SNP", instanceType: "SNP", emptyID: true, imageType: &corev1.NodeSelectorRequirement{Operator: corev1.NodeSelectorOpIn, Values: []string{"SNP"}}},
+				{name: "CVM rejects ordinary instances", instanceType: "None", imageType: &corev1.NodeSelectorRequirement{Operator: corev1.NodeSelectorOpIn, Values: []string{"SNP"}}},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					g := NewWithT(t)
+					legacyRequirements := []corev1.NodeSelectorRequirement{
+						{Key: corev1.LabelArchStable, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.ArchitectureAmd64}},
+						{Key: v1beta1.LabelSKUHyperVGeneration, Operator: corev1.NodeSelectorOpIn, Values: []string{v1beta1.HyperVGenerationV2}},
+					}
+					instanceType := &cloudprovider.InstanceType{
+						Name:         "test-instance",
+						Requirements: scheduling.NewNodeSelectorRequirements(legacyRequirements...),
+					}
+					if tc.instanceType != "" {
+						instanceType.Requirements.Add(scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, tc.instanceType))
+					}
+					nodeClass := &v1beta1.AKSNodeClass{
+						Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr(family)},
+						Status: v1beta1.AKSNodeClassStatus{Images: []v1beta1.NodeImage{{
+							ID: "legacy-tl", Requirements: legacyRequirements,
+						}}},
+					}
+					if tc.imageType != nil {
+						tc.imageType.Key = v1beta1.LabelSKUConfidentialComputingType
+						nodeClass.Status.Images[0].Requirements = append(nodeClass.Status.Images[0].Requirements, *tc.imageType)
+					}
+					if tc.emptyID {
+						nodeClass.Status.Images[0].ID = ""
+					}
+					if tc.addCVM {
+						nodeClass.Status.Images = append(nodeClass.Status.Images, v1beta1.NodeImage{
+							ID: "cvm",
+							Requirements: append(legacyRequirements, corev1.NodeSelectorRequirement{
+								Key: v1beta1.LabelSKUConfidentialComputingType, Operator: corev1.NodeSelectorOpIn, Values: []string{"SNP"},
+							}),
+						})
+					}
+					nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+					imageID, err := NewDefaultResolver(nil, nil, nil, nil).ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+					if tc.want == "" {
+						g.Expect(err).To(MatchError(ContainSubstring("no compatible images found")))
+					} else {
+						g.Expect(err).ToNot(HaveOccurred())
+					}
+					g.Expect(imageID).To(Equal(tc.want))
 				})
 			}
-			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
-			imageID, err := NewDefaultResolver(nil, nil, nil, nil).ResolveNodeImageFromNodeClass(nodeClass, instanceType)
-			if tc.want == "" {
-				g.Expect(err).To(MatchError(ContainSubstring("no compatible images found")))
-			} else {
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			g.Expect(imageID).To(Equal(tc.want))
 		})
 	}
 }

@@ -33,6 +33,7 @@ import (
 
 const (
 	Ubuntu2404Gen2ImageDefinition              = "2404gen2containerd"
+	Ubuntu2404Gen2CVMImageDefinition           = "2404gen2CVMcontainerd"
 	Ubuntu2404Gen1ImageDefinition              = "2404containerd"
 	Ubuntu2404Gen2ArmImageDefinition           = "2404gen2arm64containerd"
 	Ubuntu2404Gen2TrustedLaunchImageDefinition = "2404gen2TLcontainerd"

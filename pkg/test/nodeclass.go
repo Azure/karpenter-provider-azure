@@ -192,10 +192,7 @@ func getExpectedTestSIGImages(
 	version string,
 	kubernetesVersion string,
 ) []imagefamily.NodeImage {
-	images := imagefamily.GetImageFamily(
-		&family, fipsMode, trustedLaunch, kubernetesVersion, nil,
-	).DefaultImages(
-		true, fipsMode, trustedLaunch, kataEnabled)
+	images := imagefamily.GetSupportedImages(&family, fipsMode, kubernetesVersion, true, trustedLaunch, kataEnabled)
 	nodeImages := make([]imagefamily.NodeImage, 0, len(images))
 	for _, image := range images {
 		nodeImages = append(nodeImages, imagefamily.NodeImage{

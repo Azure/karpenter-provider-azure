@@ -26,6 +26,7 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	nodev1 "k8s.io/api/node/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
@@ -133,6 +134,179 @@ var _ = Describe("CloudProvider", func() {
 		// Mostly ported from VM test: "ImageReference" and "ImageProvider + Image Family"
 		// Note: AKS Machine API does not support Community Image Gallery (CIG)
 		Context("Create - ImageReference and ImageProvider + Image Family", func() {
+			for _, provisionMode := range []string{consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch} {
+				Context("Ubuntu CVM - "+provisionMode, func() {
+					BeforeEach(func() {
+						testOptions.ProvisionMode = provisionMode
+						azureEnv.Reset(ctx)
+						azureEnv = test.NewEnvironment(ctx, env)
+						cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
+						cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+						coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
+						statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, testOptions.NetworkPolicy, testOptions.NetworkPlugin,
+							azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace)
+						// Use a local feed so both sides of the 1.34 boundary have deterministic versions.
+						versions, err := azureEnv.NodeImageVersionsAPI.List(ctx, fake.Region)
+						Expect(err).ToNot(HaveOccurred())
+						azureEnv.NodeImageVersionsAPI.OverrideNodeImageVersions = append([]*armcontainerservice.NodeImageVersion{
+							{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2004gen2CVMcontainerd"), Version: lo.ToPtr("202608.26.0")},
+							{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2404gen2CVMcontainerd"), Version: lo.ToPtr("202608.26.0")},
+							{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2containerd"), Version: lo.ToPtr("202608.26.0")},
+							{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2404gen2containerd"), Version: lo.ToPtr("202608.26.0")},
+						}, versions...)
+						for _, fixture := range []struct{ name, size, gpus string }{
+							{"Standard_UbuntuSNP", "DC4as_v5", "0"},
+							{"Standard_NCC40ads_H100_v5", "NCC40ads_H100_v5", "1"},
+						} {
+							azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+								Name: lo.ToPtr(fixture.name), Size: lo.ToPtr(fixture.size),
+								Family: lo.ToPtr("standardUbuntuCVMTestFamily"), ResourceType: lo.ToPtr("virtualMachines"),
+								Locations: &[]string{fake.Region},
+								Capabilities: &[]compute.ResourceSkuCapabilities{
+									{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("4")},
+									{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("16")},
+									{Name: lo.ToPtr("GPUs"), Value: lo.ToPtr(fixture.gpus)},
+									{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+									{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V2")},
+									{Name: lo.ToPtr("TrustedLaunchDisabled"), Value: lo.ToPtr("False")},
+									{Name: lo.ToPtr("ConfidentialComputingType"), Value: lo.ToPtr("SNP")},
+								},
+							})
+						}
+						Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+						nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+					})
+
+					prepareNodeClass := func(kubernetesVersion string) {
+						ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+						ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+						nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+						// Exercise image selection with synthetic node versions, not a modified API server version.
+						nodeClass.Status.KubernetesVersion = lo.ToPtr(kubernetesVersion)
+						nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+						nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesReconciling", "refreshing images for the test node version")
+						_, err := status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, testOptions.SystemNamespace).Reconcile(ctx, nodeClass)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(env.Client.Status().Update(ctx, nodeClass)).To(Succeed())
+					}
+
+					DescribeTable("should provision the exact Ubuntu image and wire OS SKU from pending pod pressure",
+						func(family, kubernetesVersion, instanceType, definition string, osSKU armcontainerservice.OSSKU) {
+							nodeClass.Spec.ImageFamily = lo.ToPtr(family)
+							gpu := instanceType == "Standard_NCC40ads_H100_v5"
+							if gpu {
+								nodeClass.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}
+							}
+							prepareNodeClass(kubernetesVersion)
+							pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType}})
+							ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+							ExpectScheduled(ctx, env.Client, pod)
+							Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+							Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+							machine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+							Expect(machine.Properties.NodeImageVersion).To(Equal(lo.ToPtr("AKSUbuntu-" + definition + "-202608.26.0")))
+							Expect(machine.Properties.Hardware.VMSize).To(Equal(lo.ToPtr(instanceType)))
+							Expect(machine.Properties.OperatingSystem.OSSKU).To(Equal(lo.ToPtr(osSKU)))
+							Expect(machine.Properties.OperatingSystem.EnableFIPS).To(Equal(lo.ToPtr(false)))
+							Expect(machine.Properties.Security.EnableSecureBoot).To(Equal(lo.ToPtr(false)))
+							Expect(machine.Properties.Security.EnableVTPM).To(Equal(lo.ToPtr(false)))
+							Expect(machine.Properties.Kubernetes.OrchestratorVersion).To(Equal(lo.ToPtr(kubernetesVersion)))
+							Expect(machine.Properties.Kubernetes.WorkloadRuntime).To(BeNil())
+							if gpu {
+								Expect(machine.Properties.Hardware.GpuProfile).ToNot(BeNil())
+								Expect(machine.Properties.Hardware.GpuProfile.Driver).To(Equal(lo.ToPtr(armcontainerservice.GPUDriverNone)))
+								Expect(machine.Properties.Hardware.GpuProfile.Nvidia).To(BeNil())
+							} else {
+								Expect(machine.Properties.Hardware.GpuProfile).To(BeNil())
+							}
+
+							if instanceType == "Standard_D2_v5" {
+								return
+							}
+							for _, staleGeneration := range []bool{false, true} {
+								By(fmt.Sprintf("retaining unavailable CVM inventory while images are unready (stale generation=%t)", staleGeneration))
+								nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+								if staleGeneration {
+									for i := range nodeClass.Status.Conditions {
+										if nodeClass.Status.Conditions[i].Type == v1beta1.ConditionTypeImagesReady {
+											nodeClass.Status.Conditions[i].ObservedGeneration--
+										}
+									}
+								} else {
+									nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesReconciling", "refreshing CVM images")
+								}
+								Expect(env.Client.Status().Update(ctx, nodeClass)).To(Succeed())
+								instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+								Expect(err).ToNot(HaveOccurred())
+								snpType, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == instanceType })
+								Expect(found).To(BeTrue())
+								Expect(snpType.Offerings.Available()).To(BeEmpty())
+								nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+								Expect(env.Client.Status().Update(ctx, nodeClass)).To(Succeed())
+								instanceTypes, err = cloudProvider.GetInstanceTypes(ctx, nodePool)
+								Expect(err).ToNot(HaveOccurred())
+								snpType, found = lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == instanceType })
+								Expect(found).To(BeTrue())
+								Expect(snpType.Offerings.Available()).ToNot(BeEmpty())
+							}
+						},
+						Entry("generic Ubuntu CPU CVM 20.04", v1beta1.UbuntuImageFamily, "1.33.0", "Standard_UbuntuSNP", "2004gen2CVMcontainerd", armcontainerservice.OSSKUUbuntu),
+						Entry("generic Ubuntu CPU CVM 24.04 at 1.34", v1beta1.UbuntuImageFamily, "1.34.0", "Standard_UbuntuSNP", "2404gen2CVMcontainerd", armcontainerservice.OSSKUUbuntu2404),
+						Entry("explicit Ubuntu2404 CPU CVM before 1.34", v1beta1.Ubuntu2404ImageFamily, "1.33.0", "Standard_UbuntuSNP", "2404gen2CVMcontainerd", armcontainerservice.OSSKUUbuntu2404),
+						Entry("generic Ubuntu GPU CVM 20.04 driver None", v1beta1.UbuntuImageFamily, "1.33.0", "Standard_NCC40ads_H100_v5", "2004gen2CVMcontainerd", armcontainerservice.OSSKUUbuntu),
+						Entry("generic Ubuntu GPU CVM 24.04 driver None", v1beta1.UbuntuImageFamily, "1.34.0", "Standard_NCC40ads_H100_v5", "2404gen2CVMcontainerd", armcontainerservice.OSSKUUbuntu2404),
+						Entry("explicit Ubuntu2404 GPU CVM driver None", v1beta1.Ubuntu2404ImageFamily, "1.33.0", "Standard_NCC40ads_H100_v5", "2404gen2CVMcontainerd", armcontainerservice.OSSKUUbuntu2404),
+						Entry("ordinary generic Ubuntu remains 22.04 before 1.34", v1beta1.UbuntuImageFamily, "1.33.0", "Standard_D2_v5", "2204gen2containerd", armcontainerservice.OSSKUUbuntu2204),
+						Entry("ordinary generic Ubuntu becomes 24.04 at 1.34", v1beta1.UbuntuImageFamily, "1.34.0", "Standard_D2_v5", "2404gen2containerd", armcontainerservice.OSSKUUbuntu2404),
+						Entry("ordinary explicit Ubuntu2204 remains 22.04", v1beta1.Ubuntu2204ImageFamily, "1.34.0", "Standard_D2_v5", "2204gen2containerd", armcontainerservice.OSSKUUbuntu2204),
+					)
+
+					DescribeTable("should exclude Ubuntu CVM for unsupported specifications",
+						func(configuration string) {
+							switch configuration {
+							case "Ubuntu2204":
+								nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+							case "FIPS":
+								nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+							case "TrustedLaunch":
+								nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true), VTPM: lo.ToPtr(true)}}
+							case "Kata":
+								nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+								nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+								nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+								// Ubuntu + Kata is rejected by the API before it can enter inventory selection.
+								err := env.Client.Update(ctx, nodeClass)
+								Expect(apierrors.IsInvalid(err)).To(BeTrue())
+								Expect(err).To(MatchError(ContainSubstring("workloadRuntime KataVmIsolation requires imageFamily AzureLinux")))
+								Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+								Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+								return
+							}
+							if configuration != "Driver" {
+								nodeClass.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}
+							}
+							prepareNodeClass("1.34.0")
+							instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(instanceTypes).ToNot(ContainElement(HaveField("Name", "Standard_NCC40ads_H100_v5")))
+							if configuration != "Driver" {
+								Expect(instanceTypes).ToNot(ContainElement(HaveField("Name", "Standard_UbuntuSNP")))
+							}
+							pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_NCC40ads_H100_v5"}})
+							ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+							ExpectNotScheduled(ctx, env.Client, pod)
+							Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+							Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+						},
+						Entry("explicit Ubuntu2204", "Ubuntu2204"),
+						Entry("FIPS", "FIPS"),
+						Entry("Trusted Launch", "TrustedLaunch"),
+						Entry("Kata", "Kata"),
+						Entry("GPU default Driver mode", "Driver"),
+					)
+				})
+			}
+
 			DescribeTable("should provision AzureContainerLinux with explicit Trusted Launch",
 				func(provisionMode string, fipsMode *v1beta1.FIPSMode, definition string, withOverrides bool, instanceType string) {
 					testOptions.ProvisionMode = provisionMode

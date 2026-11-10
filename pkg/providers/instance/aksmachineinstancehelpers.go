@@ -81,7 +81,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}
 
 	// OSSKU, EnableFIPS
-	osSku, enableFIPS, err := configureOSSKUAndFIPs(nodeClass, orchestratorVersion)
+	osSku, enableFIPS, err := configureMachineOSSKUAndFIPs(nodeClass, orchestratorVersion, instanceType)
 	if err != nil {
 		return nil, err
 	}
@@ -342,6 +342,22 @@ func configurePriority(capacityType string) *armcontainerservice.ScaleSetPriorit
 		// Karpenter defaults to Regular
 		return lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
 	}
+}
+
+func configureMachineOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion string, instanceType *corecloudprovider.InstanceType) (*armcontainerservice.OSSKU, *bool, error) {
+	osSKU, enableFIPS, err := configureOSSKUAndFIPs(nodeClass, orchestratorVersion)
+	if err != nil {
+		return nil, nil, err
+	}
+	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.UbuntuImageFamily &&
+		lo.FromPtr(osSKU) == armcontainerservice.OSSKUUbuntu2204 &&
+		instanceType.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType).Len() == 1 &&
+		instanceType.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType).Has("SNP") {
+		// Ubuntu2204 has no CVM image. Generic Ubuntu selects CVM 20.04 before 1.34;
+		// keep explicit Ubuntu2404 at 1.34+ so the RP selects CVM 24.04 there.
+		osSKU = lo.ToPtr(armcontainerservice.OSSKUUbuntu)
+	}
+	return osSKU, enableFIPS, nil
 }
 
 func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion string) (*armcontainerservice.OSSKU, *bool, error) {
