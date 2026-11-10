@@ -39,6 +39,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 const (
@@ -116,7 +117,9 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 			replicasPerNode := 10
 			maxPodDensity := replicasPerNode + dsCount
 			nodeCountPerNodePool := 4
+			consolidatedNodeCount := nodeCountPerNodePool / 4
 			replicas := replicasPerNode * nodeCountPerNodePool
+			expirationDuration := 10 * time.Minute
 
 			disruptionMethods := []string{
 				consolidationValue,
@@ -165,6 +168,8 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 				})
 				nodePoolMap[v] = test.NodePool(*np)
 			}
+			// Expiration is copied into NodeClaims at creation; changing the template later causes drift.
+			nodePoolMap[expirationValue].Spec.Template.Spec.ExpireAfter.Duration = lo.ToPtr(expirationDuration)
 
 			By("waiting for the deployment to deploy all of its pods")
 			var wg sync.WaitGroup
@@ -191,6 +196,7 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 				Kind:  object.GVK(driftNodeClass).Kind,
 				Name:  driftNodeClass.Name,
 			}
+			var expirationNodeClaims []*karpv1.NodeClaim
 			env.MeasureProvisioningDurationFor(func() {
 				By("kicking off provisioning by applying the nodePool and nodeClass")
 				env.ExpectCreated(driftNodeClass, nodeClass)
@@ -198,7 +204,13 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 					env.ExpectCreated(p)
 				}
 
-				env.EventuallyExpectCreatedNodeClaimCount("==", expectedNodeCount)
+				expirationNodeClaims = lo.Filter(env.EventuallyExpectCreatedNodeClaimCount("==", expectedNodeCount), func(nc *karpv1.NodeClaim, _ int) bool {
+					return nc.Labels[karpv1.NodePoolLabelKey] == nodePoolMap[expirationValue].Name
+				})
+				Expect(expirationNodeClaims).To(HaveLen(nodeCountPerNodePool))
+				for _, nc := range expirationNodeClaims {
+					Expect(nc.Spec.ExpireAfter.Duration).To(Equal(lo.ToPtr(expirationDuration)))
+				}
 				env.EventuallyExpectCreatedNodeCount("==", expectedNodeCount)
 				env.EventuallyExpectInitializedNodeCount("==", expectedNodeCount)
 
@@ -225,7 +237,7 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 			env.Monitor.Reset() // Reset the monitor so that we now track the nodes starting at this point in time
 
 			By("scaling down replicas across deployments")
-			deploymentMap[consolidationValue].Spec.Replicas = lo.ToPtr(int32(int(float64(replicas) * 0.25)))
+			deploymentMap[consolidationValue].Spec.Replicas = lo.ToPtr(int32(consolidatedNodeCount * replicasPerNode))
 			deploymentMap[emptinessValue].Spec.Replicas = lo.ToPtr[int32](0)
 			for _, d := range deploymentMap {
 				env.ExpectUpdated(d)
@@ -234,13 +246,18 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 			// Create a nodePool for expiration so that expiration can do replacement
 			nodePoolMap[noExpirationValue] = test.NodePool()
 			nodePoolMap[noExpirationValue].Spec = *nodePoolMap[expirationValue].Spec.DeepCopy()
+			nodePoolMap[noExpirationValue].Spec.Template.Spec.ExpireAfter.Duration = nil
 
-			// Enable consolidation, emptiness, and expiration
+			// Enable consolidation and emptiness while the original NodeClaims expire on schedule.
 			nodePoolMap[consolidationValue].Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
 			nodePoolMap[emptinessValue].Spec.Disruption.ConsolidationPolicy = karpv1.ConsolidationPolicyWhenEmpty
 			nodePoolMap[emptinessValue].Spec.Disruption.ConsolidateAfter.Duration = lo.ToPtr(time.Duration(0))
-			nodePoolMap[expirationValue].Spec.Template.Spec.ExpireAfter.Duration = lo.ToPtr(time.Duration(0))
 			nodePoolMap[expirationValue].Spec.Limits = disableProvisioningLimits
+			for _, nc := range expirationNodeClaims {
+				Expect(nc.Annotations[karpv1.NodePoolHashAnnotationKey]).To(Equal(nodePoolMap[expirationValue].Hash()),
+					"the expiration NodePool template must not change and induce drift")
+			}
+			Expect(nodePoolMap[noExpirationValue].Spec.Template.Spec.ExpireAfter.Duration).To(BeNil())
 			// Update the drift NodeClass to start drift on Nodes assigned to this NodeClass
 			driftNodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 
@@ -254,8 +271,8 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 			}
 			assertionMap := map[string]testAssertions{
 				consolidationValue: {
-					deletedCount: int(float64(nodeCountPerNodePool) * 0.75),
-					nodeCount:    int(float64(nodeCountPerNodePool) * 0.25),
+					deletedCount: nodeCountPerNodePool - consolidatedNodeCount,
+					nodeCount:    consolidatedNodeCount,
 					createdCount: 0,
 				},
 				emptinessValue: {
@@ -301,22 +318,22 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 						defer GinkgoRecover()
 						defer wg.Done()
 
-						By("waiting for deprovisioning type " + k)
+						By("waiting for deprovisioning type " + d)
 						// Provide a default selector based on the original nodePool name if one isn't specified
-						selector = assertions.deletedNodeCountSelector
-						if selector == nil {
-							selector = labels.SelectorFromSet(map[string]string{karpv1.NodePoolLabelKey: nodePoolMap[d].Name})
+						deletedNodeSelector := assertions.deletedNodeCountSelector
+						if deletedNodeSelector == nil {
+							deletedNodeSelector = labels.SelectorFromSet(map[string]string{karpv1.NodePoolLabelKey: nodePoolMap[d].Name})
 						}
-						env.EventuallyExpectDeletedNodeCountWithSelector("==", assertions.deletedCount, selector)
+						env.EventuallyExpectDeletedNodeCountWithSelector("==", assertions.deletedCount, deletedNodeSelector)
 
 						// Provide a default selector based on the original nodePool name if one isn't specified
-						selector = assertions.nodeCountSelector
-						if selector == nil {
-							selector = labels.SelectorFromSet(map[string]string{karpv1.NodePoolLabelKey: nodePoolMap[d].Name})
+						nodeSelector := assertions.nodeCountSelector
+						if nodeSelector == nil {
+							nodeSelector = labels.SelectorFromSet(map[string]string{karpv1.NodePoolLabelKey: nodePoolMap[d].Name})
 						}
-						env.EventuallyExpectNodeCountWithSelector("==", assertions.nodeCount, selector)
+						env.EventuallyExpectNodeCountWithSelector("==", assertions.nodeCount, nodeSelector)
 						env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deploymentMap[d].Spec.Selector.MatchLabels), int(lo.FromPtr(deploymentMap[d].Spec.Replicas)))
-						By("done waiting for deprovisioning type " + k)
+						By("done waiting for deprovisioning type " + d)
 					}(k, v)
 				}
 				wg.Wait()

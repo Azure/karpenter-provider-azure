@@ -10,6 +10,9 @@ These test scenarios are designed to be used against a live AKS cluster running 
 
 The scale suite provisions up to 200 nodes or 6,600 workload pods per scenario.
 Check regional VM quota and subnet capacity before running it.
+The simultaneous-deprovisioning scenario configures expiration before provisioning
+and waits for the original NodeClaims' ten-minute lifetime without changing their
+NodePool template. Replacement nodes have expiration disabled.
 
 Run locally against a dedicated test cluster:
 
