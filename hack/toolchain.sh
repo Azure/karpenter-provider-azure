@@ -97,6 +97,11 @@ should-skip() {
     if [[ "$#" -eq 1 ]]; then
         echo "[INF] Installing $1 because it is missing"
     else
+        if [[ "${CI:-}" == true ]] && _resolve_command "$1" >/dev/null; then
+            echo "[ERR] $1 installed version does not contain '$3'; aborting in CI" >&2
+            # A return would let conditional callers continue with installation.
+            exit 1
+        fi
         echo "[INF] Installing $1 because the installed version does not contain '$3'"
     fi
     return 1

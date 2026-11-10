@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+#
+# Unit tests to ensure toolchain.sh behaves correctly
+#
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUBJECT="${SCRIPT_DIR}/toolchain.sh"
+CI=false
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "${TEST_ROOT}"' EXIT
 
@@ -11,6 +16,7 @@ fail() {
     exit 1
 }
 
+# Assert that the exit status of a command matches the expected value
 assert_status() {
     local expected="$1"
     shift
@@ -20,6 +26,7 @@ assert_status() {
         fail "expected status ${expected}, got ${actual}: $*"
 }
 
+# Assert that a file contains the expected string
 assert_contains() {
     local file="$1"
     local expected="$2"
@@ -137,6 +144,37 @@ test_should_skip_policy_and_versions() {
         assert_status 2 should-skip "${tool}" -version v0.19.0
     SKIP_INSTALLED=true \
         assert_status 2 should-skip "${tool}" --version
+}
+
+test_should_skip_ci_version_policy() {
+    local root="${TEST_ROOT}/should-skip-ci"
+    local tool="${root}/controller-gen"
+    local -x VERSION_ARGS_LOG="${root}/args.log"
+    mkdir -p "${root}"
+    make_version_tool "${tool}" "Version: v0.18.0"
+
+    local -x CI=true SKIP_INSTALLED=true
+    local status=0
+    bash -c '
+        source "$1"
+        if should-skip "$2" --version v0.19.0; then :; fi
+        echo continued
+    ' _ "${SUBJECT}" "${tool}" >"${root}/output.log" 2>&1 || status=$?
+    [[ "${status}" -eq 1 ]] || fail "CI version mismatch should abort, got ${status}"
+    assert_contains "${root}/output.log" "[ERR]"
+    assert_contains "${root}/output.log" "v0.19.0"
+    if grep -Fq continued "${root}/output.log"; then
+        fail "CI version mismatch did not abort"
+    fi
+
+    assert_status 0 should-skip "${tool}"
+    assert_status 1 should-skip "${root}/missing" --version v0.19.0
+    assert_status 1 should-skip "${root}/missing"
+    SKIP_INSTALLED=false \
+        assert_status 1 should-skip "${tool}" --version v0.19.0
+
+    make_version_tool "${tool}" "Version: v0.19.0"
+    assert_status 0 should-skip "${tool}" --version v0.19.0
 }
 
 test_go_install_forms() {
@@ -380,6 +418,7 @@ EOF
 }
 
 test_should_skip_policy_and_versions
+test_should_skip_ci_version_policy
 test_go_install_forms
 test_ginkgo_version_resolution
 test_envtest_refreshes_the_complete_bundle
