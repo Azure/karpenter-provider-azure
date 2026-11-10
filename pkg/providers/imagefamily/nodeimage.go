@@ -87,14 +87,14 @@ type provider struct {
 	cm              *pretty.ChangeMonitor
 }
 
-func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, nodeImagesCache *cache.Cache, clk clock.PassiveClock) *provider {
+func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, nodeImagesCache *cache.Cache, clock clock.PassiveClock) *provider {
 	return &provider{
 		subscription:        subscription,
 		location:            location,
 		imageVersionsClient: versionsClient,
 		nodeImageVersions:   nodeImageVersionsClient,
 		nodeImagesCache:     nodeImagesCache,
-		clock:               clk,
+		clock:               clock,
 		cm:                  pretty.NewChangeMonitor(),
 	}
 }
