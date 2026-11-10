@@ -171,6 +171,28 @@ _ginkgo_version() {
     printf '%s\n' "${version}"
 }
 
+
+go-install-golangci-lint() {
+    # If you change this version, be sure to also change both golangci-lint below and the template file custom-gcl.template.yml
+    go-install golangci-lint --version 2.14.0 github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+
+    # Install our custom modules in golangci-lint
+    local custom_status=0
+    if should-skip "${TOOL_DEST}/golangci-lint-custom" --version v2.14.0-custom; then
+        return
+    else
+        custom_status=$?
+    fi
+    if [[ "${custom_status}" -ne 1 ]]; then
+        return "${custom_status}"
+    fi
+
+    echo "[INF] Installing golangci-lint custom modules"
+    TOOL_DEST="${TOOL_DEST}" envsubst <"${SCRIPT_DIR}/custom-gcl.template.yml" >.custom-gcl.yml
+    "${TOOL_DEST}/golangci-lint" custom -v
+    rm .custom-gcl.yml
+}
+
 tools() {
     local ginkgo_version
     ginkgo_version="$(_ginkgo_version)"
@@ -202,23 +224,7 @@ tools() {
         echo "Go workspace's \"bin\" directory is not in PATH. Run 'export PATH=\"\$PATH:\${GOPATH:-\$HOME/go}/bin\"'."
     fi
 
-    go-install golangci-lint --version 2.14.0 github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
-
-    # Install our custom modules in golangci-lint
-    local custom_status=0
-    if should-skip "${TOOL_DEST}/golangci-lint-custom" --version v2.12.2-custom; then
-        return
-    else
-        custom_status=$?
-    fi
-    if [[ "${custom_status}" -ne 1 ]]; then
-        return "${custom_status}"
-    fi
-
-    echo "[INF] Installing golangci-lint custom modules"
-    TOOL_DEST="${TOOL_DEST}" envsubst <"${SCRIPT_DIR}/custom-gcl.template.yml" >.custom-gcl.yml
-    "${TOOL_DEST}/golangci-lint" custom -v
-    rm .custom-gcl.yml
+    go-install-golangci-lint
 }
 
 _expected_kubernetes_version() {
@@ -382,6 +388,7 @@ kubebuilder() {
     _ensure_writable_directory "${KUBEBUILDER_ASSETS}"
     _install_setup_envtest
     _ensure_envtest_assets
+    echo "[INF] Done."
 }
 
 gettrivy() {
