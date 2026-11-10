@@ -33,7 +33,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	azuretest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
@@ -70,24 +70,22 @@ var disableProvisioningLimits = karpv1.Limits{
 
 var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), func() {
 	var nodePool *karpv1.NodePool
-	var nodeClass *v1alpha2.AKSNodeClass
+	var nodeClass *v1beta1.AKSNodeClass
 	var deployment *appsv1.Deployment
 	var deploymentOptions test.DeploymentOptions
 	var selector labels.Selector
 	var dsCount int
 
 	BeforeEach(func() {
-		nodeClass = env.DefaultAKSNodeClass()
+		nodeClass = azuretest.AKSNodeClass()
 		nodePool = env.DefaultNodePool(nodeClass)
 		nodePool.Spec.Limits = nil
 		test.ReplaceRequirements(nodePool, []karpv1.NodeSelectorRequirementWithMinValues{
 			// Ensure that all pods can fit on to the provisioned nodes including all daemonsets
 			{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      v1alpha2.LabelSKUCPU,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{"2"},
-				},
+				Key:      v1beta1.LabelSKUCPU,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{"2"},
 			},
 		}...)
 		nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{
@@ -244,7 +242,7 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 			nodePoolMap[expirationValue].Spec.Template.Spec.ExpireAfter.Duration = lo.ToPtr(time.Duration(0))
 			nodePoolMap[expirationValue].Spec.Limits = disableProvisioningLimits
 			// Update the drift NodeClass to start drift on Nodes assigned to this NodeClass
-			driftNodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily)
+			driftNodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 
 			// Create test assertions to ensure during the multiple deprovisioner scale-downs
 			type testAssertions struct {
@@ -444,11 +442,10 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 
 			// Add in a instance type size requirement that's larger than the smallest that fits the pods.
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      v1alpha2.LabelSKUCPU,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{"8"},
-				}})
+				Key:      v1beta1.LabelSKUCPU,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{"8"},
+			})
 
 			deployment.Spec.Replicas = lo.ToPtr(int32(replicas))
 			// Hostname anti-affinity to require one pod on each node
@@ -492,7 +489,7 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 				nodePool.Spec.Disruption.ConsolidationPolicy = karpv1.ConsolidationPolicyWhenEmptyOrUnderutilized
 				nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
 				nodePool.Spec.Template.Spec.Requirements = lo.Reject(nodePool.Spec.Template.Spec.Requirements, func(r karpv1.NodeSelectorRequirementWithMinValues, _ int) bool {
-					return r.Key == v1alpha2.LabelSKUCPU
+					return r.Key == v1beta1.LabelSKUCPU
 				})
 				env.ExpectUpdated(nodePool)
 
@@ -660,7 +657,7 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 
 			env.MeasureDeprovisioningDurationFor(func() {
 				By("kicking off deprovisioning drift by changing the nodeClass ImageFamily")
-				nodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily)
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 				env.ExpectCreatedOrUpdated(nodeClass)
 
 				env.EventuallyExpectDeletedNodeCount("==", expectedNodeCount)

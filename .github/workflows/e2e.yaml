@@ -48,6 +48,7 @@ on:
           - Machine
           - NewSKUs
           - NodeClaim
+          - Scale
           - Scheduling
           - Spot
           - Storage

@@ -30,7 +30,8 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	azuretest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
@@ -41,13 +42,13 @@ const testGroup = "provisioning"
 
 var _ = Describe("Provisioning", Label(debug.NoWatch), Label(debug.NoEvents), func() {
 	var nodePool *karpv1.NodePool
-	var nodeClass *v1alpha2.AKSNodeClass
+	var nodeClass *v1beta1.AKSNodeClass
 	var deployment *appsv1.Deployment
 	var selector labels.Selector
 	var dsCount int
 
 	BeforeEach(func() {
-		nodeClass = env.DefaultAKSNodeClass()
+		nodeClass = azuretest.AKSNodeClass()
 		nodePool = env.DefaultNodePool(nodeClass)
 		nodePool.Spec.Limits = nil
 		nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{
@@ -114,11 +115,9 @@ var _ = Describe("Provisioning", Label(debug.NoWatch), Label(debug.NoEvents), fu
 		deployment.Spec.Replicas = lo.ToPtr(int32(replicas))
 		nodeClass.Spec.MaxPods = lo.ToPtr(int32(maxPodDensity))
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      v1alpha2.LabelSKUCPU,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{"2"},
-			},
+			Key:      v1beta1.LabelSKUCPU,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"2"},
 		},
 		)
 

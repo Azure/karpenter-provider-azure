@@ -5,3 +5,23 @@ These test scenarios are designed to be used against a live AKS cluster running 
 ## File Directory
 - `/suites`: Ginkgo test suites for particular scenarios live here.
 - `/pkg`: Common code re-used across test suites lives here.
+
+## Scale suite
+
+The scale suite provisions up to 200 nodes or 6,600 workload pods per scenario.
+Check regional VM quota and subnet capacity before running it.
+
+Run locally against a dedicated test cluster:
+
+```bash
+TEST_SUITE=Scale make az-e2etests
+```
+
+Use `FOCUS` to select a scenario, for example:
+
+```bash
+TEST_SUITE=Scale FOCUS="node-dense scale-up" make az-e2etests
+```
+
+For CI, dispatch the existing [E2E workflow](../.github/workflows/e2e.yaml)
+on the test branch with `suite: Scale` and the desired region and provisioning mode.
