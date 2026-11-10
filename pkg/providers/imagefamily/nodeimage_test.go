@@ -29,6 +29,7 @@ import (
 	"github.com/blang/semver/v4"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
+	"k8s.io/utils/clock"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
@@ -114,7 +115,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		cigImageVersionTest := cigImageVersion
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
 		nodeImageVersionsAPI = &fake.NodeImageVersionsAPI{}
-		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval))
+		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval), clock.RealClock{})
 		kubernetesVersion = lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
 
 		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))

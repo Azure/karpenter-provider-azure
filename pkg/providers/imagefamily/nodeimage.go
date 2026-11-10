@@ -30,6 +30,7 @@ import (
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
+	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
@@ -81,17 +82,19 @@ type provider struct {
 	nodeImageVersions   types.NodeImageVersionsAPI
 
 	nodeImagesCache *cache.Cache
+	clock           clock.PassiveClock
 	latestImageMu   sync.Mutex
 	cm              *pretty.ChangeMonitor
 }
 
-func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, nodeImagesCache *cache.Cache) *provider {
+func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, nodeImagesCache *cache.Cache, clk clock.PassiveClock) *provider {
 	return &provider{
 		subscription:        subscription,
 		location:            location,
 		imageVersionsClient: versionsClient,
 		nodeImageVersions:   nodeImageVersionsClient,
 		nodeImagesCache:     nodeImagesCache,
+		clock:               clk,
 		cm:                  pretty.NewChangeMonitor(),
 	}
 }
@@ -111,17 +114,17 @@ func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSN
 	latestImage.mu.Lock()
 	defer latestImage.mu.Unlock()
 
-	sinceLastUpdate := time.Since(latestImage.lastUpdate)
+	sinceLastUpdate := p.clock.Since(latestImage.lastUpdate)
 	// If the latest image was successfully retrieved recently, return it to avoid unnecessary API calls.
 	if latestImage.err == nil && sinceLastUpdate < LatestImageRefreshInterval {
 		return latestImage.suffix, nil
 	}
 	// If the latest image retrieval was attempted recently, return its cached result to avoid hammering the API.
-	if time.Since(latestImage.lastAttempt) < LatestImageRetryInterval {
+	if p.clock.Since(latestImage.lastAttempt) < LatestImageRetryInterval {
 		return latestImage.suffix, latestImage.err
 	}
 
-	latestImage.lastAttempt = time.Now()
+	latestImage.lastAttempt = p.clock.Now()
 	nodeImages, err := p.listNodeImages(ctx, nodeClass, false)
 	if err != nil {
 		// If the last successful update was recent enough, use it instead of failing immediately.
@@ -136,7 +139,7 @@ func (p *provider) GetLatestVersion(ctx context.Context, nodeClass *v1beta1.AKSN
 
 	latestImage.suffix = getLatestImageVersion(nodeImages)
 	latestImage.err = nil
-	latestImage.lastUpdate = time.Now()
+	latestImage.lastUpdate = p.clock.Now()
 
 	return latestImage.suffix, nil
 }
