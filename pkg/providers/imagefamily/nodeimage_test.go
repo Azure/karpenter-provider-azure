@@ -19,6 +19,7 @@ package imagefamily_test
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
@@ -29,7 +30,7 @@ import (
 	"github.com/blang/semver/v4"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
-	"k8s.io/utils/clock"
+	clocktesting "k8s.io/utils/clock/testing"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
@@ -46,7 +47,8 @@ const (
 	cigImageVersion      = "202505.27.0"
 	laterCIGImageVersion = "202605.27.0"
 
-	sigImageVersion = "202608.26.0"
+	sigImageVersion      = "202608.26.0"
+	laterSIGImageVersion = "202609.01.0"
 	// Azure Linux V2 node images are frozen at their final release, 202512.06.0.
 	azureLinuxV2SIGImageVersion = "202512.06.0"
 	// Windows2025 node images in the fake node-image API.
@@ -104,6 +106,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		nodeImageProvider imagefamily.NodeImageProvider
 		nodeClass         *v1beta1.AKSNodeClass
 		kubernetesVersion string
+		fakeClock         *clocktesting.FakeClock
 	)
 
 	BeforeEach(func() {
@@ -115,7 +118,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 		cigImageVersionTest := cigImageVersion
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
 		nodeImageVersionsAPI = &fake.NodeImageVersionsAPI{}
-		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval), clock.RealClock{})
+		fakeClock = clocktesting.NewFakeClock(time.Now())
+		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval), fakeClock)
 		kubernetesVersion = lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
 
 		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
@@ -652,6 +656,72 @@ var _ = Describe("NodeImageProvider tests", func() {
 	})
 
 	Context("Caching tests", func() {
+		Context("Latest image refresh", func() {
+			BeforeEach(func() {
+				testOptions.UseSIG = true
+				ctx = options.ToContext(ctx, testOptions)
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			})
+
+			It("should refresh only after fifteen minutes", func() {
+				Expect(nodeImageProvider.GetLatestVersion(ctx, nodeClass)).To(Equal(sigImageVersion))
+				nodeImageVersionsAPI.OverrideNodeImageVersions = []*armcontainerservice.NodeImageVersion{
+					{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen2ImageDefinition), Version: lo.ToPtr(laterSIGImageVersion)},
+				}
+
+				fakeClock.Step(imagefamily.LatestImageRefreshInterval - time.Nanosecond)
+				Expect(nodeImageProvider.GetLatestVersion(ctx, nodeClass)).To(Equal(sigImageVersion))
+				fakeClock.Step(time.Nanosecond)
+				Expect(nodeImageProvider.GetLatestVersion(ctx, nodeClass)).To(Equal(laterSIGImageVersion))
+			})
+
+			It("should cache a cold-start failure for five minutes and then recover", func() {
+				apiErr := fmt.Errorf("node image API unavailable")
+				nodeImageVersionsAPI.Error = apiErr
+
+				version, err := nodeImageProvider.GetLatestVersion(ctx, nodeClass)
+				Expect(version).To(BeEmpty())
+				Expect(err).To(MatchError(apiErr))
+
+				nodeImageVersionsAPI.Error = nil
+				fakeClock.Step(imagefamily.LatestImageRetryInterval - time.Nanosecond)
+				version, err = nodeImageProvider.GetLatestVersion(ctx, nodeClass)
+				Expect(version).To(BeEmpty())
+				Expect(err).To(MatchError(apiErr))
+
+				fakeClock.Step(time.Nanosecond)
+				Expect(nodeImageProvider.GetLatestVersion(ctx, nodeClass)).To(Equal(sigImageVersion))
+			})
+
+			It("should retry failed refreshes within grace and fail once grace expires", func() {
+				Expect(nodeImageProvider.GetLatestVersion(ctx, nodeClass)).To(Equal(sigImageVersion))
+				apiErr := fmt.Errorf("node image API unavailable")
+				nodeImageVersionsAPI.Error = apiErr
+
+				fakeClock.Step(imagefamily.LatestImageRefreshInterval)
+				Expect(nodeImageProvider.GetLatestVersion(ctx, nodeClass)).To(Equal(sigImageVersion))
+
+				nodeImageVersionsAPI.Error = nil
+				nodeImageVersionsAPI.OverrideNodeImageVersions = []*armcontainerservice.NodeImageVersion{
+					{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr(imagefamily.Ubuntu2204Gen2ImageDefinition), Version: lo.ToPtr(laterSIGImageVersion)},
+				}
+				fakeClock.Step(imagefamily.LatestImageRetryInterval - time.Nanosecond)
+				Expect(nodeImageProvider.GetLatestVersion(ctx, nodeClass)).To(Equal(sigImageVersion))
+				fakeClock.Step(time.Nanosecond)
+				Expect(nodeImageProvider.GetLatestVersion(ctx, nodeClass)).To(Equal(laterSIGImageVersion))
+
+				nodeImageVersionsAPI.Error = apiErr
+				fakeClock.Step(imagefamily.LatestImageGracePeriod)
+				version, err := nodeImageProvider.GetLatestVersion(ctx, nodeClass)
+				Expect(version).To(BeEmpty())
+				Expect(err).To(MatchError(apiErr))
+
+				nodeImageVersionsAPI.Error = nil
+				fakeClock.Step(imagefamily.LatestImageRetryInterval)
+				Expect(nodeImageProvider.GetLatestVersion(ctx, nodeClass)).To(Equal(laterSIGImageVersion))
+			})
+		})
+
 		It("should get the latest image version independently from the List cache", func() {
 			cachedImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
