@@ -175,6 +175,13 @@ tools() {
     local ginkgo_version
     ginkgo_version="$(_ginkgo_version)"
 
+    #
+    # Ensure the required tools are installed
+    #
+    # Some tools use `version` to check their installed version
+    # Some tools use `--version` instead.
+    #
+
     go-install go-licenses github.com/google/go-licenses/v2@3e084b0caf710f7bfead967567539214f598c0a2 # v2.0.1
     go-install ko version v0.17.1 github.com/google/ko@v0.17.1
     go-install yq --version v4.45.1 github.com/mikefarah/yq/v4@v4.45.1
