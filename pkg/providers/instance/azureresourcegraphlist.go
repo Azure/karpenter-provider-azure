@@ -34,23 +34,25 @@ const (
 )
 
 // getResourceListQueryBuilder returns a KQL query builder for listing resources with nodepool tags
-// but excluding AKS machine-created resources
-func getResourceListQueryBuilder(rg string, resourceType string) *kql.Builder {
-	return kql.New(`Resources`).
+func getResourceListQueryBuilder(rg string, resourceType string, includeAKSMachineResources bool) *kql.Builder {
+	queryBuilder := kql.New(`Resources`).
 		AddLiteral(` | where type == `).AddString(resourceType).
 		AddLiteral(` | where resourceGroup == `).AddString(strings.ToLower(rg)). // ARG resources appear to have lowercase RG
-		AddLiteral(` | where tags has_cs `).AddString(launchtemplate.NodePoolTagKey).
-		AddLiteral(` | where not(tags has_cs `).AddString(launchtemplate.KarpenterAKSMachineNodeClaimTagKey).AddLiteral(`)`)
+		AddLiteral(` | where tags has_cs `).AddString(launchtemplate.NodePoolTagKey)
+	if !includeAKSMachineResources {
+		queryBuilder.AddLiteral(` | where not(tags has_cs `).AddString(launchtemplate.KarpenterAKSMachineNodeClaimTagKey).AddLiteral(`)`)
+	}
+	return queryBuilder
 }
 
 // GetVMListQueryBuilder returns a KQL query builder for listing VMs with nodepool tags
 func GetVMListQueryBuilder(rg string) *kql.Builder {
-	return getResourceListQueryBuilder(rg, vmResourceType)
+	return getResourceListQueryBuilder(rg, vmResourceType, false)
 }
 
 // GetNICListQueryBuilder returns a KQL query builder for listing NICs with nodepool tags
-func GetNICListQueryBuilder(rg string) *kql.Builder {
-	return getResourceListQueryBuilder(rg, nicResourceType)
+func GetNICListQueryBuilder(rg string, includeAKSMachineResources bool) *kql.Builder {
+	return getResourceListQueryBuilder(rg, nicResourceType, includeAKSMachineResources)
 }
 
 // createVMFromQueryResponseData converts ARG query response data into a VirtualMachine object

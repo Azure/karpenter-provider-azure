@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/samber/lo"
 	"k8s.io/apimachinery/pkg/util/version"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
 
 // AKSNodeClassOption is a function that applies modifications to an AKSNodeClass,
@@ -114,5 +115,12 @@ func WithAll(options ...AKSNodeClassOption) AKSNodeClassOption {
 		for _, option := range options {
 			option(nodeClass)
 		}
+	}
+}
+
+// WithDefaultStatus applies the default status to the AKSNodeClass using the provided environment and SIG usage flag.
+func WithDefaultStatus(env *coretest.Environment, useSIG bool) AKSNodeClassOption {
+	return func(nodeClass *v1beta1.AKSNodeClass) {
+		ApplyDefaultStatus(nodeClass, env, useSIG)
 	}
 }
