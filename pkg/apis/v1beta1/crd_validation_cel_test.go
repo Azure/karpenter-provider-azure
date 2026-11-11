@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	kpatest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
@@ -1689,10 +1690,11 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should allow tags that do not use reserved keys",
 			func(tags map[string]string) {
-				nodeClass := &v1beta1.AKSNodeClass{
-					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
-					Spec:       v1beta1.AKSNodeClassSpec{Tags: tags},
-				}
+				nodeClass := kpatest.AKSNodeClass(
+					kpatest.WithName(strings.ToLower(randomdata.SillyName())),
+					kpatest.WithTags(tags),
+				)
+
 				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 			},
 			Entry("omitted tags", nil),
@@ -1713,12 +1715,11 @@ var _ = Describe("CEL/Validation", func() {
 		DescribeTable("should reject reserved tag keys on create and update",
 			func(key, expectedErr string) {
 				for _, reservedKey := range []string{key, strings.ToLower(key), strings.ToUpper(key)} {
-					nodeClass := &v1beta1.AKSNodeClass{
-						ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
-						Spec: v1beta1.AKSNodeClassSpec{
-							Tags: map[string]string{reservedKey: "value"},
-						},
-					}
+					nodeClass := kpatest.AKSNodeClass(
+						kpatest.WithName(strings.ToLower(randomdata.SillyName())),
+						kpatest.WithAdditionalTags(reservedKey, "value"),
+					)
+
 					err := env.Client.Create(ctx, nodeClass)
 					Expect(apierrors.IsInvalid(err)).To(BeTrue(), "expected Invalid for tag key %q, got %v", reservedKey, err)
 					Expect(err.Error()).To(ContainSubstring(expectedErr))

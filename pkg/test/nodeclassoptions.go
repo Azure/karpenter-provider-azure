@@ -18,6 +18,7 @@ package test
 
 import (
 	"fmt"
+	"maps"
 
 	"dario.cat/mergo"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -61,19 +62,31 @@ func WithImageFamily(imageFamily string) AKSNodeClassOption {
 	}
 }
 
-// WithTags sets the Tags field of the AKSNodeClass.
-// tags is a sequence of key-value pairs representing the tags to be applied to the AKSNodeClass.
-func WithTags(pairs ...string) AKSNodeClassOption {
+// WithAdditionalTags sets the Tags field of the AKSNodeClass.
+// tags is a sequence of key-value pairs representing the tags to be added to the AKSNodeClass.
+func WithAdditionalTags(pairs ...string) AKSNodeClassOption {
 	if len(pairs)%2 != 0 {
 		panic("WithTags requires an even number of arguments representing key-value pairs")
 	}
 
 	return func(nodeClass *v1beta1.AKSNodeClass) {
-		tags := map[string]string{}
+		tags := maps.Clone(nodeClass.Spec.Tags)
+		if tags == nil {
+			tags = map[string]string{}
+		}
+
 		for i := 0; i < len(pairs); i += 2 {
 			tags[pairs[i]] = pairs[i+1]
 		}
 
+		nodeClass.Spec.Tags = tags
+	}
+}
+
+// WithTags sets the Tags field of the AKSNodeClass using the provided map.
+// tags is a map of key-value pairs representing the tags to be applied to the AKSNodeClass.
+func WithTags(tags map[string]string) AKSNodeClassOption {
+	return func(nodeClass *v1beta1.AKSNodeClass) {
 		nodeClass.Spec.Tags = tags
 	}
 }
