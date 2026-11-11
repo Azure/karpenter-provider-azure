@@ -4805,6 +4805,68 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 	})
+
+	Context("Flex", func() {
+		DescribeTable("should provision a pod on a Flex node", func(provisionMode, skuName, skuSize string) {
+			provisionCtx, provisionEnv := ctx, azureEnv
+			provisionCluster, provisionCloudProvider, provisioner := cluster, cloudProvider, coreProvisioner
+			if provisionMode == consts.ProvisionModeBootstrappingClient {
+				provisionCtx, provisionEnv = ctxBootstrap, azureEnvBootstrap
+				provisionCluster, provisionCloudProvider, provisioner = clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap
+			}
+			// D16 is an alternative candidate, but this small pod is expected to use D8.
+			for _, vcpus := range []int{8, 16} {
+				provisionEnv.SKUsAPI.AdditionalSKUs = append(provisionEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+					Name:         lo.ToPtr(fmt.Sprintf("D%d_%s", vcpus, skuSize)),
+					Size:         lo.ToPtr(skuSize),
+					Tier:         lo.ToPtr("Standard"),
+					Family:       lo.ToPtr("DFlexFamily"),
+					ResourceType: lo.ToPtr("virtualMachines"),
+					Locations:    &[]string{fake.Region},
+					LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr(fake.Region), Zones: &[]string{"1", "2", "3"}}},
+					Capabilities: &[]compute.ResourceSkuCapabilities{
+						{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr(fmt.Sprint(vcpus))},
+						{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr(fmt.Sprint(vcpus))},
+						{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr(fmt.Sprint(vcpus * 4))},
+						{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+						{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V1,V2")},
+						{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
+					},
+				})
+			}
+			Expect(provisionEnv.InstanceTypesProvider.UpdateInstanceTypes(provisionCtx)).To(Succeed())
+
+			nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+			coretest.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: v1beta1.LabelSKUSeries, Operator: v1.NodeSelectorOpIn, Values: []string{"D_" + skuSize},
+				},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand},
+				},
+			)
+			ExpectApplied(provisionCtx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{ResourceRequirements: v1.ResourceRequirements{
+				Requests: v1.ResourceList{
+					v1.ResourceCPU:    resource.MustParse("1"),
+					v1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			}})
+			ExpectProvisionedAndWaitForPromises(provisionCtx, env.Client, provisionCluster, provisionCloudProvider, provisioner, provisionEnv, pod)
+			node := ExpectScheduled(provisionCtx, env.Client, pod)
+			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(skuName))
+
+			Expect(provisionEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := provisionEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(lo.FromPtr(vm.Properties.HardwareProfile.VMSize)).To(Equal(armcompute.VirtualMachineSizeTypes(skuName)))
+		},
+			Entry("Flex with scriptless", consts.ProvisionModeAKSScriptless, "D8_Flex", "Flex"),
+			Entry("Flex with bootstrap client", consts.ProvisionModeBootstrappingClient, "D8_Flex", "Flex"),
+			Entry("Flex Prime with scriptless", consts.ProvisionModeAKSScriptless, "D8_Flex_Prime", "Flex_Prime"),
+			Entry("Flex Prime with bootstrap client", consts.ProvisionModeBootstrappingClient, "D8_Flex_Prime", "Flex_Prime"),
+		)
+	})
 })
 
 var _ = Describe("Tax Calculator", func() {
