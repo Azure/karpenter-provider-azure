@@ -2041,7 +2041,27 @@ var _ = Describe("InstanceType Provider", func() {
 			azureLinuxGen1ImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen1ImageDefinition, imagefamily.AzureLinuxGen1ImageDefinition)
 			azureLinuxGen2ArmImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ArmImageDefinition, imagefamily.AzureLinuxGen2ArmImageDefinition)
 
-			DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryRG string, expectedGalleryURL string) {
+			v132 := new(semver.MustParse("1.32.0"))
+			v137 := new(semver.MustParse("1.37.0"))
+
+			DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(
+				instanceType string,
+				imageFamily string,
+				expectedImageDefinition string,
+				expectedGalleryRG string,
+				expectedGalleryURL string,
+				minK8sVersion *semver.Version, // Minimum bound (inclusive) for which this test case applies
+				maxK8sVersion *semver.Version, // Maximum bound (exclusive) for which this test case applies
+			) {
+				kubernetesVersion, err := semver.Parse(lo.FromPtr(nodeClass.Status.KubernetesVersion))
+				Expect(err).ToNot(HaveOccurred())
+				if minK8sVersion != nil && kubernetesVersion.LT(*minK8sVersion) {
+					Skip(fmt.Sprintf("requires Kubernetes >= %s; found %s", *minK8sVersion, kubernetesVersion))
+				}
+				if maxK8sVersion != nil && !kubernetesVersion.LT(*maxK8sVersion) {
+					Skip(fmt.Sprintf("requires Kubernetes < %s; found %s", *maxK8sVersion, kubernetesVersion))
+				}
+
 				options := test.Options(test.OptionsFields{
 					UseSIG: lo.ToPtr(true),
 				})
@@ -2070,15 +2090,34 @@ var _ = Describe("InstanceType Provider", func() {
 
 			},
 
-				Entry("Gen2, Gen1 instance type with AKSUbuntu image family", "Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-				Entry("Gen1 instance type with AKSUbuntu image family", "Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-				Entry("ARM instance type with AKSUbuntu image family", "Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-				Entry("Gen2 instance type with AzureLinux image family", "Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
-				Entry("Gen1 instance type with AzureLinux image family", "Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
-				Entry("ARM instance type with AzureLinux image family", "Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+				Entry("Gen2, Gen1 instance type with Ubuntu2204 image family", "Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, nil, v137),
+				Entry("Gen1 instance type with Ubuntu2204 image family", "Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, nil, v137),
+				Entry("ARM instance type with Ubuntu2204 image family", "Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, nil, v137),
+				Entry("Gen2 instance type with Ubuntu2404 image family", "Standard_D2_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, v132, nil),
+				Entry("Gen1 instance type with Ubuntu2404 image family", "Standard_D2_v3", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen1ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, v132, nil),
+				Entry("ARM instance type with Ubuntu2404 image family", "Standard_D16plds_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ArmImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName, v132, nil),
+				Entry("Gen2 instance type with AzureLinux image family", "Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName, nil, nil),
+				Entry("Gen1 instance type with AzureLinux image family", "Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName, nil, nil),
+				Entry("ARM instance type with AzureLinux image family", "Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName, nil, nil),
 			)
 			DescribeTable("should select the right image for a given instance type",
-				func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
+				func(
+					instanceType string,
+					imageFamily string,
+					expectedImageDefinition string,
+					expectedGalleryURL string,
+					minK8sVersion *semver.Version, // Minimum bound (inclusive) for which this test case applies
+					maxK8sVersion *semver.Version, // Maximum bound (exclusive) for which this test case applies
+				) {
+					kubernetesVersion, err := semver.Parse(lo.FromPtr(nodeClass.Status.KubernetesVersion))
+					Expect(err).ToNot(HaveOccurred())
+					if minK8sVersion != nil && kubernetesVersion.LT(*minK8sVersion) {
+						Skip(fmt.Sprintf("requires Kubernetes >= %s; found %s", *minK8sVersion, kubernetesVersion))
+					}
+					if maxK8sVersion != nil && !kubernetesVersion.LT(*maxK8sVersion) {
+						Skip(fmt.Sprintf("requires Kubernetes < %s; found %s", *maxK8sVersion, kubernetesVersion))
+					}
+
 					statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
 						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace)
 					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
@@ -2104,18 +2143,24 @@ var _ = Describe("InstanceType Provider", func() {
 					cluster.Reset()
 					azureEnv.Reset(ctx)
 				},
-				Entry("Gen2, Gen1 instance type with AKSUbuntu image family",
-					"Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
-				Entry("Gen1 instance type with AKSUbuntu image family",
-					"Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
-				Entry("ARM instance type with AKSUbuntu image family",
-					"Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
+				Entry("Gen2, Gen1 instance type with Ubuntu2204 image family",
+					"Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL, nil, v137),
+				Entry("Gen1 instance type with Ubuntu2204 image family",
+					"Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL, nil, v137),
+				Entry("ARM instance type with Ubuntu2204 image family",
+					"Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL, nil, v137),
+				Entry("Gen2 instance type with Ubuntu2404 image family",
+					"Standard_D2_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL, v132, nil),
+				Entry("Gen1 instance type with Ubuntu2404 image family",
+					"Standard_D2_v3", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen1ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL, v132, nil),
+				Entry("ARM instance type with Ubuntu2404 image family",
+					"Standard_D16plds_v5", v1beta1.Ubuntu2404ImageFamily, imagefamily.Ubuntu2404Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL, v132, nil),
 				Entry("Gen2 instance type with AzureLinux image family",
-					"Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+					"Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL, nil, nil),
 				Entry("Gen1 instance type with AzureLinux image family",
-					"Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+					"Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL, nil, nil),
 				Entry("ARM instance type with AzureLinux image family",
-					"Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+					"Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL, nil, nil),
 			)
 		})
 
@@ -4759,6 +4804,68 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(vm.Properties.CapacityReservation).To(BeNil())
 			})
 		})
+	})
+
+	Context("Flex", func() {
+		DescribeTable("should provision a pod on a Flex node", func(provisionMode, skuName, skuSize string) {
+			provisionCtx, provisionEnv := ctx, azureEnv
+			provisionCluster, provisionCloudProvider, provisioner := cluster, cloudProvider, coreProvisioner
+			if provisionMode == consts.ProvisionModeBootstrappingClient {
+				provisionCtx, provisionEnv = ctxBootstrap, azureEnvBootstrap
+				provisionCluster, provisionCloudProvider, provisioner = clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap
+			}
+			// D16 is an alternative candidate, but this small pod is expected to use D8.
+			for _, vcpus := range []int{8, 16} {
+				provisionEnv.SKUsAPI.AdditionalSKUs = append(provisionEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+					Name:         lo.ToPtr(fmt.Sprintf("D%d_%s", vcpus, skuSize)),
+					Size:         lo.ToPtr(skuSize),
+					Tier:         lo.ToPtr("Standard"),
+					Family:       lo.ToPtr("DFlexFamily"),
+					ResourceType: lo.ToPtr("virtualMachines"),
+					Locations:    &[]string{fake.Region},
+					LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr(fake.Region), Zones: &[]string{"1", "2", "3"}}},
+					Capabilities: &[]compute.ResourceSkuCapabilities{
+						{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr(fmt.Sprint(vcpus))},
+						{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr(fmt.Sprint(vcpus))},
+						{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr(fmt.Sprint(vcpus * 4))},
+						{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+						{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V1,V2")},
+						{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
+					},
+				})
+			}
+			Expect(provisionEnv.InstanceTypesProvider.UpdateInstanceTypes(provisionCtx)).To(Succeed())
+
+			nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+			coretest.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: v1beta1.LabelSKUSeries, Operator: v1.NodeSelectorOpIn, Values: []string{"D_" + skuSize},
+				},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand},
+				},
+			)
+			ExpectApplied(provisionCtx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{ResourceRequirements: v1.ResourceRequirements{
+				Requests: v1.ResourceList{
+					v1.ResourceCPU:    resource.MustParse("1"),
+					v1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			}})
+			ExpectProvisionedAndWaitForPromises(provisionCtx, env.Client, provisionCluster, provisionCloudProvider, provisioner, provisionEnv, pod)
+			node := ExpectScheduled(provisionCtx, env.Client, pod)
+			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(skuName))
+
+			Expect(provisionEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := provisionEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(lo.FromPtr(vm.Properties.HardwareProfile.VMSize)).To(Equal(armcompute.VirtualMachineSizeTypes(skuName)))
+		},
+			Entry("Flex with scriptless", consts.ProvisionModeAKSScriptless, "D8_Flex", "Flex"),
+			Entry("Flex with bootstrap client", consts.ProvisionModeBootstrappingClient, "D8_Flex", "Flex"),
+			Entry("Flex Prime with scriptless", consts.ProvisionModeAKSScriptless, "D8_Flex_Prime", "Flex_Prime"),
+			Entry("Flex Prime with bootstrap client", consts.ProvisionModeBootstrappingClient, "D8_Flex_Prime", "Flex_Prime"),
+		)
 	})
 })
 

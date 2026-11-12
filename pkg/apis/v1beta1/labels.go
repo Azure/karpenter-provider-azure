@@ -126,10 +126,10 @@ var (
 	PlacementScopeZonal    = "zonal"
 	PlacementScopeRegional = "regional"
 
-	LabelSKUName    = Group + "/sku-name"    // Standard_D4pls_v6
-	LabelSKUFamily  = Group + "/sku-family"  // D
-	LabelSKUSeries  = Group + "/sku-series"  // Dpls_v6
-	LabelSKUVersion = Group + "/sku-version" // numerical (without v), with 1 backfilled
+	LabelSKUName    = Group + "/sku-name"    // e.g. Standard_D4pls_v6 (equivalent to node.kubernetes.io/instance-type, offered as the SKU nomenclature is more familiar to Azure customers)
+	LabelSKUFamily  = Group + "/sku-family"  // e.g. D
+	LabelSKUSeries  = Group + "/sku-series"  // e.g. Dpls_v6
+	LabelSKUVersion = Group + "/sku-version" // e.g. 1, 2 (numerical without v, with 1 backfilled)
 
 	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
 	LabelSKUMemory = Group + "/sku-memory" // sku memory in MiB
@@ -145,11 +145,11 @@ var (
 	LabelUltraSSD                     = Group + "/sku-storage-ultra-ssd"           // sku.IsUltraSSD
 
 	// GPU labels
-	LabelSKUGPUName         = Group + "/sku-gpu-name"         // ie GPU Accelerator type we parse from vmSize
-	LabelSKUGPUManufacturer = Group + "/sku-gpu-manufacturer" // ie NVIDIA, AMD, etc
-	LabelSKUGPUCount        = Group + "/sku-gpu-count"        // ie 16, 32, etc
+	LabelSKUGPUName         = Group + "/sku-gpu-name"         // e.g. A100 (GPU Accelerator type we parse from vmSize)
+	LabelSKUGPUManufacturer = Group + "/sku-gpu-manufacturer" // e.g. nvidia
+	LabelSKUGPUCount        = Group + "/sku-gpu-count"        // e.g. 16, 32
 
-	LabelPlacementScope = Group + "/placement-scope"
+	LabelPlacementScope = Group + "/placement-scope" // "zonal" or "regional"
 
 	// Internal/restricted labels
 	LabelSKUHyperVGeneration = Group + "/sku-hyperv-generation" // sku.HyperVGenerations
