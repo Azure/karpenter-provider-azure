@@ -142,9 +142,12 @@ var _ = Describe("Validation Reconciler", func() {
 		)
 
 		DescribeTable("validates image family compatibility",
-			func(imageFamily, provisionMode string, useSIG bool, expectedReason string) {
+			func(imageFamily, provisionMode string, useSIG bool, expectedReason string, confidentialVM ...bool) {
 				ctx = options.ToContext(context.Background(), &options.Options{ProvisionMode: provisionMode, UseSIG: useSIG})
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+				if len(confidentialVM) > 0 {
+					nodeClass.Spec.Security = &v1beta1.Security{ConfidentialVM: lo.ToPtr(confidentialVM[0])}
+				}
 				result, err := reconciler.Reconcile(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -168,6 +171,12 @@ var _ = Describe("Validation Reconciler", func() {
 			Entry("ACL with local scriptless and SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSScriptless, true, status.IncompatibleProvisionMode),
 			Entry("ACL with bootstrapping client without SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeBootstrappingClient, false, status.IncompatibleProvisionMode),
 			Entry("ACL with local scriptless without SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSScriptless, false, status.IncompatibleProvisionMode),
+			Entry("ACL CVM with Machine API and SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPI, true, "", true),
+			Entry("ACL CVM with batched Machine API and SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPIHeaderBatch, true, "", true),
+			Entry("ACL CVM with Machine API without SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPI, false, status.SIGRequiredForAzureContainerLinux, true),
+			Entry("ACL CVM with batched Machine API without SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPIHeaderBatch, false, status.SIGRequiredForAzureContainerLinux, true),
+			Entry("ACL CVM with bootstrapping client", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeBootstrappingClient, true, status.IncompatibleProvisionMode, true),
+			Entry("ACL CVM with local scriptless", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSScriptless, true, status.IncompatibleProvisionMode, true),
 			Entry("Ubuntu with bootstrapping client", v1beta1.UbuntuImageFamily, consts.ProvisionModeBootstrappingClient, false, ""),
 			Entry("Azure Linux with local scriptless", v1beta1.AzureLinuxImageFamily, consts.ProvisionModeAKSScriptless, false, ""),
 		)

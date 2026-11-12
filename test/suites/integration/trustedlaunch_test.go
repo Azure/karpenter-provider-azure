@@ -72,6 +72,7 @@ var _ = Describe("Trusted Launch", func() {
 		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
 		nodeClass.Spec.FIPSMode = lo.ToPtr(fipsMode)
 		nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+		nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(true)
 		nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
 		// This SNP SKU needs regional capacity and quota in the dedicated test environment.
 		coretest.ReplaceRequirements(nodePool,

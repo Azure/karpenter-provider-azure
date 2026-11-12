@@ -516,6 +516,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
 		nodeClass.Spec.FIPSMode = lo.ToPtr(fipsMode)
 		nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+		nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(true)
 		nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
 		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 		test.ApplySIGImagesWithVersion(nodeClass, newSIGImageVersion)
@@ -567,6 +568,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		}
 		Expect(imageID).To(HaveSuffix("/images/" + definition + "/versions/" + newSIGImageVersion))
 		instanceType.Requirements[v1beta1.LabelSKUConfidentialComputingType] = scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, "None")
+		nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(false)
 		imageID, err = resolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(imageID).To(Equal(expectedImages[0].ID))

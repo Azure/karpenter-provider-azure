@@ -78,7 +78,7 @@ func azureContainerLinuxImage(imageDefinition, distro, architecture, confidentia
 		Requirements: scheduling.NewRequirements(
 			scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, architecture),
 			scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-			// CVM is selected from the SKU, not a NodeClass security setting.
+			// Keep both security types in image inventory; launch policy is applied separately.
 			scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, v1.NodeSelectorOpIn, confidentialComputingType),
 		),
 		Distro: distro,

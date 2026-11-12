@@ -3126,6 +3126,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 
 			It("should reevaluate SNP image availability on cache hits without removing instance types or mutating prior results", func() {
+				nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(true)
 				opts := *testOptions
 				opts.ProvisionMode, opts.UseSIG = consts.ProvisionModeAKSMachineAPI, true
 				cvmImage := nodeClass.Status.Images[0]
@@ -3183,7 +3184,7 @@ var _ = Describe("InstanceType Provider", func() {
 					}
 					ordinary, ordinaryFound := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_ACLOrdinary" })
 					Expect(ordinaryFound).To(BeTrue(), test.name)
-					Expect(ordinary.Offerings.Available()).ToNot(BeEmpty(), test.name)
+					Expect(ordinary.Offerings.Available()).To(BeEmpty(), test.name)
 					priorResults = append(priorResults, snp)
 					priorSnapshots = append(priorSnapshots, snp.DeepCopy())
 					Expect(priorResults).To(Equal(priorSnapshots), test.name)
@@ -3197,6 +3198,20 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(snp.Offerings.Available()).To(BeEmpty())
 				Expect(its).To(ContainElement(WithTransform(getName, Equal("Standard_ACLOrdinary"))))
 				Expect(priorResults).To(Equal(priorSnapshots))
+				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+				nodeClass.Status.Images = []v1beta1.NodeImage{tlImage, cvmImage}
+				for _, enabled := range []*bool{nil, lo.ToPtr(false), lo.ToPtr(true), nil} {
+					nodeClass.Spec.Security.ConfidentialVM = enabled
+					its, err = azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					for _, name := range []string{"Standard_ACLSNP", "Standard_ACLOrdinary"} {
+						it, found := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == name })
+						Expect(found).To(BeTrue())
+						Expect(len(it.Offerings.Available()) > 0).To(Equal((name == "Standard_ACLSNP") == lo.FromPtr(enabled)))
+					}
+					Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
+					Expect(priorResults).To(Equal(priorSnapshots))
+				}
 			})
 
 			DescribeTable("should distinguish TL and SNP images without sharing incompatible cached selections", func(fips bool) {
