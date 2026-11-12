@@ -1004,6 +1004,37 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", "", &v1beta1.FIPSModeFIPS, true, true),
 		)
 
+		DescribeTable("should restrict confidentialVM to AzureContainerLinux on create and update", func(family string) {
+			for _, enabled := range []*bool{nil, lo.ToPtr(false), lo.ToPtr(true)} {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr(family), Security: &v1beta1.Security{
+						ConfidentialVM: enabled,
+						TrustedLaunch:  &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)},
+					}},
+				}
+				if family == "" {
+					nodeClass.Spec.ImageFamily = nil
+				}
+				if family == v1beta1.Windows2022ImageFamily {
+					nodeClass.Spec.Security.TrustedLaunch = nil
+				}
+				if lo.FromPtr(enabled) && family != v1beta1.AzureContainerLinuxImageFamily {
+					Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("security.confidentialVM is only supported for AzureContainerLinux")))
+					nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(false)
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+					nodeClass.Spec.Security.ConfidentialVM = enabled
+					Expect(env.Client.Update(ctx, nodeClass)).To(MatchError(ContainSubstring("security.confidentialVM is only supported for AzureContainerLinux")))
+				} else {
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+					Expect(nodeClass.IsConfidentialVMEnabled()).To(Equal(lo.FromPtr(enabled)))
+				}
+			}
+		}, Entry("default family", ""), Entry("Ubuntu", v1beta1.UbuntuImageFamily),
+			Entry("Ubuntu2204", v1beta1.Ubuntu2204ImageFamily), Entry("Ubuntu2404", v1beta1.Ubuntu2404ImageFamily),
+			Entry("AzureLinux", v1beta1.AzureLinuxImageFamily), Entry("Windows2022", v1beta1.Windows2022ImageFamily),
+			Entry("Windows2025", v1beta1.Windows2025ImageFamily), Entry("AzureContainerLinux", v1beta1.AzureContainerLinuxImageFamily))
+
 		DescribeTable("should require explicit AzureContainerLinux security on create and update",
 			func(security *v1beta1.Security, valid bool) {
 				nodeClass := &v1beta1.AKSNodeClass{
@@ -1031,6 +1062,8 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("only vTPM enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}}, false),
 			Entry("only Secure Boot enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}}, false),
 			Entry("both enabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, true),
+			Entry("confidentialVM with both enabled", &v1beta1.Security{ConfidentialVM: lo.ToPtr(true), TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, true),
+			Entry("confidentialVM without UEFI", &v1beta1.Security{ConfidentialVM: lo.ToPtr(true)}, false),
 			Entry("vTPM disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false)}}, false),
 			Entry("Secure Boot disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(false)}}, false),
 			Entry("vTPM enabled but Secure Boot disabled", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(false)}}, false),

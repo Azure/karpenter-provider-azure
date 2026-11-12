@@ -221,6 +221,7 @@ func TestResolveAzureContainerLinuxPersistedImages(t *testing.T) {
 				tc.imageType.Key = v1beta1.LabelSKUConfidentialComputingType
 				nodeClass.Status.Images[0].Requirements = append(nodeClass.Status.Images[0].Requirements, *tc.imageType)
 			}
+			nodeClass.Spec.Security = &v1beta1.Security{ConfidentialVM: lo.ToPtr(tc.instanceType == "SNP")}
 			if tc.addCVM {
 				nodeClass.Status.Images = append(nodeClass.Status.Images, v1beta1.NodeImage{
 					ID: "cvm",
@@ -237,6 +238,15 @@ func TestResolveAzureContainerLinuxPersistedImages(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 			}
 			g.Expect(imageID).To(Equal(tc.want))
+			// Even a full or persisted image inventory must not override current policy.
+			for _, enabled := range []*bool{nil, lo.ToPtr(false), lo.ToPtr(true)} {
+				if lo.FromPtr(enabled) == (tc.instanceType == "SNP") {
+					continue
+				}
+				nodeClass.Spec.Security.ConfidentialVM = enabled
+				_, err = NewDefaultResolver(nil, nil, nil, nil).ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+				g.Expect(err).To(MatchError(ContainSubstring("does not match security.confidentialVM")))
+			}
 		})
 	}
 }

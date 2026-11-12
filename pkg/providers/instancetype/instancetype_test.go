@@ -121,7 +121,7 @@ func TestConfidentialImageAvailabilityPreservesCachedObjects(t *testing.T) {
 	quota.Offerings[0].Available = false
 	cached := &cachedInstanceTypes{base: []*cloudprovider.InstanceType{base}, quota: []*cloudprovider.InstanceType{quota}}
 	baseSnapshot, quotaSnapshot := base.DeepCopy(), quota.DeepCopy()
-	nodeClass := &v1beta1.AKSNodeClass{}
+	nodeClass := &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Security: &v1beta1.Security{ConfidentialVM: lo.ToPtr(true)}}}
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
 	unavailable := applyConfidentialImageAvailability(cached.quota, nodeClass)
@@ -155,6 +155,38 @@ func TestConfidentialImageAvailabilityPreservesCachedObjects(t *testing.T) {
 	g.Expect(available[0]).To(Equal(quotaSnapshot))
 	g.Expect(cached.base).To(Equal([]*cloudprovider.InstanceType{baseSnapshot}))
 	g.Expect(cached.quota).To(Equal([]*cloudprovider.InstanceType{quotaSnapshot}))
+}
+
+func TestConfidentialVMSelectionPreservesInventory(t *testing.T) {
+	g := NewWithT(t)
+	nodeClass := &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Security: &v1beta1.Security{}}}
+	nodeClass.Status.Images = []v1beta1.NodeImage{{ID: "cvm", Requirements: []corev1.NodeSelectorRequirement{{
+		Key: v1beta1.LabelSKUConfidentialComputingType, Operator: corev1.NodeSelectorOpIn, Values: []string{"SNP"},
+	}}}}
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+	inventory := make([]*cloudprovider.InstanceType, 0, 2)
+	for _, kind := range []string{"None", "SNP"} {
+		inventory = append(inventory, &cloudprovider.InstanceType{
+			Name: kind, Requirements: scheduling.NewRequirements(scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, kind)),
+			Offerings: cloudprovider.Offerings{{Available: true}, {Available: false}},
+		})
+	}
+	previous := make([]*cloudprovider.InstanceType, 0, 12)
+	snapshots := make([]*cloudprovider.InstanceType, 0, 12)
+	for _, enabled := range []*bool{nil, lo.ToPtr(false), lo.ToPtr(true), lo.ToPtr(false), lo.ToPtr(true), nil} {
+		nodeClass.Spec.Security.ConfidentialVM = enabled
+		result := applyConfidentialImageAvailability(inventory, nodeClass)
+		g.Expect(result).To(HaveLen(2))
+		for i, it := range result {
+			g.Expect(it.Requirements).To(Equal(inventory[i].Requirements))
+			g.Expect(it.Offerings[0].Available).To(Equal((i == 1) == lo.FromPtr(enabled)))
+			g.Expect(it.Offerings[1].Available).To(BeFalse())
+			g.Expect(inventory[i].Offerings[0].Available).To(BeTrue())
+			previous = append(previous, it)
+			snapshots = append(snapshots, it.DeepCopy())
+		}
+		g.Expect(previous).To(Equal(snapshots))
+	}
 }
 
 func TestInstanceTypeMemoryReservations(t *testing.T) {

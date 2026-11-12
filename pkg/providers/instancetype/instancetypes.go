@@ -221,27 +221,33 @@ func (p *DefaultProvider) List(
 }
 
 func applyConfidentialImageAvailability(instanceTypes []*cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) []*cloudprovider.InstanceType {
+	confidentialVM := nodeClass.IsConfidentialVMEnabled()
 	// Image availability can change independently of the instance-type cache. Legacy
 	// images without a discriminator must not implicitly match a confidential SKU.
-	images, _ := nodeClass.GetImages()
 	snpImages := []scheduling.Requirements{}
-	for _, image := range images {
-		requirements := scheduling.NewNodeSelectorRequirements(image.Requirements...)
-		confidentialType := requirements.Get(v1beta1.LabelSKUConfidentialComputingType)
-		if image.ID != "" && confidentialType.Operator() == corev1.NodeSelectorOpIn &&
-			confidentialType.Len() == 1 && confidentialType.Has(skewer.ConfidentialComputingTypeSNP) {
-			snpImages = append(snpImages, requirements)
+	if confidentialVM {
+		images, _ := nodeClass.GetImages()
+		for _, image := range images {
+			requirements := scheduling.NewNodeSelectorRequirements(image.Requirements...)
+			confidentialType := requirements.Get(v1beta1.LabelSKUConfidentialComputingType)
+			if image.ID != "" && confidentialType.Operator() == corev1.NodeSelectorOpIn &&
+				slices.Equal(confidentialType.Values(), []string{skewer.ConfidentialComputingTypeSNP}) {
+				snpImages = append(snpImages, requirements)
+			}
 		}
 	}
-	// Retain types and requirements for existing-node compatibility, but disable new
-	// launches without an image. Copy changed types and offerings to preserve cached and prior results.
+	// Apply the current launch policy after the cache, retaining inventory for adoption
+	// and drift. Copy changed types so toggling the policy cannot mutate prior results.
 	return lo.Map(instanceTypes, func(instanceType *cloudprovider.InstanceType, _ int) *cloudprovider.InstanceType {
-		if !instanceType.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType).Has(skewer.ConfidentialComputingTypeSNP) {
-			return instanceType
+		confidentialType := instanceType.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType)
+		isSNP := slices.Contains(confidentialType.Values(), skewer.ConfidentialComputingTypeSNP)
+		allowed := isSNP == confidentialVM
+		if isSNP {
+			allowed = allowed && lo.ContainsBy(snpImages, func(requirements scheduling.Requirements) bool {
+				return instanceType.Requirements.Compatible(requirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil
+			})
 		}
-		if lo.ContainsBy(snpImages, func(requirements scheduling.Requirements) bool {
-			return instanceType.Requirements.Compatible(requirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil
-		}) || !slices.ContainsFunc(instanceType.Offerings, func(offering *cloudprovider.Offering) bool { return offering.Available }) {
+		if allowed || !slices.ContainsFunc(instanceType.Offerings, func(offering *cloudprovider.Offering) bool { return offering.Available }) {
 			return instanceType
 		}
 		copied := instanceType.DeepCopy()

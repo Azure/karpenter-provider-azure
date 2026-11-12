@@ -34,6 +34,7 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	provisioningscheduling "sigs.k8s.io/karpenter/pkg/controllers/provisioning/scheduling"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -134,7 +135,7 @@ var _ = Describe("CloudProvider", func() {
 		// Note: AKS Machine API does not support Community Image Gallery (CIG)
 		Context("Create - ImageReference and ImageProvider + Image Family", func() {
 			DescribeTable("should provision AzureContainerLinux with explicit Trusted Launch",
-				func(provisionMode string, fipsMode *v1beta1.FIPSMode, definition string, withOverrides bool, instanceType string) {
+				func(provisionMode string, fipsMode *v1beta1.FIPSMode, definition string, withOverrides bool, instanceType string, broadSelection ...bool) {
 					testOptions.ProvisionMode = provisionMode
 					// Dispatch mode is captured when the provider is constructed, not read on each create.
 					azureEnv.Reset(ctx)
@@ -189,6 +190,11 @@ var _ = Describe("CloudProvider", func() {
 					nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
 					nodeClass.Spec.FIPSMode = fipsMode
 					nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+					if instanceType == "Standard_ACLSNP" {
+						nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(true)
+					} else if len(broadSelection) > 0 {
+						nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(false)
+					}
 					if withOverrides {
 						nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 							KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(1024))},
@@ -198,11 +204,63 @@ var _ = Describe("CloudProvider", func() {
 							EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 						}
 					}
-					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-						Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{instanceType},
-					})
+					if len(broadSelection) == 0 {
+						coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+							Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{instanceType},
+						})
+					} else {
+						coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+							Key: v1beta1.LabelSKUFamily, Operator: v1.NodeSelectorOpIn, Values: []string{"D", "E"},
+						})
+					}
 					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+					if len(broadSelection) > 0 {
+						By("retaining inventory while enforcing only the NodeClass security policy")
+						types, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+						Expect(err).ToNot(HaveOccurred())
+						snp, found := lo.Find(types, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_ACLSNP" })
+						Expect(found).To(BeTrue())
+						blockedType := "Standard_D2_v5"
+						if !nodeClass.IsConfidentialVMEnabled() {
+							blockedType = snp.Name
+							Expect(snp.Offerings.Available()).To(BeEmpty())
+						} else {
+							Expect(snp.Offerings.Available()).ToNot(BeEmpty())
+						}
+						nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{blockedType}}}
+						_, err = cloudProvider.Create(ctx, nodeClaim)
+						Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
+
+						By("rejecting pod-only selection across the security boundary")
+						pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{v1.LabelInstanceTypeStable: blockedType}})
+						ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+						ExpectNotScheduled(ctx, env.Client, pod)
+						ExpectDeleted(ctx, env.Client, pod)
+						Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+
+						By("gating static claims which bypass GetInstanceTypes")
+						staticPool := coretest.NodePool(karpv1.NodePool{Spec: nodePool.Spec})
+						staticPool.Spec.Replicas = lo.ToPtr(int64(1))
+						staticPool.Spec.Weight = nil
+						staticPool.Spec.Limits = nil
+						ExpectApplied(ctx, env.Client, staticPool)
+						staticClaim := provisioningscheduling.NewNodeClaimTemplate(staticPool).ToNodeClaim()
+						staticClaim.Name = "static-broad"
+						staticClaim.GenerateName = ""
+						// Match the static controller's unexpanded template, with no scheduler pass.
+						created, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, staticClaim)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(created.Labels[v1beta1.LabelSKUConfidentialComputingType]).To(Equal(lo.Ternary(nodeClass.IsConfidentialVMEnabled(), "SNP", "None")))
+						staticClaim.Name = "static-security-blocked"
+						staticClaim.Spec.Requirements = nodeClaim.Spec.Requirements
+						_, err = cloudProvider.Create(ctx, staticClaim)
+						Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
+						Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+						azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+						Expect(cloudProvider.Delete(ctx, created)).To(Succeed())
+						ExpectDeleted(ctx, env.Client, staticPool)
+					}
 					pod := coretest.UnschedulablePod(coretest.PodOptions{})
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
@@ -211,7 +269,11 @@ var _ = Describe("CloudProvider", func() {
 					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 					machine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
 					Expect(machine.Properties.NodeImageVersion).To(Equal(lo.ToPtr("AKSAzureLinux-" + definition + "-202608.26.0")))
-					Expect(machine.Properties.Hardware.VMSize).To(Equal(lo.ToPtr(instanceType)))
+					if len(broadSelection) > 0 && !nodeClass.IsConfidentialVMEnabled() {
+						Expect(machine.Properties.Hardware.VMSize).ToNot(Equal(lo.ToPtr("Standard_ACLSNP")))
+					} else {
+						Expect(machine.Properties.Hardware.VMSize).To(Equal(lo.ToPtr(instanceType)))
+					}
 					Expect(machine.Properties.OperatingSystem.OSSKU).To(Equal(lo.ToPtr(armcontainerservice.OSSKUAzureContainerLinux)))
 					Expect(machine.Properties.OperatingSystem.EnableFIPS).To(Equal(lo.ToPtr(lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS)))
 					Expect(machine.Properties.Security.EnableVTPM).To(Equal(lo.ToPtr(true)))
@@ -242,12 +304,20 @@ var _ = Describe("CloudProvider", func() {
 						runningClaim := runningClaims[0]
 
 						By("also creating an unrelated Trusted Launch machine")
+						nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+						nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(false)
+						ExpectApplied(ctx, env.Client, nodeClass)
+						ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 						nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{{
 							Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{"Standard_D2_v5"},
 						}}
 						ExpectApplied(ctx, env.Client, nodeClaim)
 						trustedLaunchClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
 						Expect(err).ToNot(HaveOccurred())
+						nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+						nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(true)
+						ExpectApplied(ctx, env.Client, nodeClass)
+						ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 						for _, staleGeneration := range []bool{false, true} {
 							By(fmt.Sprintf("retaining unavailable SNP inventory during image reconciliation (stale generation=%t)", staleGeneration))
 							nodeClass = ExpectExists(ctx, env.Client, nodeClass)
@@ -319,6 +389,55 @@ var _ = Describe("CloudProvider", func() {
 							Expect(ExpectExists(ctx, env.Client, retryClaim).StatusConditions().Get(karpv1.ConditionTypeLaunched).IsUnknown()).To(BeTrue())
 							createCalls := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()
 
+							By("disabling confidentialVM before Launched is recorded without losing adoption or inventory")
+							nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(false)
+							ExpectApplied(ctx, env.Client, nodeClass)
+							ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+							optedOutTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+							Expect(err).ToNot(HaveOccurred())
+							optedOutSNP, found := lo.Find(optedOutTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == instanceType })
+							Expect(found).To(BeTrue())
+							Expect(optedOutSNP.Offerings.Available()).To(BeEmpty())
+							Expect(optedOutSNP.Offerings.HasCompatible(scheduling.NewLabelRequirements(runningClaim.Labels))).To(BeTrue())
+							adoptedAfterOptOut, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, retryClaim)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(adoptedAfterOptOut.Status.ProviderID).To(Equal(utils.VMResourceIDToProviderID(ctx, promise.VMResourceID)))
+							got, err := cloudProvider.Get(ctx, adoptedAfterOptOut.Status.ProviderID)
+							Expect(err).ToNot(HaveOccurred())
+							listed, err := cloudProvider.List(ctx)
+							Expect(err).ToNot(HaveOccurred())
+							listedClaim, found := lo.Find(listed, func(claim *karpv1.NodeClaim) bool {
+								return claim.Status.ProviderID == adoptedAfterOptOut.Status.ProviderID
+							})
+							Expect(found).To(BeTrue())
+							for _, actual := range []*karpv1.NodeClaim{adoptedAfterOptOut, got, listedClaim} {
+								Expect(actual.Labels).To(Equal(runningClaim.Labels))
+								Expect(actual.Status.Capacity).To(Equal(runningClaim.Status.Capacity))
+								Expect(actual.Status.Allocatable).To(Equal(runningClaim.Status.Allocatable))
+								Expect(actual.Status.ImageID).To(Equal(runningClaim.Status.ImageID))
+							}
+							newSNPClaim := coretest.NodeClaim(karpv1.NodeClaim{
+								ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name}},
+								Spec:       *retryClaim.Spec.DeepCopy(),
+							})
+							newSNPClaim.Spec.Requirements[0].Values = []string{instanceType}
+							Expect(retryClaim.Spec.Requirements[0].Values).To(Equal(requestedTypes))
+							_, err = cloudProvider.Create(ctx, newSNPClaim)
+							Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
+							Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(createCalls))
+							By("also adopting when the source pool no longer exists")
+							orphanedClaim := retryClaim.DeepCopy()
+							orphanedClaim.Labels[karpv1.NodePoolLabelKey] = "missing-pool"
+							adoptedOrphan, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, orphanedClaim)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(adoptedOrphan.Status.ProviderID).To(Equal(adoptedAfterOptOut.Status.ProviderID))
+							Expect(adoptedOrphan.Status.Capacity).To(Equal(runningClaim.Status.Capacity))
+							Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(createCalls))
+							nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+							nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(true)
+							ExpectApplied(ctx, env.Client, nodeClass)
+							ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
 							By("removing CVM images while Trusted Launch images remain ready")
 							nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 							nodeClass.Status.Images = lo.Filter(nodeClass.Status.Images, func(image v1beta1.NodeImage, _ int) bool {
@@ -338,7 +457,10 @@ var _ = Describe("CloudProvider", func() {
 							Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(createCalls))
 
 							By("blocking a new SNP launch while CVM images are absent")
-							newClaim := coretest.NodeClaim(karpv1.NodeClaim{Spec: retryClaim.Spec})
+							newClaim := coretest.NodeClaim(karpv1.NodeClaim{
+								ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name}},
+								Spec:       retryClaim.Spec,
+							})
 							newClaim.Spec.Requirements[0].Values = []string{instanceType}
 							_, err = cloudProvider.Create(ctx, newClaim)
 							Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
@@ -362,6 +484,10 @@ var _ = Describe("CloudProvider", func() {
 				Entry("Machine API FIPS CVM", consts.ProvisionModeAKSMachineAPI, &v1beta1.FIPSModeFIPS, "aclgen2fipsCVM", false, "Standard_ACLSNP"),
 				Entry("batched Machine API CVM", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2CVM", false, "Standard_ACLSNP"),
 				Entry("batched Machine API FIPS CVM", consts.ProvisionModeAKSMachineAPIHeaderBatch, &v1beta1.FIPSModeFIPS, "aclgen2fipsCVM", false, "Standard_ACLSNP"),
+				Entry("Machine API broad pool selects CVM", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2CVM", false, "Standard_ACLSNP", true),
+				Entry("batched Machine API broad pool selects CVM", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2CVM", false, "Standard_ACLSNP", true),
+				Entry("Machine API broad pool selects TL", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2TL", false, "", true),
+				Entry("batched Machine API broad pool selects TL", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2TL", false, "", true),
 				Entry("Machine API ARM64", consts.ProvisionModeAKSMachineAPI, nil, "aclgen2arm64TL", false, "Standard_ACLArm"),
 				Entry("Machine API ARM64 FIPS", consts.ProvisionModeAKSMachineAPI, &v1beta1.FIPSModeFIPS, "aclgen2arm64fipsTL", false, "Standard_ACLArm"),
 				Entry("batched Machine API ARM64", consts.ProvisionModeAKSMachineAPIHeaderBatch, nil, "aclgen2arm64TL", false, "Standard_ACLArm"),

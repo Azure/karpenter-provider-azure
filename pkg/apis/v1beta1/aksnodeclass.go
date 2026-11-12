@@ -154,6 +154,7 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // +kubebuilder:validation:XValidation:message="localDNS is not supported for Windows image families",rule="!has(self.localDNS) || self.localDNS.mode == 'Disabled' || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
 // +kubebuilder:validation:XValidation:message="AzureContainerLinux requires security.trustedLaunch.vtpm and security.trustedLaunch.secureBoot to be explicitly set to true",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || (has(self.security) && has(self.security.trustedLaunch) && has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm && has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)"
 // +kubebuilder:validation:XValidation:message="AzureContainerLinux requires an OS disk of at least 60 GB",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60"
+// +kubebuilder:validation:XValidation:message="security.confidentialVM is only supported for AzureContainerLinux",rule="!has(self.security) || !has(self.security.confidentialVM) || !self.security.confidentialVM || (has(self.imageFamily) && self.imageFamily == 'AzureContainerLinux')"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation requires imageFamily AzureLinux",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (has(self.imageFamily) && self.imageFamily == 'AzureLinux') : true"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with fipsMode FIPS",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.fipsMode) || self.fipsMode != 'FIPS') : true"
@@ -297,6 +298,12 @@ type TrustedLaunch struct {
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
 type Security struct {
+	// confidentialVM specifies whether newly provisioned nodes must be confidential VMs.
+	// When true, only compatible confidential VM sizes and images are eligible.
+	// When omitted or false, only non-confidential nodes are launched.
+	// There is no fallback between security types.
+	// +optional
+	ConfidentialVM *bool `json:"confidentialVM,omitempty"`
 	// encryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
 	// For more information, see:
 	// https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
@@ -991,6 +998,10 @@ const AKSNodeClassHashVersion = "v3"
 
 func (in *AKSNodeClass) Hash() string {
 	spec := in.Spec.DeepCopy()
+	// Normalize the default on the copy, without mutating the caller's security settings.
+	if spec.Security != nil {
+		spec.Security.ConfidentialVM = lo.Ternary(in.IsConfidentialVMEnabled(), spec.Security.ConfidentialVM, nil)
+	}
 	if spec.CapacityReservation != nil {
 		spec.CapacityReservation.GroupID = lo.ToPtr(strings.ToLower(lo.FromPtr(spec.CapacityReservation.GroupID)))
 	}
@@ -1012,7 +1023,7 @@ func (in *AKSNodeClass) Hash() string {
 	// A disabled node public IP block requests nothing, so omitted, {}, and {enabled: false} must
 	// hash the same. ARM resource IDs are case-insensitive, so prefix ID casing must not drift nodes.
 	// IP tag values keep their casing; CEL keeps entries unique, so none cancel out as a set.
-	if spec.NodePublicIP == nil || !lo.FromPtr(spec.NodePublicIP.Enabled) {
+	if !in.IsNodePublicIPEnabled() {
 		spec.NodePublicIP = nil
 	} else {
 		if len(spec.NodePublicIP.PrefixIDs) == 0 {
@@ -1079,6 +1090,11 @@ func (in *AKSNodeClass) GetNodePublicIPTags() []IPTag {
 		return nil
 	}
 	return in.Spec.NodePublicIP.IPTags
+}
+
+// IsConfidentialVMEnabled returns whether new nodes must be confidential VM hosts.
+func (in *AKSNodeClass) IsConfidentialVMEnabled() bool {
+	return in.Spec.Security != nil && lo.FromPtr(in.Spec.Security.ConfidentialVM)
 }
 
 func (in *AKSNodeClass) IsVTPMEnabled() bool {
