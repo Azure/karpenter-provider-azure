@@ -312,6 +312,53 @@ func TestBatcherFiresWhenMaxBatchSizeReached(t *testing.T) {
 	g.Expect(batchSizes).ToNot(gomega.BeEmpty(), "at least one batch should have fired")
 }
 
+func TestBatcherDoesNotExceedMaxBatchSizeWhenEnqueuedBeforeStart(t *testing.T) {
+	t.Parallel()
+	g := gomega.NewWithT(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var mu sync.Mutex
+	var batchSizes []int
+
+	b := New(ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
+		mu.Lock()
+		batchSizes = append(batchSizes, len(batch.Requests))
+		mu.Unlock()
+		for _, req := range batch.Requests {
+			req.ResponseChan <- &Response[struct{}]{Err: nil}
+		}
+	}, Options{
+		IdleTimeout:  50 * time.Millisecond,
+		MaxTimeout:   5 * time.Second,
+		MaxBatchSize: 3,
+	})
+
+	var responseChans []chan *Response[struct{}]
+	for i := 0; i < 7; i++ {
+		ch, err := b.Enqueue(testItem{Group: "same-group", Name: fmt.Sprintf("item-%d", i)})
+		g.Expect(err).ToNot(gomega.HaveOccurred())
+		responseChans = append(responseChans, ch)
+	}
+	b.Start()
+
+	for i, ch := range responseChans {
+		select {
+		case resp := <-ch:
+			g.Expect(resp.Err).ToNot(gomega.HaveOccurred())
+		case <-time.After(2 * time.Second):
+			t.Fatalf("request %d timed out", i)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	g.Expect(batchSizes).ToNot(gomega.BeEmpty())
+	for _, size := range batchSizes {
+		g.Expect(size).To(gomega.BeNumerically("<=", 3))
+	}
+}
+
 func TestBatcherFiresAtMaxTimeout(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
