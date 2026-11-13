@@ -61,12 +61,12 @@ var azureResourceGroupNameRE = regexp.MustCompile(`.*/subscriptions/(?:.*)/resou
 // Inlined from sigs.k8s.io/cloud-provider-azure/pkg/provider to avoid pulling in a dependency
 // that has incompatible armcompute version requirements.
 func convertResourceGroupNameToLower(resourceID string) (string, error) {
-	matches := azureResourceGroupNameRE.FindStringSubmatch(resourceID)
-	if len(matches) != 2 {
+	matches := azureResourceGroupNameRE.FindStringSubmatchIndex(resourceID)
+	if len(matches) != 4 {
 		return "", fmt.Errorf("%q isn't in Azure resource ID format %q", resourceID, azureResourceGroupNameRE.String())
 	}
-	resourceGroup := matches[1]
-	return strings.Replace(resourceID, resourceGroup, strings.ToLower(resourceGroup), 1), nil
+	start, end := matches[2], matches[3]
+	return resourceID[:start] + strings.ToLower(resourceID[start:end]) + resourceID[end:], nil
 }
 
 func VMResourceIDToProviderID(ctx context.Context, id string) string {
