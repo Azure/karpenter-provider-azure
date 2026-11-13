@@ -57,6 +57,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	corenodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -317,6 +318,10 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 				metrics.ReasonLabel:       "async_provisioning",
 				metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
 				metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
+				// Failed provisioning isn't consolidation, so there's no consolidation policy to report -
+				// the same as the core health controller reports when it deletes an unhealthy node.
+				metrics.ConsolidationPolicyLabel: "",
+				metrics.TerminationModeLabel:     corenodeclaimutils.DisruptionTerminationMode(nodeClaim),
 			})
 		}
 	}()
