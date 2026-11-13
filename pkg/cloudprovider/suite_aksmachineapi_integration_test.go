@@ -697,6 +697,46 @@ func runSharedAKSMachineAPITests() {
 }
 
 var _ = Describe("CloudProvider", func() {
+	Context("ProvisionMode = AKSMachineAPI, ManageExistingAKSMachines = false", func() {
+		BeforeEach(func() {
+			testOptions = test.Options(test.OptionsFields{
+				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				UseSIG:        lo.ToPtr(true),
+			})
+			ctx = coreoptions.ToContext(ctx, coretest.Options())
+			ctx = options.ToContext(ctx, testOptions)
+			azureEnv = test.NewEnvironment(ctx, env)
+			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
+		})
+		AfterEach(func() {
+			cloudProvider.WaitForInstancePromises()
+			cluster.Reset()
+			azureEnv.Reset(ctx)
+		})
+
+		runLROPollingErrorTests()
+
+		It("should clean up a confirmed failure even when retrieving its details is throttled", func() {
+			delete(nodeClaim.Labels, karpv1.NodePoolLabelKey)
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Error.Set(fake.AKSMachineAPIErrorAny)
+			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.SetCustomTransformer(func(_ *fake.AKSMachineGetInput) error {
+				if azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len() == 3 {
+					return &azcore.ResponseError{StatusCode: 429}
+				}
+				return nil
+			})
+			ExpectApplied(ctx, env.Client, nodeClass, nodeClaim)
+			_, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(instance.IsLROPollingError(err)).To(BeFalse())
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(4))
+			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(1))
+		})
+	})
+
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch, ManageExistingAKSMachines = false", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{

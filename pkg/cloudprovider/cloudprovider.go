@@ -265,6 +265,10 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 		// the launch controller. This ensures we retry continuously until we hit the registration TTL
 		err := instancePromise.Wait()
 		if err != nil {
+			if instance.IsLROPollingError(err) {
+				c.handleInstancePromiseLROPollingError(ctx, instancePromise, err)
+				return toCreateError(err, "observing standalone instance provisioning failed")
+			}
 			c.handleInstancePromiseWaitError(ctx, instancePromise, nodeClaim, err)
 			return toCreateError(err, "creating standalone instance failed")
 		}
@@ -290,6 +294,10 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 		}()
 
 		err := instancePromise.Wait()
+		if instance.IsLROPollingError(err) {
+			c.handleInstancePromiseLROPollingError(ctx, instancePromise, err)
+			return
+		}
 
 		// Wait until the claim is Launched, to avoid racing with creation.
 		// This isn't strictly required, but without this, failure test scenarios are harder
@@ -326,6 +334,13 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 		}
 	}()
 	return nil
+}
+
+func (c *CloudProvider) handleInstancePromiseLROPollingError(ctx context.Context, instancePromise instance.Promise, err error) {
+	if ctx.Err() == nil {
+		log.FromContext(ctx).Error(err, "LRO polling failed; provisioning outcome unknown, preserving instance and nodeclaim",
+			"instanceName", instancePromise.GetInstanceName())
+	}
 }
 
 func (c *CloudProvider) handleInstancePromiseWaitError(ctx context.Context, instancePromise instance.Promise, nodeClaim *karpv1.NodeClaim, waitErr error) {
