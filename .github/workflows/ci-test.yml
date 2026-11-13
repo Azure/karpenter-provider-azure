@@ -24,10 +24,8 @@ jobs:
       with:
         disable-telemetry: true
         egress-policy: block
-        allowed-endpoints: > # dl.k8s.io is for 1.25 CI only
-          *.dl.k8s.io:443
+        allowed-endpoints: >
           api.github.com:443
-          dl.k8s.io:443
           coveralls.io:443
           github.com:443
           objects.githubusercontent.com:443
