@@ -48,6 +48,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
+	"sigs.k8s.io/karpenter/pkg/metrics"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
@@ -617,6 +618,31 @@ var _ = Describe("CloudProvider", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(created).ToNot(BeNil())
 			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+		})
+
+		It("should increment the disruption metric after an async VM provisioning failure", func() {
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeOnDemand},
+			})
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.Error.Set(&azcore.ResponseError{ErrorCode: "InternalOperationError"})
+
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			pod := coretest.UnschedulablePod()
+			ExpectLaunched(ctx, env.Client, cloudProvider, coreProvisioner, pod)
+			cloudProvider.WaitForInstancePromises()
+			ExpectNotScheduled(ctx, env.Client, pod)
+			Expect(ExpectNodeClaims(ctx, env.Client)).To(BeEmpty())
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			ExpectMetricCounterValue(metrics.NodeClaimsDisruptedTotal, 1, map[string]string{
+				metrics.ReasonLabel:              "async_provisioning",
+				metrics.NodePoolLabel:            nodePool.Name,
+				metrics.CapacityTypeLabel:        karpv1.CapacityTypeOnDemand,
+				metrics.ConsolidationPolicyLabel: "",
+				metrics.TerminationModeLabel:     metrics.TerminationModeGraceful,
+			})
 		})
 
 		It("should retain quota when VM promise cleanup cannot delete the instance", func() {
