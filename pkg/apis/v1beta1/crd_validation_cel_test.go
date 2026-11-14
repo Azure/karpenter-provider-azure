@@ -25,11 +25,13 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	kpatest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
@@ -1685,6 +1687,66 @@ var _ = Describe("CEL/Validation", func() {
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
+
+		DescribeTable("should allow tags that do not use reserved keys",
+			func(tags map[string]string) {
+				nodeClass := kpatest.AKSNodeClass(
+					kpatest.WithName(strings.ToLower(randomdata.SillyName())),
+					kpatest.WithTags(tags),
+				)
+
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			},
+			Entry("omitted tags", nil),
+			Entry("empty tags", map[string]string{}),
+			Entry("reserved words outside the prefix or exact name", map[string]string{
+				"custom-aks-managed":         "value",
+				"aks-manage":                 "value",
+				"orchestrator-version":       "value",
+				"custom-poolName":            "value",
+				"SkipGPUDriverInstall-extra": "value",
+			}),
+			Entry("reserved words in tag values", map[string]string{
+				"gpu":    "SkipGPUDriverInstall",
+				"system": "aks-managed-poolName",
+			}),
+		)
+
+		DescribeTable("should reject reserved tag keys on create and update",
+			func(key, expectedErr string) {
+				for _, reservedKey := range []string{key, strings.ToLower(key), strings.ToUpper(key)} {
+					nodeClass := kpatest.AKSNodeClass(
+						kpatest.WithName(strings.ToLower(randomdata.SillyName())),
+						kpatest.WithAdditionalTags(reservedKey, "value"),
+					)
+
+					err := env.Client.Create(ctx, nodeClass)
+					Expect(apierrors.IsInvalid(err)).To(BeTrue(), "expected Invalid for tag key %q, got %v", reservedKey, err)
+					Expect(err.Error()).To(ContainSubstring(expectedErr))
+
+					nodeClass.Spec.Tags = map[string]string{"custom": "value"}
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+					nodeClass.Spec.Tags[reservedKey] = "value"
+					err = env.Client.Update(ctx, nodeClass)
+					Expect(apierrors.IsInvalid(err)).To(BeTrue(), "expected Invalid for tag key %q, got %v", reservedKey, err)
+					Expect(err.Error()).To(ContainSubstring(expectedErr))
+
+					stored := &v1beta1.AKSNodeClass{}
+					Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), stored)).To(Succeed())
+					Expect(stored.Spec.Tags).To(Equal(map[string]string{"custom": "value"}))
+				}
+			},
+			Entry("deprecated GPU tag", "SkipGPUDriverInstall", "use spec.gpu.mode instead"),
+			Entry("orchestrator", "orchestrator", "reserved for AKS"),
+			Entry("pool name", "poolName", "reserved for AKS"),
+			Entry("API server IP address", "aksAPIServerIPAddress", "reserved for AKS"),
+			Entry("service principal version", "servicePrincipalVersion", "reserved for AKS"),
+			Entry("Windows GMSA version", "aksWindowsGmsaVersion", "reserved for AKS"),
+			Entry("Windows password version", "aksWindowsPasswordVersion", "reserved for AKS"),
+			Entry("bare reserved prefix", "aks-managed", "prefix is reserved for AKS"),
+			Entry("reserved prefix with suffix", "aks-managed-poolName", "prefix is reserved for AKS"),
+			Entry("mixed-case reserved prefix without separator", "aKs-MaNaGeDcustom", "prefix is reserved for AKS"),
+		)
 
 		DescribeTable(
 			"should reject tags with invalid keys",

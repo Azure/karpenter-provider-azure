@@ -2421,7 +2421,12 @@ spec:
               tags:
                 additionalProperties:
                   type: string
-                description: tags to be applied on Azure resources like instances.
+                description: |-
+                  tags to be applied on Azure resources like instances.
+                  Tag keys are case-insensitive. The aks-managed prefix and the orchestrator,
+                  poolName, aksAPIServerIPAddress, servicePrincipalVersion, aksWindowsGmsaVersion,
+                  and aksWindowsPasswordVersion keys are reserved for AKS.
+                  SkipGPUDriverInstall is not supported; use spec.gpu.mode instead.
                 type: object
                 x-kubernetes-validations:
                 - message: tags keys must be less than 512 characters
@@ -2432,6 +2437,17 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+                - message: SkipGPUDriverInstall tag is not supported; use spec.gpu.mode
+                    instead
+                  rule: self.all(k, k.lowerAscii() != 'skipgpudriverinstall')
+                - message: the aks-managed tag prefix is reserved for AKS
+                  rule: self.all(k, !k.lowerAscii().startsWith('aks-managed'))
+                - message: orchestrator, poolName, aksAPIServerIPAddress, servicePrincipalVersion,
+                    aksWindowsGmsaVersion, and aksWindowsPasswordVersion tag keys
+                    are reserved for AKS
+                  rule: self.all(k, !(k.lowerAscii() in ['orchestrator', 'poolname',
+                    'aksapiserveripaddress', 'serviceprincipalversion', 'akswindowsgmsaversion',
+                    'akswindowspasswordversion']))
               versions:
                 description: |-
                   versions controls the Kubernetes and node image versions for the NodeClass.
