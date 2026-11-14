@@ -20,6 +20,18 @@ Fixes # <!-- issue number -->
 
 *
 
+**AI Disclosure** <!-- Per https://www.kubernetes.dev/docs/guide/pull-requests/#ai-guidance. Only check the boxes that apply. -->
+
+* [ ] I used AI assistance to help produce this contribution.
+* [ ] I have verified the AI generated code prior to submission.
+* [ ] I will either respond to review comments myself or indicate clearly that the response was submitted by AI.
+
+Additional Comments: <!-- E.g., if you would like to justify an unusually excessive use of AI. -->
+
+```comments
+
+```
+
 **Does this change impact docs?**
 - [ ] Yes, PR includes docs updates
 - [ ] Yes, issue opened: # <!-- issue number -->
