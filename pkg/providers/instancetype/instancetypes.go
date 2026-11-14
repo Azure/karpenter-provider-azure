@@ -80,6 +80,7 @@ type instanceTypeParameters struct {
 	CapacityReservationGroupID string
 	CapacityReservations       []capacityReservationPlacement
 	KataEnabled                bool
+	ManagedSIG                 bool
 }
 
 // capacityReservationPlacement is one {VM size, zone} pair that a member reservation
@@ -185,6 +186,7 @@ func (p *DefaultProvider) List(
 		CapacityReservationGroupID: nodeClass.GetCapacityReservationGroupID(),
 		CapacityReservations:       p.capacityReservationPlacements(ctx, nodeClass),
 		KataEnabled:                nodeClass.IsKataEnabled(),
+		ManagedSIG:                 opts.IsAKSMachineAPIMode() && opts.UseSIG,
 	}
 	if nodeClass.Spec.Kubelet != nil {
 		// These values do not filter SKUs, but they change scheduling simulation by changing
@@ -209,21 +211,51 @@ func (p *DefaultProvider) List(
 		cached = &cachedInstanceTypes{base: p.buildInstanceTypes(ctx, instanceTypeParams)}
 		p.instanceTypesCache.SetDefault(key, cached)
 	}
-	// If quota hasn't changed, return the cached data
+	// Refresh the quota overlay only when quota changes.
 	quotaSeqNum := p.quotaProvider.SeqNum()
-	if cached.quota != nil && cached.quotaSeqNum == quotaSeqNum {
-		return slices.Clone(cached.quota), nil
+	if cached.quota == nil || cached.quotaSeqNum != quotaSeqNum {
+		cached.quota, cached.quotaSeqNum = p.applyQuota(ctx, slices.Clone(cached.base), instanceTypeParams.CapacityReservationGroupID)
 	}
 
-	// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
-	// so that modifications to the ordering of the data don't affect the original
-	result := slices.Clone(cached.base)
+	return applyConfidentialImageAvailability(cached.quota, nodeClass), nil
+}
 
-	// Add quota overlay before returning
-	result, quotaSeqNum = p.applyQuota(ctx, result, instanceTypeParams.CapacityReservationGroupID)
-	cached.quota = result
-	cached.quotaSeqNum = quotaSeqNum
-	return slices.Clone(result), nil
+func applyConfidentialImageAvailability(instanceTypes []*cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) []*cloudprovider.InstanceType {
+	confidentialVM := nodeClass.IsConfidentialVMEnabled()
+	// Image availability can change independently of the instance-type cache. Legacy
+	// images without a discriminator must not implicitly match a confidential SKU.
+	snpImages := []scheduling.Requirements{}
+	if confidentialVM {
+		images, _ := nodeClass.GetImages()
+		for _, image := range images {
+			requirements := scheduling.NewNodeSelectorRequirements(image.Requirements...)
+			confidentialType := requirements.Get(v1beta1.LabelSKUConfidentialComputingType)
+			if image.ID != "" && confidentialType.Operator() == corev1.NodeSelectorOpIn &&
+				slices.Equal(confidentialType.Values(), []string{skewer.ConfidentialComputingTypeSNP}) {
+				snpImages = append(snpImages, requirements)
+			}
+		}
+	}
+	// Apply the current launch policy after the cache, retaining inventory for adoption
+	// and drift. Copy changed types so toggling the policy cannot mutate prior results.
+	return lo.Map(instanceTypes, func(instanceType *cloudprovider.InstanceType, _ int) *cloudprovider.InstanceType {
+		confidentialType := instanceType.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType)
+		isSNP := slices.Contains(confidentialType.Values(), skewer.ConfidentialComputingTypeSNP)
+		allowed := isSNP == confidentialVM
+		if isSNP {
+			allowed = allowed && lo.ContainsBy(snpImages, func(requirements scheduling.Requirements) bool {
+				return instanceType.Requirements.Compatible(requirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil
+			})
+		}
+		if allowed || !slices.ContainsFunc(instanceType.Offerings, func(offering *cloudprovider.Offering) bool { return offering.Available }) {
+			return instanceType
+		}
+		copied := instanceType.DeepCopy()
+		for _, offering := range copied.Offerings {
+			offering.Available = false
+		}
+		return copied
+	})
 }
 
 // KubeReservedOverrides converts typed kube-reserved overrides to kubelet resource quantities.
@@ -540,6 +572,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Se
 // filters into a single call to keep the List() method's cyclomatic complexity low.
 func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, architecture string, params *instanceTypeParameters) bool {
 	return isArchitectureSupportedByImageFamily(architecture, params.ImageFamily) &&
+		p.isInstanceTypeSupportedByConfidentialComputing(sku, architecture, params) &&
 		p.isInstanceTypeSupportedByImageFamily(sku.GetName(), params.ImageFamily) &&
 		p.isInstanceTypeSupportedByEncryptionAtHost(sku, params) &&
 		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
@@ -583,6 +616,34 @@ func (p *DefaultProvider) isInstanceTypeSupportedByKata(sku *skewer.SKU, archite
 		return false
 	}
 	return sku.IsNestedVirtualizationSupported() || sku.IsDirectVirtualizationSupported()
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByConfidentialComputing(sku *skewer.SKU, architecture string, params *instanceTypeParameters) bool {
+	confidentialType := confidentialComputingType(sku)
+	if confidentialType == "None" {
+		return true
+	}
+	return confidentialType == skewer.ConfidentialComputingTypeSNP &&
+		params.ImageFamily == v1beta1.AzureContainerLinuxImageFamily && params.ManagedSIG && !params.KataEnabled &&
+		getArchitecture(architecture) == karpv1.ArchitectureAmd64 && sku.IsHyperVGen2Supported()
+}
+
+func confidentialComputingType(sku *skewer.SKU) string {
+	value, _ := sku.GetCapabilityString(skewer.CapabilityConfidentialComputingType)
+	value = strings.TrimSpace(value)
+	if value != "" && !strings.EqualFold(value, "None") {
+		return strings.ToUpper(value)
+	}
+	// A legacy name alone cannot verify SNP support.
+	if hasConfidentialSKUName(sku) {
+		return "Unknown"
+	}
+	return "None"
+}
+
+func hasConfidentialSKUName(sku *skewer.SKU) bool {
+	return skuutil.IsConfidential(strings.ToUpper(sku.GetSize())) ||
+		skuutil.IsConfidential(strings.TrimPrefix(strings.ToUpper(sku.GetName()), "STANDARD_"))
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, params *instanceTypeParameters) bool {
@@ -752,8 +813,7 @@ func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType
 		p.hasMinimumMemory(sku) &&
 		!p.isUnsupportedByAKS(sku) &&
 		!p.isUnsupportedGPU(sku) &&
-		!p.hasConstrainedCPUs(vmsize) &&
-		!p.isConfidential(sku)
+		!p.hasConstrainedCPUs(vmsize)
 }
 
 // at least 2 cpus
@@ -786,12 +846,6 @@ func (p *DefaultProvider) isUnsupportedGPU(sku *skewer.SKU) bool {
 // SKU with constrained CPUs
 func (p *DefaultProvider) hasConstrainedCPUs(vmsize *skewer.VMSizeType) bool {
 	return vmsize.CpusConstrained != nil
-}
-
-// confidential VMs (DC, EC) are not yet supported by this Karpenter provider
-func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
-	size := sku.GetSize()
-	return skuutil.IsConfidential(size)
 }
 
 func (p *DefaultProvider) Reset() {

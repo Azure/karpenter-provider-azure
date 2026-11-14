@@ -125,6 +125,37 @@ var _ = Describe("Hash", func() {
 		Entry("ArtifactStreaming.Enabled", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
 		Entry("GPU.Nvidia.ManagementMode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged)}}}}),
 		Entry("NodePublicIP.Enabled", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{NodePublicIP: &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}}}),
+		Entry("Security.ConfidentialVM", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Security: &v1beta1.Security{ConfidentialVM: lo.ToPtr(true)}}}),
+	)
+	It("should normalize confidentialVM false without mutating security or changing default hashes", func() {
+		for _, security := range []*v1beta1.Security{
+			{},
+			{EncryptionAtHost: lo.ToPtr(true)},
+			{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}},
+		} {
+			nodeClass.Spec.Security = security
+			hash := nodeClass.Hash()
+			Expect(nodeClass.IsConfidentialVMEnabled()).To(BeFalse())
+			security.ConfidentialVM = lo.ToPtr(false)
+			Expect(nodeClass.Hash()).To(Equal(hash))
+			Expect(security.ConfidentialVM).To(Equal(lo.ToPtr(false)))
+			security.ConfidentialVM = lo.ToPtr(true)
+			Expect(nodeClass.IsConfidentialVMEnabled()).To(BeTrue())
+			Expect(nodeClass.Hash()).ToNot(Equal(hash))
+		}
+	})
+	DescribeTable("should preserve pre-confidentialVM security hashes", func(security *v1beta1.Security, expected string) {
+		nodeClass.Spec = v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily), Security: security}
+		Expect(nodeClass.Hash()).To(Equal(expected))
+		if security != nil {
+			security.ConfidentialVM = lo.ToPtr(false)
+			Expect(nodeClass.Hash()).To(Equal(expected))
+		}
+	},
+		Entry("omitted security", nil, "18279364067211716931"),
+		Entry("empty security", &v1beta1.Security{}, "3101282910098684181"),
+		Entry("host encryption", &v1beta1.Security{EncryptionAtHost: lo.ToPtr(true)}, "12267985090058472288"),
+		Entry("ACL UEFI", &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, "5244225085103623705"),
 	)
 	Context("NodePublicIP", func() {
 		const (

@@ -303,16 +303,16 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 func overrideAnyGoalStateVersionsWithExisting(nodeClass *v1beta1.AKSNodeClass, discoveredImages []v1beta1.NodeImage) []v1beta1.NodeImage {
 	existingBaseIDMapping := mapImageBasesToImages(nodeClass.Status.Images)
 
-	updatedImages := []v1beta1.NodeImage{}
+	updatedImages := make([]v1beta1.NodeImage, 0, len(discoveredImages))
 	// Note: we have to range over the discovered images here, instead of converting to a baseIDMapping, to keep the ordering consistent
 	for i := range discoveredImages {
 		discoveredImage := discoveredImages[i]
 		discoveredBaseImageID := trimVersionSuffix(discoveredImage.ID)
 		if existingImage, ok := existingBaseIDMapping[discoveredBaseImageID]; ok {
-			updatedImages = append(updatedImages, *existingImage)
-		} else {
-			updatedImages = append(updatedImages, discoveredImage)
+			// Preserve the version outside maintenance, but refresh image compatibility requirements.
+			discoveredImage.ID = existingImage.ID
 		}
+		updatedImages = append(updatedImages, discoveredImage)
 	}
 	return updatedImages
 }

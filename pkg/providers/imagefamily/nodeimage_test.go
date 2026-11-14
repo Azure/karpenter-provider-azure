@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -97,6 +98,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 	var (
 		testOptions               *options.Options
 		communityImageVersionsAPI *fake.CommunityGalleryImageVersionsAPI
+		nodeImageVersionsAPI      *fake.NodeImageVersionsAPI
 
 		nodeImageProvider imagefamily.NodeImageProvider
 		nodeClass         *v1beta1.AKSNodeClass
@@ -111,7 +113,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		communityImageVersionsAPI = &fake.CommunityGalleryImageVersionsAPI{}
 		cigImageVersionTest := cigImageVersion
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
-		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
+		nodeImageVersionsAPI = &fake.NodeImageVersionsAPI{}
 		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval))
 		kubernetesVersion = lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
 
@@ -239,20 +241,44 @@ var _ = Describe("NodeImageProvider tests", func() {
 		})
 
 		DescribeTable("should resolve AzureContainerLinux SIG images",
-			func(fipsMode *v1beta1.FIPSMode, amd64Definition, arm64Definition string) {
+			func(fipsMode *v1beta1.FIPSMode, kata bool, definitions []string) {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
 				nodeClass.Spec.FIPSMode = fipsMode
 				nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+				if kata {
+					nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+				}
+				// Seed the new ACL variants locally until they appear in the feed snapshot.
+				versions, err := nodeImageVersionsAPI.List(ctx, fake.Region)
+				Expect(err).ToNot(HaveOccurred())
+				nodeImageVersionsAPI.OverrideNodeImageVersions = append([]*armcontainerservice.NodeImageVersion{}, versions...)
+				for _, definition := range []string{"aclgen2CVM", "aclgen2fipsCVM"} {
+					nodeImageVersionsAPI.OverrideNodeImageVersions = append(nodeImageVersionsAPI.OverrideNodeImageVersions, &armcontainerservice.NodeImageVersion{
+						FullName: lo.ToPtr("AKSAzureLinux-" + definition + "-" + sigImageVersion),
+						OS:       lo.ToPtr("AKSAzureLinux"),
+						SKU:      lo.ToPtr(definition),
+						Version:  lo.ToPtr(sigImageVersion),
+					})
+				}
 
 				images, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(images).To(HaveLen(2))
-				Expect(images[0].ID).To(Equal(imagefamily.BuildImageIDSIG(sigSubscription, "AKS-AzureLinux", "AKSAzureLinux", amd64Definition, sigImageVersion)))
-				Expect(images[1].ID).To(Equal(imagefamily.BuildImageIDSIG(sigSubscription, "AKS-AzureLinux", "AKSAzureLinux", arm64Definition, sigImageVersion)))
+				Expect(images).To(HaveLen(len(definitions)))
+				for i, definition := range definitions {
+					Expect(images[i].ID).To(Equal(imagefamily.BuildImageIDSIG(sigSubscription, "AKS-AzureLinux", "AKSAzureLinux", definition, sigImageVersion)))
+					confidentialComputingType := "None"
+					if strings.HasSuffix(definition, "CVM") {
+						confidentialComputingType = "SNP"
+					}
+					Expect(images[i].Requirements.Get(v1beta1.LabelSKUConfidentialComputingType).Values()).To(ConsistOf(confidentialComputingType))
+				}
 			},
-			Entry("default", nil, "aclgen2TL", "aclgen2arm64TL"),
-			Entry("FIPS disabled", &v1beta1.FIPSModeDisabled, "aclgen2TL", "aclgen2arm64TL"),
-			Entry("FIPS enabled", &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", "aclgen2arm64fipsTL"),
+			Entry("default", nil, false, []string{"aclgen2TL", "aclgen2arm64TL", "aclgen2CVM"}),
+			Entry("FIPS disabled", &v1beta1.FIPSModeDisabled, false, []string{"aclgen2TL", "aclgen2arm64TL", "aclgen2CVM"}),
+			Entry("FIPS enabled", &v1beta1.FIPSModeFIPS, false, []string{"aclgen2fipsTL", "aclgen2arm64fipsTL", "aclgen2fipsCVM"}),
+			Entry("Kata", nil, true, []string{}),
+			Entry("Kata with FIPS disabled", &v1beta1.FIPSModeDisabled, true, []string{}),
+			Entry("Kata with FIPS enabled", &v1beta1.FIPSModeFIPS, true, []string{}),
 		)
 
 		Context("List TrustedLaunch Images", func() {

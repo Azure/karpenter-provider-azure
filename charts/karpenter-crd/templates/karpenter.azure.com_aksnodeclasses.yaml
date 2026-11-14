@@ -2395,6 +2395,13 @@ spec:
                 description: security is a collection of security related karpenter
                   fields
                 properties:
+                  confidentialVM:
+                    description: |-
+                      confidentialVM specifies whether newly provisioned nodes must be confidential VMs.
+                      When true, only compatible confidential VM sizes and images are eligible.
+                      When omitted or false, only non-confidential nodes are launched.
+                      There is no fallback between security types.
+                    type: boolean
                   encryptionAtHost:
                     description: |-
                       encryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
@@ -2522,6 +2529,10 @@ spec:
             - message: AzureContainerLinux requires an OS disk of at least 60 GB
               rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
                 || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60'
+            - message: security.confidentialVM is only supported for AzureContainerLinux
+              rule: '!has(self.security) || !has(self.security.confidentialVM) ||
+                !self.security.confidentialVM || (has(self.imageFamily) && self.imageFamily
+                == ''AzureContainerLinux'')'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
