@@ -115,10 +115,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
 	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]; ok {
-		// Missing tag (by design, only possible if user intervenes) will eventually be repaired by in-place update controller.
-		// By the time of writing, this is being used for logging purposes within provider only.
-		// That is unlikely to change for core. But be mindful of provider is to rely on this in that situation. Still, rare.
-		// This was less of a concern for VM instance as NodeClaim name is always inferable from instance name.
+		// The NodeClaim tag identifies Karpenter-owned machines for inventory discovery, including standalone claims.
 		nodeClaim.Name = *tag
 	}
 	nodeClaim.Labels = labels
