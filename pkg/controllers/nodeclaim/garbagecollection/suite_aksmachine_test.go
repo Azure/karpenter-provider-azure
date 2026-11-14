@@ -90,10 +90,10 @@ var _ = Describe("Instance Garbage Collection", func() {
 		})
 
 		It("should not delete an AKS machine if there is no NodeClaim owner, but was not launched by a NodeClaim", func() {
-			// Remove the managed-by tag (this isn't launched by a NodeClaim)
+			// Remove the NodeClaim ownership tag (this isn't launched by a NodeClaim)
 			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
 			aksMachine.Properties.Tags = lo.OmitBy(aksMachine.Properties.Tags, func(key string, value *string) bool {
-				return key == launchtemplate.NodePoolTagKey
+				return key == launchtemplate.KarpenterAKSMachineNodeClaimTagKey
 			})
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 

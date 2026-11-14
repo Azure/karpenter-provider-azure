@@ -269,7 +269,8 @@ func TestListWithFallback(t *testing.T) {
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
 						Tags: map[string]*string{
-							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
+							launchtemplate.NodePoolTagKey:                     to.Ptr("test-pool"),
+							launchtemplate.KarpenterAKSMachineNodeClaimTagKey: to.Ptr("machine1"),
 						},
 					},
 				},
@@ -278,7 +279,8 @@ func TestListWithFallback(t *testing.T) {
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
 						Tags: map[string]*string{
-							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
+							launchtemplate.NodePoolTagKey:                     to.Ptr("test-pool"),
+							launchtemplate.KarpenterAKSMachineNodeClaimTagKey: to.Ptr("machine2"),
 						},
 					},
 				},
@@ -290,7 +292,8 @@ func TestListWithFallback(t *testing.T) {
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
 						Tags: map[string]*string{
-							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
+							launchtemplate.NodePoolTagKey:                     to.Ptr("test-pool"),
+							launchtemplate.KarpenterAKSMachineNodeClaimTagKey: to.Ptr("machine1"),
 						},
 					},
 				},
@@ -299,7 +302,8 @@ func TestListWithFallback(t *testing.T) {
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
 						Tags: map[string]*string{
-							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
+							launchtemplate.NodePoolTagKey:                     to.Ptr("test-pool"),
+							launchtemplate.KarpenterAKSMachineNodeClaimTagKey: to.Ptr("machine2"),
 						},
 					},
 				},
@@ -313,7 +317,8 @@ func TestListWithFallback(t *testing.T) {
 					Name: to.Ptr("machine3"),
 					Properties: &armcontainerservice.MachineProperties{
 						Tags: map[string]*string{
-							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
+							launchtemplate.NodePoolTagKey:                     to.Ptr("test-pool"),
+							launchtemplate.KarpenterAKSMachineNodeClaimTagKey: to.Ptr("machine3"),
 						},
 					},
 				},
@@ -324,7 +329,8 @@ func TestListWithFallback(t *testing.T) {
 					Name: to.Ptr("machine3"),
 					Properties: &armcontainerservice.MachineProperties{
 						Tags: map[string]*string{
-							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
+							launchtemplate.NodePoolTagKey:                     to.Ptr("test-pool"),
+							launchtemplate.KarpenterAKSMachineNodeClaimTagKey: to.Ptr("machine3"),
 						},
 					},
 				},
@@ -619,7 +625,7 @@ func TestPollOnce(t *testing.T) {
 	}
 }
 
-func TestIsValid(t *testing.T) {
+func TestListWithFallbackFiltersMachines(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -628,26 +634,72 @@ func TestIsValid(t *testing.T) {
 		expected   bool
 	}{
 		{
-			name: "valid properties",
+			name: "returns standalone machine with a nonempty nodeclaim tag",
 			properties: &armcontainerservice.MachineProperties{
 				Tags: map[string]*string{
-					launchtemplate.NodePoolTagKey: lo.ToPtr("test-nodepool"),
+					launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
 				},
 			},
 			expected: true,
 		},
 		{
-			name:       "nil properties",
+			name: "returns nodepool-owned machine with a nonempty nodeclaim tag",
+			properties: &armcontainerservice.MachineProperties{
+				Tags: map[string]*string{
+					launchtemplate.NodePoolTagKey:                     lo.ToPtr("test-nodepool"),
+					launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "excludes machine with only a nodepool tag (this is not expected to happen)",
+			properties: &armcontainerservice.MachineProperties{
+				Tags: map[string]*string{
+					launchtemplate.NodePoolTagKey: lo.ToPtr("test-nodepool"),
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "excludes machine with a nil nodeclaim tag",
+			properties: &armcontainerservice.MachineProperties{
+				Tags: map[string]*string{
+					launchtemplate.NodePoolTagKey:                     lo.ToPtr("test-nodepool"),
+					launchtemplate.KarpenterAKSMachineNodeClaimTagKey: nil,
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "excludes machine with an empty nodeclaim tag",
+			properties: &armcontainerservice.MachineProperties{
+				Tags: map[string]*string{
+					launchtemplate.NodePoolTagKey:                     lo.ToPtr("test-nodepool"),
+					launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr(""),
+				},
+			},
+			expected: false,
+		},
+		{
+			name:       "excludes machine with nil properties without panic",
 			properties: nil,
 			expected:   false,
 		},
 		{
-			name:       "empty properties",
+			name:       "excludes machine with nil tags without panic",
 			properties: &armcontainerservice.MachineProperties{},
 			expected:   false,
 		},
 		{
-			name: "missing node pool tag",
+			name: "excludes machine with empty tags",
+			properties: &armcontainerservice.MachineProperties{
+				Tags: map[string]*string{},
+			},
+			expected: false,
+		},
+		{
+			name: "excludes machine with a missing nodeclaim tag",
 			properties: &armcontainerservice.MachineProperties{
 				Tags: map[string]*string{
 					"someOtherTag": lo.ToPtr("value"),
@@ -657,11 +709,40 @@ func TestIsValid(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, useCache := range []bool{true, false} {
+		path := "direct"
+		if useCache {
+			path = "cached"
+		}
+		t.Run(path, func(t *testing.T) {
 			t.Parallel()
-			if got := isValid(tt.properties); got != tt.expected {
-				t.Errorf("isValid() = %v, want %v", got, tt.expected)
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+					g := NewWithT(t)
+					machine := &armcontainerservice.Machine{
+						Name: to.Ptr("machine"),
+					}
+					if tt.properties != nil {
+						machine.Properties = lo.ToPtr(*tt.properties)
+					}
+					c := MachineCache{
+						client: &fakeAKSMachineClienter{
+							listRetval: []*armcontainerservice.Machine{machine},
+						},
+						options:  defaultOpts(),
+						machines: map[string]*armcontainerservice.Machine{"machine": machine},
+					}
+					c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
+
+					machines, err := c.ListWithFallback(context.Background(), useCache)
+					g.Expect(err).ToNot(HaveOccurred())
+					if tt.expected {
+						g.Expect(machines).To(Equal([]*armcontainerservice.Machine{machine}))
+					} else {
+						g.Expect(machines).To(BeEmpty())
+					}
+				})
 			}
 		})
 	}
