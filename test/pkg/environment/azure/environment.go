@@ -201,7 +201,7 @@ func NewEnvironment(t *testing.T) *Environment {
 		azureEnv.MachineAgentPoolName = lo.Ternary(os.Getenv("AKS_MACHINES_POOL_NAME") == "", "mpool", os.Getenv("AKS_MACHINES_POOL_NAME"))
 	}
 	// Confirm we have a machine pool
-	if azureEnv.InClusterController && azureEnv.IsAKSMachineAPIMode() {
+	if azureEnv.InClusterController && azureEnv.IsAKSMachineAPIMode() && os.Getenv("WINDOWS_READY") != "true" {
 		azureEnv.ExpectMachinesAgentPoolExists()
 	}
 	return azureEnv
@@ -284,6 +284,11 @@ func (env *Environment) SkipIfNotWindowsCapable() {
 	if env.MachineAgentPoolName != "aksmanagedap" && len(env.MachineAgentPoolName) > 6 {
 		Skip(fmt.Sprintf("Windows machines require the reserved aksmanagedap pool or a custom machines pool name <= 6 chars; got %q (%d chars)",
 			env.MachineAgentPoolName, len(env.MachineAgentPoolName)))
+	}
+	// Managed test harnesses can create the cluster through a non-ARM endpoint. They must set
+	// WINDOWS_READY only after configuring a Windows profile and a non-Cilium dataplane.
+	if os.Getenv("WINDOWS_READY") == "true" {
+		return
 	}
 	managedCluster := env.ExpectGetManagedCluster()
 	// Windows nodes do not support the Cilium dataplane configured on the cluster.
