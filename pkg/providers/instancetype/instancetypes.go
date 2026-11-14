@@ -68,6 +68,8 @@ type instanceTypeParameters struct {
 	EncryptionAtHost         bool
 	TrustedLaunch            bool
 	GPUMode                  v1beta1.GPUMode
+	MigStrategy              v1beta1.MigStrategy
+	GPUInstanceProfile       v1beta1.GPUInstanceProfile
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSRequired         bool
@@ -177,6 +179,8 @@ func (p *DefaultProvider) List(
 		EncryptionAtHost:         nodeClass.GetEncryptionAtHost(),
 		TrustedLaunch:            nodeClass.IsTrustedLaunchEnabled(),
 		GPUMode:                  nodeClass.GetGPUMode(),
+		MigStrategy:              nodeClass.GetMigStrategy(),
+		GPUInstanceProfile:       nodeClass.GetGPUInstanceProfile(),
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		// Windows2025 is effectively FIPS-on even when fipsMode is unset, so key off the
 		// effective value rather than the raw spec field.
@@ -278,15 +282,15 @@ func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instan
 			log.FromContext(ctx).Error(err, "parsing SKU architecture", "vmSize", *sku.Size)
 			continue
 		}
+		if !p.isInstanceTypeSupportedByFilters(sku, architecture, params) {
+			continue
+		}
 		instanceTypeZones := p.instanceTypeZones(sku)
 		if capacityReserved {
 			instanceTypeZones = instanceTypeZones.Intersection(reservedZones[strings.ToLower(sku.GetName())])
 		}
 		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones, params.CapacityReservationGroupID), params, architecture)
 		if len(instanceType.Offerings) == 0 {
-			continue
-		}
-		if !p.isInstanceTypeSupportedByFilters(sku, architecture, params) {
 			continue
 		}
 		result = append(result, instanceType)
@@ -544,6 +548,7 @@ func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, arch
 		p.isInstanceTypeSupportedByEncryptionAtHost(sku, params) &&
 		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, params) &&
+		p.isInstanceTypeSupportedByMIG(sku, params) &&
 		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params) &&
 		p.isInstanceTypeSupportedByTrustedLaunch(sku, params) &&
 		p.isInstanceTypeSupportedByKata(sku, architecture, params)
@@ -652,6 +657,19 @@ func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU
 	}
 	// In "Driver" mode, only allow GPU SKUs with driver installation support
 	return utils.IsDriverInstallSupported(name)
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByMIG(sku *skewer.SKU, params *instanceTypeParameters) bool {
+	if params.MigStrategy == "" || params.MigStrategy == v1beta1.MigStrategyNone {
+		return true
+	}
+	if params.MigStrategy != v1beta1.MigStrategySingle && params.MigStrategy != v1beta1.MigStrategyMixed {
+		return false
+	}
+	// Filter candidates even for CPU-only pods: a zero MIG capacity alone would still allow an invalid launch.
+	_, partitions := utils.GetMIGProfile(sku.GetName(), params.GPUInstanceProfile)
+	gpus, err := sku.GPU()
+	return partitions > 0 && err == nil && gpus > 0
 }
 
 // isInstanceTypeSupportedByArtifactStreaming filters out ARM64 instance types when artifact streaming

@@ -1210,6 +1210,124 @@ var _ = Describe("CEL/Validation", func() {
 	})
 
 	Context("GPU", func() {
+		DescribeTable("should reject active MIG on Windows image families", func(imageFamily *string, windows bool) {
+			for _, strategy := range []*v1beta1.MigStrategy{nil, lo.ToPtr(v1beta1.MigStrategyNone), lo.ToPtr(v1beta1.MigStrategySingle), lo.ToPtr(v1beta1.MigStrategyMixed)} {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{
+						ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged),
+						MigStrategy:    strategy,
+					}}},
+				}
+				active := lo.FromPtr(strategy) == v1beta1.MigStrategySingle || lo.FromPtr(strategy) == v1beta1.MigStrategyMixed
+				if active {
+					nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g)
+				}
+				// Start with the default Linux family to cover image-family updates as well as creates.
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+				nodeClass.Spec.ImageFamily = imageFamily
+				err := env.Client.Update(ctx, nodeClass)
+				if windows && active {
+					Expect(err).To(MatchError(ContainSubstring("migStrategy Single or Mixed is not supported for Windows image families")))
+				} else {
+					Expect(err).To(Succeed())
+				}
+				nodeClass.ObjectMeta = metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())}
+				err = env.Client.Create(ctx, nodeClass)
+				if windows && active {
+					Expect(err).To(MatchError(ContainSubstring("migStrategy Single or Mixed is not supported for Windows image families")))
+				} else {
+					Expect(err).To(Succeed())
+				}
+			}
+		},
+			Entry("Windows2022", lo.ToPtr(v1beta1.Windows2022ImageFamily), true),
+			Entry("Windows2025", lo.ToPtr(v1beta1.Windows2025ImageFamily), true),
+			Entry("Ubuntu", lo.ToPtr(v1beta1.UbuntuImageFamily), false),
+			Entry("AzureLinux", lo.ToPtr(v1beta1.AzureLinuxImageFamily), false),
+			Entry("default image family", (*string)(nil), false),
+		)
+		It("should validate all static managed MIG combinations", func() {
+			for _, mode := range []*v1beta1.GPUMode{nil, lo.ToPtr(v1beta1.GPUModeDriver), lo.ToPtr(v1beta1.GPUModeNone)} {
+				for _, management := range []*v1beta1.ManagementMode{nil, lo.ToPtr(v1beta1.ManagementModeUnmanaged), lo.ToPtr(v1beta1.ManagementModeManaged)} {
+					for _, strategy := range []*v1beta1.MigStrategy{nil, lo.ToPtr(v1beta1.MigStrategyNone), lo.ToPtr(v1beta1.MigStrategySingle), lo.ToPtr(v1beta1.MigStrategyMixed)} {
+						for _, profile := range []*v1beta1.GPUInstanceProfile{nil, lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g)} {
+							nodeClass := &v1beta1.AKSNodeClass{
+								ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+								Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{
+									Mode:   mode,
+									Nvidia: &v1beta1.NvidiaGPU{ManagementMode: management, MigStrategy: strategy, GPUInstanceProfile: profile},
+								}},
+							}
+							active := lo.FromPtr(strategy) == v1beta1.MigStrategySingle || lo.FromPtr(strategy) == v1beta1.MigStrategyMixed
+							managed := lo.FromPtr(management) == v1beta1.ManagementModeManaged
+							valid := (!managed || lo.FromPtr(mode) != v1beta1.GPUModeNone) &&
+								(!active || (managed && profile != nil)) && (profile == nil || active)
+							err := env.Client.Create(ctx, nodeClass)
+							if valid {
+								Expect(err).To(Succeed(), "mode=%q management=%q strategy=%q profile=%q", lo.FromPtr(mode), lo.FromPtr(management), lo.FromPtr(strategy), lo.FromPtr(profile))
+								Expect(nodeClass.Spec.GPU.Nvidia.MigStrategy).To(Equal(strategy))
+								Expect(nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile).To(Equal(profile))
+							} else {
+								Expect(err).To(HaveOccurred(), "mode=%q management=%q strategy=%q profile=%q", lo.FromPtr(mode), lo.FromPtr(management), lo.FromPtr(strategy), lo.FromPtr(profile))
+							}
+						}
+					}
+				}
+			}
+		})
+		DescribeTable("should validate MIG enum values", func(strategy v1beta1.MigStrategy, profile v1beta1.GPUInstanceProfile, valid bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{
+					ManagementMode:     lo.ToPtr(v1beta1.ManagementModeManaged),
+					MigStrategy:        lo.ToPtr(strategy),
+					GPUInstanceProfile: lo.ToPtr(profile),
+				}}},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			if valid {
+				Expect(err).To(Succeed())
+				Expect(nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile).To(Equal(lo.ToPtr(profile)))
+			} else {
+				Expect(err).To(HaveOccurred())
+			}
+		},
+			Entry("MIG1g", v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG1g, true),
+			Entry("MIG2g", v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG2g, true),
+			Entry("MIG3g", v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG3g, true),
+			Entry("MIG4g", v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG4g, true),
+			Entry("MIG7g", v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG7g, true),
+			Entry("MIG5g is unsupported", v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfile("MIG5g"), false),
+			Entry("MIG6g is unsupported", v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfile("MIG6g"), false),
+			Entry("empty profile", v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfile(""), false),
+			Entry("incorrect profile casing", v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfile("MIG1G"), false),
+			Entry("unknown strategy", v1beta1.MigStrategy("Invalid"), v1beta1.GPUInstanceProfileMIG1g, false),
+			Entry("empty strategy", v1beta1.MigStrategy(""), v1beta1.GPUInstanceProfileMIG1g, false),
+			Entry("incorrect strategy casing", v1beta1.MigStrategy("single"), v1beta1.GPUInstanceProfileMIG1g, false),
+		)
+		It("should allow NodeClass MIG changes for node replacement", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{
+					ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged),
+				}}},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			nodeClass.Spec.GPU.Nvidia.MigStrategy = lo.ToPtr(v1beta1.MigStrategySingle)
+			nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g)
+			Expect(env.Client.Update(ctx, nodeClass)).To(Succeed())
+			nodeClass.Spec.GPU.Nvidia.MigStrategy = lo.ToPtr(v1beta1.MigStrategyMixed)
+			nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = lo.ToPtr(v1beta1.GPUInstanceProfileMIG2g)
+			Expect(env.Client.Update(ctx, nodeClass)).To(Succeed())
+			nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = nil
+			Expect(env.Client.Update(ctx, nodeClass)).ToNot(Succeed())
+			nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = lo.ToPtr(v1beta1.GPUInstanceProfileMIG2g)
+			nodeClass.Spec.GPU.Nvidia.MigStrategy = lo.ToPtr(v1beta1.MigStrategyNone)
+			Expect(env.Client.Update(ctx, nodeClass)).ToNot(Succeed())
+			nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = nil
+			Expect(env.Client.Update(ctx, nodeClass)).To(Succeed())
+		})
 		It("should accept gpu.mode set to Driver", func() {
 			gpuMode := v1beta1.GPUModeDriver
 			nodeClass := &v1beta1.AKSNodeClass{

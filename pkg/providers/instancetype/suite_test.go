@@ -3216,6 +3216,115 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 
+		Context("Managed MIG", func() {
+			skus := []struct {
+				name        string
+				gpus        int64
+				memoryIndex int
+			}{
+				{"Standard_ND96asr_v4", 8, 0},
+				{"Standard_NC24ads_A100_v4", 1, 1},
+				{"Standard_NC48ads_A100_v4", 2, 1},
+				{"Standard_NC96ads_A100_v4", 4, 1},
+				{"Standard_ND96amsr_A100_v4", 8, 1},
+				{"Standard_ND96isr_H100_v5", 8, 1},
+				{"Standard_NC40ads_H100_v5", 1, 2},
+				{"Standard_NC80adis_H100_v5", 2, 2},
+			}
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+				nodeClass.Spec.GPU = &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{
+					ManagementMode:     lo.ToPtr(v1beta1.ManagementModeManaged),
+					MigStrategy:        lo.ToPtr(v1beta1.MigStrategySingle),
+					GPUInstanceProfile: lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g),
+				}}
+				for _, sku := range skus {
+					azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+						Name: lo.ToPtr(sku.name), Size: lo.ToPtr(strings.TrimPrefix(sku.name, "Standard_")),
+						Family: lo.ToPtr("standardTestMIGFamily"), ResourceType: lo.ToPtr("virtualMachines"),
+						Locations: &[]string{fake.Region},
+						Capabilities: &[]compute.ResourceSkuCapabilities{
+							{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("96")},
+							{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("900")},
+							{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+							{Name: lo.ToPtr("GPUs"), Value: lo.ToPtr(fmt.Sprint(sku.gpus))},
+						},
+					})
+				}
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+			})
+
+			DescribeTable("should expose only the static partitions on all supported hardware", func(profile v1beta1.GPUInstanceProfile, perGPU int64, names []string) {
+				nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = lo.ToPtr(profile)
+				for _, strategy := range []v1beta1.MigStrategy{v1beta1.MigStrategySingle, v1beta1.MigStrategyMixed} {
+					nodeClass.Spec.GPU.Nvidia.MigStrategy = lo.ToPtr(strategy)
+					instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(instanceTypes).To(HaveLen(len(skus))) // CPU and all other GPU SKUs are excluded, regardless of pod requests.
+					for _, sku := range skus {
+						it, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == sku.name })
+						Expect(found).To(BeTrue(), sku.name)
+						name := v1.ResourceName("nvidia.com/gpu")
+						if strategy == v1beta1.MigStrategyMixed {
+							name = v1.ResourceName("nvidia.com/mig-" + names[sku.memoryIndex])
+							Expect(it.Capacity).ToNot(HaveKey(v1.ResourceName("nvidia.com/gpu")))
+						}
+						Expect(it.Capacity).To(HaveLen(5)) // Four standard resources and exactly one GPU resource.
+						quantity := it.Capacity[name]
+						Expect(quantity.Value()).To(Equal(sku.gpus * perGPU))
+						allocatable := it.Allocatable()[name]
+						Expect(allocatable.Value()).To(Equal(sku.gpus * perGPU))
+						Expect(it.Requirements.Get(v1beta1.LabelSKUGPUCount).Any()).To(Equal(fmt.Sprint(sku.gpus)))
+					}
+				}
+			},
+				Entry("MIG1g", v1beta1.GPUInstanceProfileMIG1g, int64(7), []string{"1g.5gb", "1g.10gb", "1g.12gb"}),
+				Entry("MIG2g", v1beta1.GPUInstanceProfileMIG2g, int64(3), []string{"2g.10gb", "2g.20gb", "2g.24gb"}),
+				Entry("MIG3g", v1beta1.GPUInstanceProfileMIG3g, int64(2), []string{"3g.20gb", "3g.40gb", "3g.47gb"}),
+				Entry("MIG4g", v1beta1.GPUInstanceProfileMIG4g, int64(1), []string{"4g.20gb", "4g.40gb", "4g.47gb"}),
+				Entry("MIG7g", v1beta1.GPUInstanceProfileMIG7g, int64(1), []string{"7g.40gb", "7g.80gb", "7g.94gb"}),
+			)
+
+			It("should isolate cached strategies and profiles without changing non-MIG GPU modes", func() {
+				for range 2 { // Revisit every configuration to exercise cache hits as well as construction.
+					for _, config := range []struct {
+						strategy v1beta1.MigStrategy
+						profile  v1beta1.GPUInstanceProfile
+						resource v1.ResourceName
+						count    int64
+					}{
+						{v1beta1.MigStrategyNone, "", "nvidia.com/gpu", 2},
+						{v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG1g, "nvidia.com/gpu", 14},
+						{v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG2g, "nvidia.com/gpu", 6},
+						{v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG2g, "nvidia.com/mig-2g.20gb", 6},
+						{v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG1g, "nvidia.com/mig-1g.10gb", 14},
+					} {
+						nc := nodeClass.DeepCopy()
+						nc.Spec.GPU.Nvidia.MigStrategy = lo.ToPtr(config.strategy)
+						nc.Spec.GPU.Nvidia.GPUInstanceProfile = lo.EmptyableToPtr(config.profile)
+						instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nc)
+						Expect(err).ToNot(HaveOccurred())
+						it, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_NC48ads_A100_v4" })
+						Expect(found).To(BeTrue())
+						quantity := it.Capacity[config.resource]
+						Expect(quantity.Value()).To(Equal(config.count))
+						if config.strategy == v1beta1.MigStrategyNone {
+							Expect(instanceTypes).To(ContainElement(HaveField("Name", "Standard_D2s_v3")))
+							Expect(instanceTypes).To(ContainElement(HaveField("Name", "Standard_NC16as_T4_v3")))
+							for _, mode := range []v1beta1.GPUMode{v1beta1.GPUModeDriver, v1beta1.GPUModeNone} {
+								nc.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(mode)}
+								unchanged, err := azureEnv.InstanceTypesProvider.List(ctx, nc)
+								Expect(err).ToNot(HaveOccurred())
+								fullGPU, found := lo.Find(unchanged, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_NC48ads_A100_v4" })
+								Expect(found).To(BeTrue())
+								Expect(fullGPU.Capacity).To(Equal(it.Capacity))
+							}
+						}
+					}
+				}
+			})
+		})
+
 		Context("Filtering by GPU Driver Mode", func() {
 			var instanceTypes corecloudprovider.InstanceTypes
 			var err error

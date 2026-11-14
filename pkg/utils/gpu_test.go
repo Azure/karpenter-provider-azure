@@ -19,8 +19,34 @@ package utils
 import (
 	"testing"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	. "github.com/onsi/gomega"
 )
+
+func TestGetMIGProfile(t *testing.T) {
+	for _, size := range []string{
+		"", "unknown", "standard_d2s_v3", "standard_nc16as_t4_v3", "standard_nc6s_v3",
+		"standard_nv36ads_a10_v5", "standard_nd96isr_mi300x_v5", "standard_nd96isr_h200_v5",
+		"standard_nc144ds_xl_rtxpro6000bse_v6", "standard_nd112asr_a100_v4",
+		"standard_nc24ads_a100_v4_promo", "standard_nc24ads_a100_v5", "standard_nc80ads_h100_v5",
+	} {
+		t.Run(size, func(t *testing.T) {
+			g := NewWithT(t)
+			name, count := GetMIGProfile(size, v1beta1.GPUInstanceProfileMIG1g)
+			g.Expect(name).To(BeEmpty())
+			g.Expect(count).To(BeZero())
+		})
+	}
+	g := NewWithT(t)
+	name, count := GetMIGProfile("STANDARD_NC40ADS_H100_V5", v1beta1.GPUInstanceProfileMIG3g)
+	g.Expect(name).To(Equal("3g.47gb"))
+	g.Expect(count).To(Equal(int64(2)))
+	for _, profile := range []v1beta1.GPUInstanceProfile{"", "MIG5g", "mig1g"} {
+		name, count := GetMIGProfile("standard_nc24ads_a100_v4", profile)
+		g.Expect(name).To(BeEmpty())
+		g.Expect(count).To(BeZero())
+	}
+}
 
 func TestGetAKSGPUImageSHA(t *testing.T) {
 	tests := []struct {

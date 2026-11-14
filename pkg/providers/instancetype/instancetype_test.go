@@ -61,6 +61,50 @@ func TestKubeReservedResources(t *testing.T) {
 	}
 }
 
+func TestMIGFiltering(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		size    string
+		gpus    *string
+		profile v1beta1.GPUInstanceProfile
+		want    bool
+	}{
+		{"supported", "Standard_NC24ads_A100_v4", lo.ToPtr("1"), v1beta1.GPUInstanceProfileMIG1g, true},
+		{"case insensitive", "STANDARD_NC24ADS_A100_V4", lo.ToPtr("1"), v1beta1.GPUInstanceProfileMIG1g, true},
+		{"CPU", "Standard_D2s_v3", nil, v1beta1.GPUInstanceProfileMIG1g, false},
+		{"unknown GPU", "Standard_NC999ads_A100_v4", lo.ToPtr("8"), v1beta1.GPUInstanceProfileMIG1g, false},
+		{"non-MIG GPU", "Standard_NC16as_T4_v3", lo.ToPtr("1"), v1beta1.GPUInstanceProfileMIG1g, false},
+		{"unvalidated A100", "Standard_ND112asr_A100_v4", lo.ToPtr("8"), v1beta1.GPUInstanceProfileMIG1g, false},
+		{"promo alias", "Standard_NC24ads_A100_v4_Promo", lo.ToPtr("1"), v1beta1.GPUInstanceProfileMIG1g, false},
+		{"missing GPU count", "Standard_NC24ads_A100_v4", nil, v1beta1.GPUInstanceProfileMIG1g, false},
+		{"invalid GPU count", "Standard_NC24ads_A100_v4", lo.ToPtr("invalid"), v1beta1.GPUInstanceProfileMIG1g, false},
+		{"zero GPU count", "Standard_NC24ads_A100_v4", lo.ToPtr("0"), v1beta1.GPUInstanceProfileMIG1g, false},
+		{"negative GPU count", "Standard_NC24ads_A100_v4", lo.ToPtr("-1"), v1beta1.GPUInstanceProfileMIG1g, false},
+		{"missing profile", "Standard_NC24ads_A100_v4", lo.ToPtr("1"), "", false},
+		{"unknown profile", "Standard_NC24ads_A100_v4", lo.ToPtr("1"), "MIG5g", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			sku := skewer.SKU(compute.ResourceSku{Name: lo.ToPtr(test.size)})
+			if test.gpus != nil {
+				sku.Capabilities = &[]compute.ResourceSkuCapabilities{{Name: lo.ToPtr("GPUs"), Value: test.gpus}}
+			}
+			provider := &DefaultProvider{}
+			params := &instanceTypeParameters{GPUInstanceProfile: test.profile}
+			for _, strategy := range []v1beta1.MigStrategy{v1beta1.MigStrategySingle, v1beta1.MigStrategyMixed} {
+				params.MigStrategy = strategy
+				g.Expect(provider.isInstanceTypeSupportedByMIG(&sku, params)).To(Equal(test.want))
+			}
+			for _, strategy := range []v1beta1.MigStrategy{"", v1beta1.MigStrategyNone} {
+				params.MigStrategy = strategy
+				g.Expect(provider.isInstanceTypeSupportedByMIG(&sku, params)).To(BeTrue())
+			}
+			params.MigStrategy = "unknown"
+			g.Expect(provider.isInstanceTypeSupportedByMIG(&sku, params)).To(BeFalse())
+		})
+	}
+}
+
 func TestInstanceTypeMemoryReservations(t *testing.T) {
 	// Synthetic 10-CPU/42-GiB pods plus 1 CPU/3 GiB of per-node overhead.
 	requestsFor := func(pods int64) corev1.ResourceList {
