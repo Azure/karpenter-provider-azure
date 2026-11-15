@@ -162,7 +162,7 @@ var _ = Describe("Unit tests", func() {
 			Expect(hash1).ToNot(Equal(hash2))
 
 			// Hash should be the same with the same NodeClass tags
-			nodeClass2 := test.AKSNodeClass(test.WithTags(
+			nodeClass2 := test.AKSNodeClass(test.WithAdditionalTags(
 				"nodeclass-tag1", "nodeclass-value",
 				"nodeclass-tag2", "nodeclass-value",
 			))
