@@ -45,6 +45,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
@@ -379,6 +380,7 @@ func runSharedAKSMachineAPITests() {
 			// Create a fresh nodeClaim with explicit requirements so we know exactly what it will have
 			firstNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:   "nodeclaim-name-exceeding-thirty-four-abcde",
 					Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				},
 				Spec: karpv1.NodeClaimSpec{
@@ -431,7 +433,8 @@ func runSharedAKSMachineAPITests() {
 			}
 
 			// Since no new machine was created, verify the machine in the fake store matches original config.
-			aksMachineName := firstNodeClaim.Name
+			aksMachineName, ok := instance.GetAKSMachineNameFromNodeClaim(createdFirstNodeClaim)
+			Expect(ok).To(BeTrue(), "created NodeClaim should identify its AKS machine")
 
 			// Get the actual machine from the fake store
 			machineID := fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, aksMachineName)
@@ -455,6 +458,7 @@ func runSharedAKSMachineAPITests() {
 
 		Context("found in get, with node public IP settings", func() {
 			var firstNodeClaim *karpv1.NodeClaim
+			var machineID string
 
 			createFirstAKSMachine := func(nodePublicIP *v1beta1.NodePublicIP) {
 				nodeClass.Spec.NodePublicIP = nodePublicIP
@@ -463,6 +467,7 @@ func runSharedAKSMachineAPITests() {
 
 				firstNodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:   "nodeclaim-name-exceeding-thirty-four-abcde",
 						Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 					},
 					Spec: karpv1.NodeClaimSpec{
@@ -489,6 +494,9 @@ func runSharedAKSMachineAPITests() {
 				createdFirstNodeClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, firstNodeClaim)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(createdFirstNodeClaim).ToNot(BeNil())
+				aksMachineName, ok := instance.GetAKSMachineNameFromNodeClaim(createdFirstNodeClaim)
+				Expect(ok).To(BeTrue(), "created NodeClaim should identify its AKS machine")
+				machineID = fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, aksMachineName)
 
 				azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
 				azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
@@ -510,6 +518,8 @@ func runSharedAKSMachineAPITests() {
 
 			It("should refuse to reuse an AKS machine without node public IP settings after the NodeClass enables it, and delete it", func() {
 				createFirstAKSMachine(nil)
+				_, ok := azureEnv.AKSDataStorage.AKSMachines.Load(machineID)
+				Expect(ok).To(BeTrue(), "AKS machine should exist before cleanup")
 				nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
 				ExpectApplied(ctx, env.Client, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -520,8 +530,7 @@ func runSharedAKSMachineAPITests() {
 				Expect(reusedNodeClaim).To(BeNil())
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(1))
-				machineID := fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, firstNodeClaim.Name)
-				_, ok := azureEnv.AKSDataStorage.AKSMachines.Load(machineID)
+				_, ok = azureEnv.AKSDataStorage.AKSMachines.Load(machineID)
 				Expect(ok).To(BeFalse())
 			})
 		})

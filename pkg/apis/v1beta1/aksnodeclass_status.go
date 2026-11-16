@@ -236,9 +236,11 @@ func (in *AKSNodeClass) GetKubernetesVersion() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	if in.Status.KubernetesVersion == nil {
 		return "", nil
 	}
+
 	return *in.Status.KubernetesVersion, nil
 }
 
@@ -254,14 +256,20 @@ func (in *AKSNodeClass) validateKubernetesVersionReadiness() error {
 	if in == nil {
 		return fmt.Errorf("NodeClass is nil, condition %s is not true", ConditionTypeKubernetesVersionReady)
 	}
+
 	kubernetesVersionCondition := in.StatusConditions().Get(ConditionTypeKubernetesVersionReady)
 	if kubernetesVersionCondition.IsFalse() || kubernetesVersionCondition.IsUnknown() {
 		return fmt.Errorf("NodeClass condition %s, is in Ready=%s, %s", ConditionTypeKubernetesVersionReady, kubernetesVersionCondition.GetStatus(), kubernetesVersionCondition.Message)
-	} else if kubernetesVersionCondition.ObservedGeneration != in.GetGeneration() {
+	}
+
+	if kubernetesVersionCondition.ObservedGeneration != in.GetGeneration() {
 		return fmt.Errorf("NodeClass condition %s ObservedGeneration %d does not match the NodeClass Generation %d", ConditionTypeKubernetesVersionReady, kubernetesVersionCondition.ObservedGeneration, in.GetGeneration())
-	} else if in.Status.KubernetesVersion == nil || *in.Status.KubernetesVersion == "" {
+	}
+
+	if in.Status.KubernetesVersion == nil || *in.Status.KubernetesVersion == "" {
 		return fmt.Errorf("NodeClass KubernetesVersion is uninitialized")
 	}
+
 	return nil
 }
 

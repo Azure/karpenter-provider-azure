@@ -377,20 +377,26 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunc
 	}
 }
 
-func defaultUbuntu(fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
+func defaultUbuntu(
+	fipsMode *v1beta1.FIPSMode,
+	trustedLaunch bool,
+	kubernetesVersion string,
+	parameters *template.StaticParameters,
+) ImageFamily {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		if UseUbuntu2204FIPS(kubernetesVersion, trustedLaunch) {
 			return &Ubuntu2204{Options: parameters}
 		}
+
 		return &Ubuntu2004{Options: parameters}
 	}
 
-	if trustedLaunch {
-		return &Ubuntu2204{Options: parameters}
-	}
+	// We no longer need to restrict trustedLaunch to Ubuntu2204 only
+
 	if UseUbuntu2404(kubernetesVersion) {
 		return &Ubuntu2404{Options: parameters}
 	}
+
 	return &Ubuntu2204{Options: parameters}
 }
 

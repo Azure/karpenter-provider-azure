@@ -9,6 +9,8 @@ build:
           paths:
             - '**/*.go'
             - '**/*.gtpl'
+            - go.mod
+            - go.sum
             #flags: ['-tags', 'ccp']
 manifests:
   helm:

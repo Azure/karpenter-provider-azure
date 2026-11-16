@@ -243,6 +243,21 @@ func TestAzureResourceGraphAPI_Resources_VM_WithKarpenterAKSMachineTagFiltering(
 	}
 }
 
+func TestNICListQueryMachineInclusion(t *testing.T) {
+	g := NewWithT(t)
+	withoutAKSMachines := instance.GetNICListQueryBuilder("test-rg", false).String()
+	withAKSMachines := instance.GetNICListQueryBuilder("test-rg", true).String()
+
+	for _, query := range []string{withoutAKSMachines, withAKSMachines} {
+		g.Expect(query).To(ContainSubstring(`type == "microsoft.network/networkinterfaces"`))
+		g.Expect(query).To(ContainSubstring(`resourceGroup == "test-rg"`))
+		g.Expect(query).To(ContainSubstring(`tags has_cs "karpenter.sh_nodepool"`))
+	}
+	machineExclusion := `not(tags has_cs "karpenter.azure.com_aksmachine_nodeclaim")`
+	g.Expect(withoutAKSMachines).To(ContainSubstring(machineExclusion))
+	g.Expect(withAKSMachines).ToNot(ContainSubstring(machineExclusion))
+}
+
 func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering(t *testing.T) {
 	resourceGroup := "test_managed_cluster_rg"
 	subscriptionID := "test_sub"
@@ -250,10 +265,11 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 	azureResourceGraphAPI := NewAzureResourceGraphAPI(resourceGroup, nil, networkInterfacesAPI)
 
 	cases := []struct {
-		testName         string
-		nicConfigs       []nicConfig
-		expectedNICNames []string
-		expectedError    string
+		testName                   string
+		includeAKSMachineResources bool
+		nicConfigs                 []nicConfig
+		expectedNICNames           []string
+		expectedError              string
 	}{
 		{
 			testName: "exclude NICs with KarpenterAKSMachine tag",
@@ -273,6 +289,27 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 				},
 			},
 			expectedNICNames: []string{"karpenter-nic"},
+			expectedError:    "",
+		},
+		{
+			testName:                   "include NICs with KarpenterAKSMachine tag when requested",
+			includeAKSMachineResources: true,
+			nicConfigs: []nicConfig{
+				{
+					name: "karpenter-nic",
+					tags: map[string]*string{
+						launchtemplate.NodePoolTagKey: lo.ToPtr("default"),
+					},
+				},
+				{
+					name: "aks-machine-nic",
+					tags: map[string]*string{
+						launchtemplate.NodePoolTagKey:                     lo.ToPtr("default"),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-claim"),
+					},
+				},
+			},
+			expectedNICNames: []string{"karpenter-nic", "aks-machine-nic"},
 			expectedError:    "",
 		},
 		{
@@ -350,7 +387,7 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 			}
 
 			// Query for NICs
-			queryRequest := instance.NewQueryRequest(&subscriptionID, instance.GetNICListQueryBuilder(resourceGroup).String())
+			queryRequest := instance.NewQueryRequest(&subscriptionID, instance.GetNICListQueryBuilder(resourceGroup, c.includeAKSMachineResources).String())
 			data, err := instance.GetResourceData(context.Background(), azureResourceGraphAPI, *queryRequest)
 
 			if err != nil {

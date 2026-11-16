@@ -216,10 +216,17 @@ type AKSNodeClassSpec struct {
 	// +optional
 	WorkloadRuntime *WorkloadRuntime `json:"workloadRuntime,omitempty"`
 	// tags to be applied on Azure resources like instances.
+	// Tag keys are case-insensitive. The aks-managed prefix and the orchestrator,
+	// poolName, aksAPIServerIPAddress, servicePrincipalVersion, aksWindowsGmsaVersion,
+	// and aksWindowsPasswordVersion keys are reserved for AKS.
+	// SkipGPUDriverInstall is not supported; use spec.gpu.mode instead.
 	// +kubebuilder:validation:XValidation:message="tags keys must be less than 512 characters",rule="self.all(k, size(k) <= 512)"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '<', '>', '%', '&', or '?'",rule="self.all(k, !k.matches('[<>%&?]'))"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '\\'",rule="self.all(k, !k.contains('\\\\'))"
 	// +kubebuilder:validation:XValidation:message="tags values must be less than 256 characters",rule="self.all(k, size(self[k]) <= 256)"
+	// +kubebuilder:validation:XValidation:message="SkipGPUDriverInstall tag is not supported; use spec.gpu.mode instead",rule="self.all(k, k.lowerAscii() != 'skipgpudriverinstall')"
+	// +kubebuilder:validation:XValidation:message="the aks-managed tag prefix is reserved for AKS",rule="self.all(k, !k.lowerAscii().startsWith('aks-managed'))"
+	// +kubebuilder:validation:XValidation:message="orchestrator, poolName, aksAPIServerIPAddress, servicePrincipalVersion, aksWindowsGmsaVersion, and aksWindowsPasswordVersion tag keys are reserved for AKS",rule="self.all(k, !(k.lowerAscii() in ['orchestrator', 'poolname', 'aksapiserveripaddress', 'serviceprincipalversion', 'akswindowsgmsaversion', 'akswindowspasswordversion']))"
 	// +optional
 	Tags map[string]string `json:"tags,omitempty" hash:"ignore"`
 	// kubelet defines args to be used when configuring kubelet on provisioned nodes.

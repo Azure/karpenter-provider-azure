@@ -45,6 +45,17 @@ func rankInstanceOfferings(instanceOfferings []InstanceOffering) []InstanceOffer
 	sort.Slice(instanceOfferings, func(i, j int) bool {
 		comparison := compareOfferings(firstOffering(instanceOfferings[i]), firstOffering(instanceOfferings[j]))
 		if comparison == 0 {
+			// Tiebreak by selecting smaller CPU counts - this is reasonable because (usually) if we're tied on price
+			// it's due to NodeOverlay or unknown (999) price, and the "real" price is likely correlated with CPU count (less is cheaper).
+			// This results in a more reasonable tiebreak compared to the lexcial order by instance type name which would tiebreak something like:
+			// D16 < D32 < D8.
+			iType := instanceOfferings[i].InstanceType
+			jType := instanceOfferings[j].InstanceType
+			if iType != nil && jType != nil {
+				if cpuComparison := iType.Capacity.Cpu().Cmp(*jType.Capacity.Cpu()); cpuComparison != 0 {
+					return cpuComparison < 0
+				}
+			}
 			return instanceOfferingName(instanceOfferings[i]) < instanceOfferingName(instanceOfferings[j])
 		}
 		return comparison < 0

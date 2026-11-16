@@ -37,6 +37,79 @@ import (
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 )
 
+func TestDefaultUbuntuTrustedLaunch(t *testing.T) {
+	families := map[string]struct {
+		value *string
+	}{
+		"generic Ubuntu": {
+			value: lo.ToPtr(v1beta1.UbuntuImageFamily),
+		},
+		"unset image family": {},
+	}
+
+	cases := map[string]struct {
+		version         string
+		fipsMode        *v1beta1.FIPSMode
+		expectedFamily  string
+		imageDefinition string
+	}{
+		"before Ubuntu2404 default": {
+			version:         "1.33.9",
+			expectedFamily:  v1beta1.Ubuntu2204ImageFamily,
+			imageDefinition: Ubuntu2204Gen2TrustedLaunchImageDefinition,
+		},
+		"at Ubuntu2404 default": {
+			version:         "1.34.0",
+			expectedFamily:  v1beta1.Ubuntu2404ImageFamily,
+			imageDefinition: Ubuntu2404Gen2TrustedLaunchImageDefinition,
+		},
+		"at Ubuntu2204 upper bound": {
+			version:         "1.37.0",
+			expectedFamily:  v1beta1.Ubuntu2404ImageFamily,
+			imageDefinition: Ubuntu2404Gen2TrustedLaunchImageDefinition,
+		},
+		"explicitly disabled FIPS": {
+			version:         "1.34.0",
+			fipsMode:        lo.ToPtr(v1beta1.FIPSModeDisabled),
+			expectedFamily:  v1beta1.Ubuntu2404ImageFamily,
+			imageDefinition: Ubuntu2404Gen2TrustedLaunchImageDefinition,
+		},
+		"FIPS before Ubuntu2404 default": {
+			version:         "1.33.9",
+			fipsMode:        lo.ToPtr(v1beta1.FIPSModeFIPS),
+			expectedFamily:  v1beta1.Ubuntu2204ImageFamily,
+			imageDefinition: Ubuntu2204Gen2FIPSTLImageDefinition,
+		},
+		"FIPS at Ubuntu2404 default": {
+			version:         "1.34.0",
+			fipsMode:        lo.ToPtr(v1beta1.FIPSModeFIPS),
+			expectedFamily:  v1beta1.Ubuntu2204ImageFamily,
+			imageDefinition: Ubuntu2204Gen2FIPSTLImageDefinition,
+		},
+		"FIPS at Ubuntu2204 non-FIPS upper bound": {
+			version:         "1.37.0",
+			fipsMode:        lo.ToPtr(v1beta1.FIPSModeFIPS),
+			expectedFamily:  v1beta1.Ubuntu2204ImageFamily,
+			imageDefinition: Ubuntu2204Gen2FIPSTLImageDefinition,
+		},
+	}
+
+	for name, family := range families {
+		t.Run(name, func(t *testing.T) {
+			for name, tc := range cases {
+				t.Run(name, func(t *testing.T) {
+					g := NewWithT(t)
+					resolved := GetImageFamily(family.value, tc.fipsMode, true, tc.version, nil)
+					g.Expect(resolved.Name()).To(Equal(tc.expectedFamily))
+					images := resolved.DefaultImages(true, tc.fipsMode, true, false)
+					g.Expect(images).To(HaveLen(1))
+					g.Expect(images[0].ImageDefinition).To(Equal(tc.imageDefinition))
+				})
+			}
+		})
+	}
+}
+
 func TestRequiresFIPS1403Encryption(t *testing.T) {
 	for distro, want := range map[string]bool{
 		"aks-ubuntu-fips-containerd-22.04":         true,

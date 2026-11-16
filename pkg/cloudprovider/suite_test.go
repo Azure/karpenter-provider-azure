@@ -19,6 +19,7 @@ package cloudprovider
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -47,6 +48,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
+	"sigs.k8s.io/karpenter/pkg/metrics"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
@@ -618,6 +620,31 @@ var _ = Describe("CloudProvider", func() {
 			Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
 		})
 
+		It("should increment the disruption metric after an async VM provisioning failure", func() {
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeOnDemand},
+			})
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.Error.Set(&azcore.ResponseError{ErrorCode: "InternalOperationError"})
+
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			pod := coretest.UnschedulablePod()
+			ExpectLaunched(ctx, env.Client, cloudProvider, coreProvisioner, pod)
+			cloudProvider.WaitForInstancePromises()
+			ExpectNotScheduled(ctx, env.Client, pod)
+			Expect(ExpectNodeClaims(ctx, env.Client)).To(BeEmpty())
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			ExpectMetricCounterValue(metrics.NodeClaimsDisruptedTotal, 1, map[string]string{
+				metrics.ReasonLabel:              "async_provisioning",
+				metrics.NodePoolLabel:            nodePool.Name,
+				metrics.CapacityTypeLabel:        karpv1.CapacityTypeOnDemand,
+				metrics.ConsolidationPolicyLabel: "",
+				metrics.TerminationModeLabel:     metrics.TerminationModeGraceful,
+			})
+		})
+
 		It("should retain quota when VM promise cleanup cannot delete the instance", func() {
 			sku := fake.MakeSKU("Standard_D2_v3")
 			vCPUs := lo.Must(sku.VCPU())
@@ -734,6 +761,28 @@ var _ = Describe("CloudProvider", func() {
 			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(cloudProviderMachine).To(BeNil())
+		})
+		Context("Create - Expected Creation Failures", func() {
+			It("should return a NodeClassNotReadyError before instance creation when validation marks the NodeClass incompatible with the Kubernetes version", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.31")
+				message := `requested image family Ubuntu2404 is not supported with Kubernetes version "1.31"; supported range is >= 1.32.0`
+				_, validationErr := status.NewStaticValidationReconciler(azureEnv.DiskEncryptionSetsAPI, nil).Reconcile(ctx, nodeClass)
+				Expect(validationErr).ToNot(HaveOccurred())
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Message).To(Equal(message))
+				Expect(nodeClass.StatusConditions().Get(corestatus.ConditionReady).IsFalse()).To(BeTrue())
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
+				cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				Expect(err).To(HaveOccurred())
+				Expect(corecloudprovider.IsNodeClassNotReadyError(err)).To(BeTrue())
+				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.NodeClassNotReadyError{}))
+				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("%s=False", v1beta1.ConditionTypeValidationSucceeded)))
+				Expect(cloudProviderMachine).To(BeNil())
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+			})
 		})
 
 		runNodeOverlayCapacityTests(vmNodeOverlayCapacityTestOptions())
