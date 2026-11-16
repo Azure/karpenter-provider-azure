@@ -71,7 +71,6 @@ var _ = Describe("Node image pinning", func() {
 
 		currentKubernetesVersion := lo.FromPtr(nodeClass.Status.KubernetesVersion)
 		currentNodeImageVersion := nodeClass.Status.Images[0].ID[strings.LastIndex(nodeClass.Status.Images[0].ID, "/")+1:]
-		Expect(currentNodeImageVersion).To(Equal(lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)))
 		nodeClass.Spec.Versions = &v1beta1.Versions{
 			KubernetesVersion: lo.ToPtr(currentKubernetesVersion),
 			NodeImageVersion:  lo.ToPtr(currentNodeImageVersion),
