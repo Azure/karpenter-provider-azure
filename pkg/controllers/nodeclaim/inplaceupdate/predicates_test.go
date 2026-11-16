@@ -32,7 +32,7 @@ func TestTagsChangedPredicate_Delete(t *testing.T) {
 	predicate := tagsChangedPredicate{}
 
 	nodeClass := test.AKSNodeClass(
-		test.WithTags(
+		test.WithAdditionalTags(
 			"key1", "value1",
 			"key2", "value2",
 		),
@@ -55,14 +55,14 @@ func TestTagsChangedPredicate_Update(t *testing.T) {
 	}{
 		{
 			name:           "tags are identical",
-			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1", "key2", "value2")),
-			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1", "key2", "value2")),
+			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1", "key2", "value2")),
+			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1", "key2", "value2")),
 			expectedResult: false,
 		},
 		{
 			name:           "tags are reordered but values are the same",
-			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1", "key2", "value2")),
-			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key2", "value2", "key1", "value1")),
+			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1", "key2", "value2")),
+			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key2", "value2", "key1", "value1")),
 			expectedResult: false,
 		},
 		{
@@ -73,73 +73,73 @@ func TestTagsChangedPredicate_Update(t *testing.T) {
 		},
 		{
 			name:           "both objects have empty tags",
-			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags()),
-			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags()),
+			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags()),
+			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags()),
 			expectedResult: false,
 		},
 		{
 			name:           "tag values changed",
-			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1", "key2", "value2")),
-			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "modified-value1", "key2", "value2")),
+			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1", "key2", "value2")),
+			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "modified-value1", "key2", "value2")),
 			expectedResult: true,
 		},
 		{
 			name:           "tags added",
-			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1", "key2", "value2")),
-			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1", "key2", "value2", "key3", "value3")),
+			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1", "key2", "value2")),
+			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1", "key2", "value2", "key3", "value3")),
 			expectedResult: true,
 		},
 		{
 			name:           "tags removed",
-			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1", "key2", "value2")),
-			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1")),
+			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1", "key2", "value2")),
+			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1")),
 			expectedResult: true,
 		},
 		{
 			name:           "nil to non-nil tags",
 			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass")),
-			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1")),
+			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1")),
 			expectedResult: true,
 		},
 		{
 			name:           "non-nil to nil tags",
-			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1", "key2", "value2")),
+			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1", "key2", "value2")),
 			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass")),
 			expectedResult: true,
 		},
 		{
 			name:           "empty to non-empty tags",
-			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags()),
-			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1")),
+			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags()),
+			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1")),
 			expectedResult: true,
 		},
 		{
 			name:           "non-empty to empty tags",
-			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1", "key2", "value2")),
-			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags()),
+			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1", "key2", "value2")),
+			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags()),
 			expectedResult: true,
 		},
 		{
 			name:           "ObjectOld is nil",
 			oldObject:      nil,
-			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1")),
+			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1")),
 			expectedResult: true,
 		},
 		{
 			name:           "ObjectNew is nil",
-			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1")),
+			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1")),
 			newObject:      nil,
 			expectedResult: true,
 		},
 		{
 			name:           "ObjectOld is wrong type",
 			oldObject:      &corev1.ConfigMap{},
-			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1")),
+			newObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1")),
 			expectedResult: true,
 		},
 		{
 			name:           "ObjectNew is wrong type",
-			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithTags("key1", "value1")),
+			oldObject:      test.AKSNodeClass(test.WithName("test-nodeclass"), test.WithAdditionalTags("key1", "value1")),
 			newObject:      &corev1.ConfigMap{},
 			expectedResult: true,
 		},
