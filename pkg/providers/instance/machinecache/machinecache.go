@@ -379,8 +379,12 @@ func isValid(properties *armcontainerservice.MachineProperties) bool {
 	if properties == nil || properties.Tags == nil {
 		return false
 	}
-	nodeClaimName := properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]
-	return nodeClaimName != nil && *nodeClaimName != ""
+
+	if _, hasTags := properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]; !hasTags {
+		return false
+	}
+
+	return true
 }
 
 func (c *MachineCache) rehydrateMachine(aksMachine *armcontainerservice.Machine) {
