@@ -121,4 +121,28 @@ var _ = Describe("NodeClass Termination", func() {
 		ExpectObjectReconciled(ctx, env.Client, terminationController, nodeClass)
 		ExpectNotFound(ctx, env.Client, nodeClass)
 	})
+
+	DescribeTable("should not wait for NodeClaims referencing a different NodeClass type",
+		func(group, kind string) {
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Group: group,
+						Kind:  kind,
+						Name:  nodeClass.Name,
+					},
+				},
+			})
+			controllerutil.AddFinalizer(nodeClass, v1beta1.TerminationFinalizer)
+			ExpectApplied(ctx, env.Client, nodeClass, nodeClaim)
+
+			Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
+			ExpectObjectReconciled(ctx, env.Client, terminationController, nodeClass)
+
+			ExpectNotFound(ctx, env.Client, nodeClass)
+			ExpectExists(ctx, env.Client, nodeClaim)
+		},
+		Entry("same kind in a different API group", "example.com", v1beta1.AKSNodeClassKind),
+		Entry("different kind in the same API group", v1beta1.Group, "OtherNodeClass"),
+	)
 })
