@@ -75,6 +75,7 @@ _command_is_current() {
     else
         output="$("${command_path}" "$2" 2>&1)" || return 2
     fi
+
     # Match whole whitespace-delimited tokens against the caller's glob.
     local token
     while IFS= read -r token; do
@@ -83,7 +84,7 @@ _command_is_current() {
         if [[ "${token}" == $3 ]]; then
             return 0
         fi
-    done < <(tr '[:space:]' '\n' <<<"${output}")
+    done < <(tr '[:space:]@' '\n' <<<"${output}")
     return 3
 }
 
@@ -403,7 +404,6 @@ _ensure_envtest_assets() {
 }
 
 kubebuilder() {
-    echo "[INF] Setting up kubebuilder binaries for Kubernetes ${K8S_VERSION}"
     _ensure_writable_directory "${KUBEBUILDER_ASSETS}"
     _install_setup_envtest
     _ensure_envtest_assets
