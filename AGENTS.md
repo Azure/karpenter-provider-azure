@@ -1,159 +1,245 @@
-# Overview
+# karpenter-provider-azure
+
+## Attention: stale information
+
+Secondary sources of information like this or other documentation may not reflect the latest state of what applies or what is being deployed. This could be a result of:
+
+- Implementation/documentation inaccuracies
+- Updates are applied to production but are not yet reflected here
+- Undocumented variants of the implementation exist at the same time, which is common in multi-region systems with testing environments
+- Etc.
+
+So:
+
+- **Fact-check them before making them high-stake assumptions**.
+- **Try to keep the information here up-to-date when you notice inaccuracies**.
+  - Maintain a high bar on the need to update. E.g., it should be updated only when there is an inaccuracy, not when there is not enough information or when "adding this line might be helpful".
+  - **The secondary information should be kept minimal, only when there is a clear benefit compared to researching them live**, so we don't have too much info that can get outdated at any time.
+
+## Overview
 
 This repository is the AKS Karpenter Provider: the Azure cloud provider implementation for
 [Karpenter](https://karpenter.sh/). It watches for unschedulable pods, evaluates their scheduling
 constraints, provisions Azure nodes that satisfy them, and removes or consolidates nodes when they
 are no longer needed.
 
-The same codebase serves two deployment models, described in [README.md](./README.md):
+## Important Deployment Configurations
 
-- **Node Auto Provisioning (NAP)** — Karpenter runs as an AKS-managed addon. AKS manages token
-  rotation, Helm charts, Karpenter version updates, VM OS disk updates, and Linux node image
-  upgrades.
-- **Self-hosted** — Karpenter runs as a standalone deployment in the cluster. The user manages
-  upgrades, token rotation, and Helm charts directly.
+- Each configuration may have different user expectations, design philosophy, codebase management, dev/test/release workflow, release timeline, and more.
+  - However, the best practice is to **minimize those differences when able to**.
+- **Pay extra attention to how code paths are being reused or diverge among modes in each dimension**.
+  - When investigating, consider which configuration is in question, if applicable, and consider that the answer may or may not be the same between configurations.
+  - **When implementing changes, consider which configurations should be targeted. Be prepared to center the discussions around them.**
+    - By default, aim for all relevant configurations. **Justify violations in the discussions, if any.**
+- There are more, mostly visible in the code where environment variables are located (most likely in the `options` package). The important ones are below.
+
+### AKS
+
+#### Deployment Models
+
+- **Node Auto Provisioning (NAP)** — Karpenter runs as an AKS-managed addon. More details in [Microsoft Learn docs](https://learn.microsoft.com/azure/aks/use-node-auto-provisioning?pivots=azure-cli).
+  - AKS system manages the deployment, token rotation, Helm charts, Karpenter version updates, etc.
+  - Users just need to enable NAP for their AKS clusters.
+  - The code responsible for integration with AKS-managed addon system is mostly internal, not visible in this repo.
+- **Self-hosted** — Karpenter runs as a standalone deployment in the cluster.
+  - Users manage the deployment, token rotation, Helm charts, Karpenter version updates, etc.
+  - Users need to deploy Karpenter themselves on their AKS clusters. Resources should be provided in this repo.
 
 Images are built differently for the two models and some code paths diverge, but the source is
 shared. A change that is correct for one model is not automatically correct for the other.
 
-## Provisioning Modes
+#### Provisioning Modes
 
-The provider supports several provisioning modes, defined in
-[`pkg/consts/consts.go`](./pkg/consts/consts.go) and selected via the `--provision-mode` flag /
-`PROVISION_MODE` environment variable:
+Defined in [`pkg/consts/consts.go`](./pkg/consts/consts.go) and selected via the `--provision-mode` flag /
+`PROVISION_MODE` environment variable. They fall into several families:
 
-- `aksscriptless`
-- `bootstrappingclient`
-- `aksmachineapi`
-- `aksmachineapiheaderbatch`
+- **AKS Machine instance-based** — Karpenter creates and manages "AKS Machine" resources, representing instances. AKS Machine API handles management of underlying resources (e.g., VMs, NICs, extensions). Common keywords are "AKS machine", "Machine API", "Machines", etc. E.g., [`pkg/providers/instance/aksmachineinstance.go`](./pkg/providers/instance/aksmachineinstance.go)
+  - `aksmachineapi`
+  - `aksmachineapiheaderbatch` - Extends `aksmachineapi` but with batching via API headers, improving perf/scale.
+    - Being used by NAP
+    - Not usable by self-hosted due to API restrictions
+- **VM instance-based** — Karpenter creates and manages Azure VMs, NICs, and extensions directly. Common keywords are "VM instance", "Old VM mode", etc. E.g., [`pkg/providers/instance/vminstance.go`](./pkg/providers/instance/vminstance.go).
+  - `aksscriptless` - Karpenter manages VM bootstrapping data
+  - `bootstrappingclient` - Karpenter calls Node Bootstrapping API to get VM bootstrapping data
+    - Being used by NAP, but being phased out in favor of `aksmachineapiheaderbatch`
+    - Not usable by self-hosted due to API restrictions
 
-These fall into two families with materially different implementations:
+## User-Configurable Interfaces
 
-- **VM-based** (`aksscriptless`, `bootstrappingclient`) — the provider creates and manages Azure
-  VMs, NICs, and extensions directly. See
-  [`pkg/providers/instance/vminstance.go`](./pkg/providers/instance/vminstance.go).
-- **AKS Machine API-based** (`aksmachineapi`, `aksmachineapiheaderbatch`) — the provider creates AKS
-  Machine resources and AKS performs the underlying compute operations. See
-  [`pkg/providers/instance/aksmachineinstance.go`](./pkg/providers/instance/aksmachineinstance.go)
-  and `aksmachineinstancehelpers.go`.
+"User" in this case refers to a Kubernetes cluster admin of an AKS cluster with Karpenter deployed. They typically manage (at least):
 
-The two AKS Machine API modes are **the same provisioning path**, not separate implementations.
-Both use `DefaultAKSMachineProvider`, the same machine template construction, and the same
-lifecycle, read, update, and delete logic. `aksmachineapiheaderbatch` differs only in how creates
-are dispatched: compatible concurrent creates are accumulated and sent as a single request carrying
-a shared machine template plus a `BatchPutMachine` header describing each machine, then polled
-individually via GET. See
-[`pkg/providers/azclient/aksmachinesheaderbatch/`](./pkg/providers/azclient/aksmachinesheaderbatch/)
-and the create-path branch in `aksmachineinstance.go`. Treat them as one mode with two create
-dispatch strategies — a behavioral change generally applies to both, and batching concerns are
-about grouping, partial failure, and batch limits rather than about a different machine model.
+- Relevant Azure resources (incl. AKS managed cluster instance) via Azure APIs
+- The Kubernetes cluster via Kubernetes APIs
 
-Several files carry explicit `ATTENTION!!!` comments stating that changes there may not take effect
-on AKS machine nodes, and point at the counterpart implementation. Treat those comments as
-authoritative — they mark the exact places where a one-sided change silently breaks a mode.
+Common considerations when making changes, whether supporting new features or improving/fixing existing ones:
+
+- **Keep these "user perspectives" in mind and be prepared to center the discussions around them.**
+- **Consider general API change practices** (e.g., defaulting, validation, whether it is breaking, backward compatibility, trying to match existing patterns) **as well as Karpenter-specific mechanisms around it** (e.g., in CRDs: hash drift, drift detection, lifecycle consequences, whether anything else depends on the changing fields like labels).
+- Keep in mind that interface changes may not always take effect on already-applied configurations in existing resources (clusters / deployed CRs). **Call out the analysis explicitly in the discussions.**
+
+### Karpenter Deployment and Its Cluster-Level Configurations
+
+See the [Deployment Models](#deployment-models) section for details.
+
+### AKS Cluster-Level Configurations
+
+This refers to existing AKS cluster-level features, where the instructions (e.g., `az aks update ...`) can be found in Microsoft Learn docs for AKS.
+
+Enabling them on an AKS cluster with NAP/self-hosted Karpenter may intentionally change certain behaviors (e.g., the node Karpenter provisions may have those features enabled).
+
+- **For NAP, it is expected that the integration will be smooth: it either just works or is blocked on an enablement attempt**
+- For self-hosted, some features may require reconfiguring Karpenter deployment (e.g., enable certain flags), managed by the user
+
+### Other AKS Cluster-Level Interfaces
+
+There could be some other user interfaces that AKS exposes and that affect or are affected by Karpenter.
+
+### Karpenter Pool-Level Configurations
+
+They exist only in the form of K8s CRs as of today.
+
+- For NAP:
+  - AKS system deploys and handles upgrades of CRDs
+  - AKS system may deploy default CRs that users can customize
+  - Users may deploy and customize their own CRs
+
+- For self-hosted:
+  - Users handle all deployments
+
+#### NodePool CRs
+
+They are maintained by upstream Karpenter and are provider-agnostic. They represent a provisioning node pool. Each contains a reference to a NodeClass.
+
+#### NodeClass CRs
+
+They are maintained by the Karpenter provider (us here). They represent a set of expectations for nodes to be provisioned and contain provider-specific features and properties. For AKS, the properties here are roughly equivalent to what's in [AgentPools API](https://learn.microsoft.com/en-us/cli/azure/aks/nodepool?view=azure-cli-latest#az-aks-nodepool-add).
+
+- **When adding a new AKS feature support based on an AgentPool-level feature, changes will most likely be needed here. Keep parity with AKS as much as practical, and call out the analysis explicitly in the discussions.**
+- For `AKSNodeClass`, `v1beta1` is the current version; `v1alpha2` is deprecated, but **should usually be kept in parity** for compatibility.
 
 ## Code Structure
 
-- [`pkg/apis/`](./pkg/apis/) — `AKSNodeClass` API types. `v1beta1` is the current version;
-  `v1alpha2` is deprecated and planned for removal. Also holds generated deepcopy code and CRDs
-  under `pkg/apis/crds/`.
-- [`pkg/cloudprovider/`](./pkg/cloudprovider/) — implementation of the upstream Karpenter
-  `CloudProvider` interface (create, delete, get, list, drift).
-- [`pkg/controllers/`](./pkg/controllers/) — provider-specific controllers: nodeclaim
-  garbage collection and in-place update; nodeclass hash, status, and termination; instance type
-  and quota controllers.
-- [`pkg/providers/`](./pkg/providers/) — Azure integrations: `azclient`, `instance`, `instancetype`,
-  `imagefamily`, `launchtemplate`, `kubernetesversion`, `loadbalancer`,
-  `networksecuritygroup`, `pricing`, `quota`, `zone`, `allocationstrategy`, `labels`.
-- [`pkg/operator/`](./pkg/operator/) — operator wiring and options/flags.
-- [`pkg/fake/`](./pkg/fake/) and [`pkg/test/`](./pkg/test/) — fakes and the test environment used by
-  acceptance tests.
+### Upstream Karpenter
+
+- Not in this codebase, but rather referring to [kubernetes-sigs/karpenter](https://github.com/kubernetes-sigs/karpenter). The term "Upstream Karpenter" may be used interchangeably with "Karpenter Core".
+- It is a library that each Karpenter "Provider" (incl. this repo) imports. The division is intended to separate provider-agnostic and provider-specific logic.
+- Core controllers live there. At a minimum, providers are responsible for implementing the `CloudProvider` interface to complete those core controllers.
+- Core APIs live there.
+
+### Initialization
+
+- [`pkg/operator/`](./pkg/operator/) — wiring with options/flags.
+
+### Interface
+
+- [`pkg/apis/`](./pkg/apis/) — user-facing API / K8s CRDs.
+  - Provider-specific CRDs (e.g., `AKSNodeClass`) live here, as well as copies of core CRDs.
 - [`charts/`](./charts/) — `karpenter` and `karpenter-crd` Helm charts. CRD templates are copied
   from `pkg/apis/crds` by `make verify`.
-- [`test/`](./test/) — real end-to-end suites run against a live AKS cluster. See
-  [test/README.md](./test/README.md).
+
+### Core Routines
+
+- [`pkg/cloudprovider/`](./pkg/cloudprovider/) — implementation of the upstream Karpenter `CloudProvider` interface.
+- [`pkg/controllers/`](./pkg/controllers/) — provider-specific controllers (e.g., garbage collections, instance in-place update, nodeclass, instance type)
+
+### Downstream Logic
+
+- [`pkg/providers/`](./pkg/providers/) — inner business logic by domain. Usually consumed by core routines.
+
+### Dev/Test
+
+- [`pkg/fake/`](./pkg/fake/) and [`pkg/test/`](./pkg/test/) — fakes and the test environment used by unit/acceptance tests.
+- [`test/`](./test/) — real end-to-end suites run against a live AKS cluster. See [test/README.md](./test/README.md).
 - [`hack/`](./hack/) — toolchain, codegen, validation, and release scripts.
 
-## Development and Validation
+## Testing
 
-The supported entry points are the Make targets; see [CONTRIBUTING.md](./CONTRIBUTING.md).
+There are several layers of tests. **In many cases, you are recommended to add new tests in applicable categories.**
+
+- For bug fixes, whenever applicable, the best way to demonstrate the impact is to show the added tests failing without your changes and passing with your changes.
+- Keep in mind general testing best practices. E.g., a test is only useful if it would fail when the intended behavior regresses; be careful not to use a unit test to justify a bad behavior; do not over-test inner behaviors that can change without harm, etc.
+
+### Traditional Unit Tests
+
+Scattered around the codebase. Should be covered by `make test` and PR check-in.
+Avoid using Ginkgo for new tests of this kind. Prefer the [standard Go testing framework](https://pkg.go.dev/testing).
+
+### Acceptance Tests / "Unit End-to-End Tests"
+
+These are unit tests targeting the integration between modules within the codebase, usually starting by simulating pending pod pressure. They often use fakes from `pkg/fake` to simulate dependencies. These tests are usually named `suite_*_test.go`.
+The best practice is to keep these tests near their origin routines. E.g., `pkg/cloudprovider` or `pkg/controllers`. Always use [Ginkgo](https://pkg.go.dev/github.com/onsi/ginkgo). They should be covered by `make test` and PR check-in.
+
+**When adding tests, extend, condition, or match the design/implementation/considerations of existing ones.** Only start new files or patterns when there is a valid design justification/clear trade-off, as it will be harder to compare and contrast existing tests/behaviors.
+
+### E2E Tests
+
+Tests run against Karpenter deployed on a real cluster. Relevant code and test suites are in the `test/` folder (not `pkg/test`, which is for acceptance tests). They are not covered by PR check-in.
+
+- On making changes, research the possibilities of user-configurable interfaces, functionalities, or lifecycle/controller expectations affected or introduced by your changes. **Ensure that the E2E tests cover most possibilities of them, whether through existing tests or new tests. Explicitly call out the analysis, justifiable gaps, and results**. Be prepared to pitch why the results are enough to justify the correctness of the changes.
+- In larger or framework-affecting changes, E2E testing strategy can be a design consideration to be called out explicitly.
+- The cost of running E2E tests is higher than unit tests. Only do so on significant changes and on pull request submission.
+
+#### Self-Hosted E2E Tests
+
+Should be covered by `make e2etests TEST_SUITE=<suite>` after a cluster is created and Karpenter is deployed. See [Makefile-az.mk](Makefile-az.mk) for deployment utilities. Note that certain tests may have assumptions about what the cluster should look like.
+
+Alternatively, [E2EMatrixTrigger](https://github.com/Azure/karpenter-provider-azure/actions/workflows/e2e-matrix-trigger.yaml) and [E2E](https://github.com/Azure/karpenter-provider-azure/actions/workflows/e2e.yaml) GitHub Actions will handle the process end-to-end.
+
+#### NAP E2E Tests
+
+AKS runs the same set of test suites on a cluster with NAP. This is not currently accessible by public contributors.
+
+### Manual Testing
+
+You can (and are encouraged to) deploy Karpenter with your changes on a real cluster, then see if things work as you intended. See [Makefile-az.mk](Makefile-az.mk) for deployment utilities. Usually, `make az-all` is the easiest.
+
+## Development
+
+See important Make targets below.
 
 | Target | Purpose |
 |--------|---------|
-| `make verify` | Codegen, boilerplate, CRD copy, validation, linting, `actionlint`. Run after any code change. |
-| `make presubmit` | `make verify` plus tests. Run before submitting. |
-| `make test` | Unit and acceptance tests via Ginkgo. |
-| `make e2etests` | E2E suites against a live cluster (`TEST_SUITE=<suite>`). |
+| `make verify` | Codegen, boilerplate, CRD copy, validation, linting, `actionlint`, `zz_generated.deepcopy.go`. **Run after any code change.** Do not run `go generate` directly and do not hand-edit generated output. |
+| `make presubmit` | `make verify` plus unit tests. **Run before submitting.** |
 | `make toolchain` | Install the correct tool versions; fixes most local environment failures. |
-
-Do not run `go generate` directly and do not hand-edit generated output. `make verify` performs
-code generation, copies upstream and provider CRDs into `pkg/apis/crds` and
-`charts/karpenter-crd/templates`, and fails if the working tree is dirty afterwards.
-
-CI runs `make ci-non-test` and `make ci-test` across Kubernetes versions 1.31 through 1.37. E2E
-suites run through [`.github/workflows/e2e-matrix.yaml`](./.github/workflows/e2e-matrix.yaml); a new
-suite directory under `test/suites/` must also be added to that matrix, as described in
-[.github/workflows/README.md](./.github/workflows/README.md).
 
 ## Guidelines
 
+See [Karpenter design guide](https://karpenter.sh/docs/contributing/design-guide/) as a starting point.
+
 ### Operational Goals
 
-- Preserve correctness of node provisioning above all else. A defect here does not degrade a
-  feature, it fails to create nodes or leaks Azure resources for real clusters.
-- Keep NAP and self-hosted behavior consistent. Losing parity is a trade-off that needs explicit
-  justification.
-- Keep VM-based and AKS Machine API-based provisioning consistent. Logic added to one instance
-  implementation usually needs a counterpart in the other.
-- Preserve backward compatibility of the `AKSNodeClass` API, node labels, and Helm values. Existing
-  clusters upgrade in place.
-- Avoid regressions in provisioning latency and in the number of Azure API calls per node.
+- Lean towards preserving the existing functional behavior. All changes must be justifiable and explicitly addressed in the discussions.
+- **Always trace the behavioral consequences of the code change deeply, even if changes are not expected, and call out the analysis explicitly in the discussions.** E.g. research the possibilities of user-configurable interfaces, functionalities, or lifecycle/controller expectations affected or introduced by your changes.
+  - Be mindful of design assumptions or resource dependencies, explicit or implicit, made by each component of the code. Assumption violations are not always obvious, but can have irreversible design issues.
+- There are existing clusters with Karpenter/NAP in production. Consider the consequences to them in addition to the consequences to new deployments. **Explicitly call out the analysis on behavior changes**.
+  - Not having existing cluster E2E tests is one of the OSS test framework gaps.
+- Be mindful of changes to call patterns to dependency APIs. E.g., some changes may increase API volume, which may have throttling implications, etc. **Trace the consequence and explicitly call out the analysis on behavior changes**.
 
 ### Golang
 
-- Follow Go best practice and the conventions already present in the surrounding package.
+- Follow Go best practices and the conventions already present in the surrounding package.
 - Propagate `context.Context` and honor cancellation on every Azure and Kubernetes call.
 - Wrap errors with enough context to identify the resource and operation.
 - Use `sigs.k8s.io/controller-runtime/pkg/log` for logging, consistent with the rest of `pkg/`.
 - Prefer the smallest change consistent with the existing code over an unrelated refactor.
 
-### Kubernetes APIs and CRDs
+### Dependency API Integrations
 
-- `v1beta1` is the current `AKSNodeClass` version. `v1alpha2` is deprecated and planned for
-  removal, so new fields and behavior belong in `v1beta1`. Do not add functionality to `v1alpha2`
-  purely for parity.
-- Adding or changing a spec field usually affects defaulting, CEL validation, the nodeclass hash,
-  drift detection, and the generated CRDs. Consider all of them together.
-- Generated files (`zz_generated.deepcopy.go`, CRD YAML, chart CRD copies) come from `make verify`.
+- On changes, make sure you fully understand at least the items below, **but do not limit your analysis to them**. Brainstorm possible issues and questions to answer. Make clear the assumptions we are making about them and their strength. **Call out the analysis as key design considerations.**
+  - Contract (e.g., what's not allowed, what can change without notifying us)
+  - Failure modes (e.g., silent errors, categorized errors)
+  - Corner cases (e.g., does "creation succeed" mean the resource is already created and visible?)
+  - Perf/scale concerns (e.g., throttling)
+  - Availability/reliability concerns (e.g., reputation and issue history)
+  - Maintenance concerns (e.g., versioning)
+  - Other related behavioral assumptions.
+- If the API involves resource management, consider the design of the resource ownership model. E.g., typically, whoever is responsible for resource creation is responsible for its lifecycle including garbage collection and cleanup. **Call out the analysis as key design considerations.**
 
-### Azure Integrations
+### Dev Tools
 
-- All Azure clients are constructed in [`pkg/providers/azclient`](./pkg/providers/azclient/).
-  Client construction is mode-dependent; adding a client means deciding which modes need it.
-- Handle throttling, retries, pagination, long-running operation polling, and eventual consistency
-  explicitly. Do not assume a resource is visible immediately after a successful write.
-- Every created Azure resource needs a cleanup path, including on partial failure.
 - When writing `az` CLI commands in scripts or docs, always pass an explicit `--output` format.
   Users may have changed their default via `az configure`, which breaks scripts that assume JSON.
-
-### Testing
-
-Three levels, as described in [CONTRIBUTING.md](./CONTRIBUTING.md):
-
-- **Unit tests** — fine-grained, under `pkg/` next to the code, standard Go tests with Gomega for assertions.
-- **Acceptance tests** — Ginkgo with Gomega for assertions, under `pkg/`, integrate with upstream Karpenter and fake only the
-  Azure clients. Prefer starting from pending pod pressure.
-- **E2E tests** — Ginkgo with Gomega for assertions, under `test/`, real cluster and real Azure clients.
-
-A test is only useful if it would fail when the intended behavior regresses.
-
-Before adding a test, read the existing tests for the file you changed — usually the sibling
-`_test.go` file, otherwise the suite covering that package. Match what is already there: the same
-setup and teardown, fakes, table or `DescribeTable` structure, naming, and assertion style. Extend
-the established test file rather than starting a disconnected one, and cover the same provisioning
-modes and deployment models the surrounding cases already cover. A test that is correct but
-inconsistent with its neighbors makes the suite harder to maintain and tends to duplicate or
-contradict existing coverage.
 
 ### GitHub Actions
 
@@ -161,213 +247,17 @@ contradict existing coverage.
 - Workflows run behind `step-security/harden-runner` with `egress-policy: block`. A new network
   dependency requires adding the endpoint to `allowed-endpoints`, or the job fails.
 - Keep `permissions` minimal and explicit.
-- `make verify` runs `actionlint`.
 
-## Pull Request Review Guidelines
+### Documentation
 
-When reviewing pull requests, focus on correctness, security, and backward compatibility. Karpenter
-provisions real infrastructure for existing clusters, so regressions here surface as failed node
-provisioning, stranded Azure resources, or unschedulable workloads rather than as cosmetic bugs.
+- Do estimate the accumulated size and complexity of design changes, additions, decisions, considerations, assumptions, sub-problems, dependencies on other work/issues, potential FAQs, code merging strategy, testing strategy, rollout strategy, etc. Consider adding to [design docs](designs/) for large ones, while describing the changes in PR description for smaller ones.
+  - It is a good practice to document even resolved concerns to avoid repeated questions, facilitate context research, and avoid violating design validity in the future.
+- Add in-code comments or in-module docs whenever appropriate, not excessively.
+- Refer to [#attention-stale-information](#attention-stale-information) for best practices on updates to existing documentation of any kind.
 
-**Review Approach**: Focus on high-level architecture, security vulnerabilities, and logic bugs.
-Apply deep reasoning — do not just pattern match, but understand the change's intent, its
-dependencies, and its failure modes. Linting and formatting are already enforced by `make verify`
-and CI; do not spend review budget on them.
+### Publishing
 
-### Breaking Change Detection
-
-Analyze PRs for these compatibility scenarios.
-
-**1. Provisioning Mode Compatibility**
-
-- **Context**: The provider supports VM-based and AKS Machine API-based provisioning, with
-  separate implementations in `pkg/providers/instance/`. Files that only affect one family are
-  marked with `ATTENTION!!!` comments naming the counterpart. The two AKS Machine API modes are the
-  same path and differ only in create dispatch, so a change to Machine API behavior normally
-  applies to both.
-- **What to check**: Which provisioning modes the change actually affects, and whether the
-  counterpart implementation needs the same change.
-- **Breaking signals**:
-  - Logic added to `vminstance.go`, `launchtemplate/`, `imagefamily/resolver.go`, or
-    `customscriptsbootstrap/` without the corresponding change in `aksmachineinstance.go` /
-    `aksmachineinstancehelpers.go`, when the behavior is meant to apply to both.
-  - A `switch` or `if` over provision mode that gains a new case in one place but not in others
-    that switch on the same values.
-  - New behavior that silently no-ops in a mode the PR claims to support.
-  - Machine template changes that break batch grouping, or that add a per-machine field without
-    the matching header entry so it is silently shared across a batch.
-  - Batch handling that ignores the batch size limit or the idle/max accumulation durations, or
-    that treats a partially failed batch as wholly succeeded or wholly failed.
-  - Migration and mixed-environment paths (nodes created in one mode, then managed after a mode
-    switch) left unhandled.
-
-**2. NAP and Self-Hosted Compatibility**
-
-- **Context**: One codebase backs both the AKS-managed addon and self-hosted deployments, with
-  different image builds, different configuration sources, and different upgrade cadences.
-- **What to check**: That the change is valid under both deployment models.
-- **Breaking signals**:
-  - Assuming a setting, environment variable, or Helm value is always present.
-  - Assuming AKS manages something (tokens, node image upgrades, chart versions) in a path that
-    self-hosted clusters also execute.
-  - Changing a default in a way that alters behavior for existing clusters on upgrade.
-  - AKS-facing labels, taints, or field values that are asserted rather than verified against what
-    AKS actually sets.
-
-**3. AKSNodeClass API and CRD Compatibility**
-
-- **Context**: `v1beta1` is current and `v1alpha2` is deprecated and planned for removal. CRDs are
-  generated, and the nodeclass hash feeds drift detection.
-- **What to check**: Generated artifacts and upgrade impact on objects that already exist.
-- **Breaking signals**:
-  - New fields or behavior added to `v1alpha2` rather than `v1beta1`.
-  - Hand-edited `zz_generated.deepcopy.go`, CRD YAML, or `charts/karpenter-crd/templates` content.
-  - Removing or narrowing a field, tightening CEL validation, or changing a default — existing
-    stored objects must remain valid.
-  - Hash-relevant spec changes without the corresponding hash version bump and test update,
-    which would drift every existing node.
-  - Status conditions added or renamed without considering consumers that gate on them.
-
-**4. NodeClaim Lifecycle and Resource Cleanup**
-
-- **Context**: Create, register, initialize, drift, disrupt, in-place update, garbage collect, and
-  delete are separate paths, and any of them can fail midway against a live Azure subscription.
-- **What to check**: That every path is idempotent and leaves no orphaned Azure resources.
-- **Breaking signals**:
-  - A resource created before an operation that can fail, with no cleanup on the error path.
-  - Non-idempotent logic on a reconcile path that will be retried.
-  - Assuming an Azure resource still exists — it may have been deleted out of band.
-  - Treating "not found" as fatal in deletion or garbage collection instead of as success.
-  - Early returns that skip finalizer removal, leaving objects stuck terminating.
-  - Cancellation or timeout that abandons an in-flight create without recording the instance.
-
-**5. Azure API Semantics**
-
-- **What to check**: That Azure is treated as a remote, rate-limited, eventually consistent API.
-- **Breaking signals**:
-  - Missing or incorrect retry and throttling handling; retrying a non-retryable error.
-  - Dropped `context.Context`, or a context that cannot cancel a long-running poll.
-  - Paged list APIs consumed as if they return a single page.
-  - Dereferencing pointer fields from the Azure SDK without a nil check.
-  - Read-modify-write sequences that ignore concurrency control and can clobber a concurrent update.
-  - Assuming a resource is immediately readable after create.
-  - Partial success in a batched or multi-resource operation treated as total success or total
-    failure.
-
-**6. Scheduling, SKUs, and Capacity**
-
-- **What to check**: That instance type selection stays correct and does not silently produce an
-  empty or invalid candidate set.
-- **Breaking signals**:
-  - Filtering that can eliminate all offerings, yielding no provisioning with an unclear error.
-  - Requirements, labels, or taints that no longer match what the node actually reports.
-  - Regional and zonal placement handling, including the regional zone value, treated
-    inconsistently between offering construction and node labeling.
-  - Capacity type, spot, pricing, or quota logic that changes consolidation or replacement
-    decisions as a side effect.
-  - SKU capability parsing that assumes a capability is always present.
-
-**7. Images, Networking, and Storage**
-
-- **What to check**: Region, architecture, Kubernetes version, and image family assumptions.
-- **Breaking signals**:
-  - Image resolution that assumes a lineage is published in every region or for every
-    architecture or image family.
-  - Changes to resolved image identifiers that unintentionally drift existing nodes.
-  - Network plugin, dataplane, or policy handling that ignores documented unsupported
-    combinations.
-  - NIC, subnet, or disk configuration changes without a matching cleanup path.
-  - Ephemeral versus managed OS disk assumptions that do not hold for the selected SKU.
-
-**8. Security**
-
-- **What to check**: Credential handling, privilege, and input validation.
-- **Breaking signals**:
-  - Tokens, keys, bootstrap credentials, or customer identifiers written to logs, events,
-    conditions, or Azure resource tags.
-  - Broadening identity permissions or resource scope beyond what the operation needs.
-  - User-controlled input flowing into Azure resource names, shell commands, or Kubernetes objects
-    without validation.
-  - New external endpoints not added to `allowed-endpoints`, or actions pinned to a mutable tag.
-  - References in code, comments, docs, commit messages, or PR descriptions to systems that
-    external contributors cannot access. This repository is public; keep contributions
-    self-contained and reviewable from public sources.
-
-**9. Test Coverage**
-
-- **What to check**: Whether the tests would actually catch a regression of this change, and
-  whether they are consistent with the existing tests for the files being edited.
-- **Breaking signals**:
-  - Behavior changes in `pkg/` with no unit or acceptance test that exercises the new path.
-  - Tests that assert the implementation rather than the intended behavior.
-  - Only the success path covered, when the change is about failure, retry, or cleanup.
-  - A new test file or suite created alongside an existing one that already covers the changed
-    file, instead of extending it.
-  - Tests that diverge from the conventions of their neighbors — different setup or fakes, a
-    different table or `DescribeTable` structure, or a different assertion style than the
-    surrounding cases.
-  - A changed file whose existing tests cover several provisioning modes or deployment models,
-    where the new case only covers one of them without saying why.
-  - A new `test/suites/` directory not added to `.github/workflows/e2e-matrix.yaml`.
-  - Helm chart snapshot updates presented as evidence of runtime behavior — they only verify
-    template rendering.
-  - Changes that need real Azure behavior to be meaningful, with no E2E coverage and no
-    explanation.
-
-### Analysis Approach
-
-**Dependency Tracing**:
-
-1. For each changed file, identify its callers and consumers.
-2. Check whether a separate implementation exists for the other provisioning family, and whether it
-   needs the same change. Follow the `ATTENTION!!!` comments.
-3. Trace changed values through to what is actually sent to Azure and what is set on the Node or
-   NodeClaim.
-4. For API changes, follow through to defaulting, validation, hashing, drift, and generated CRDs.
-5. Check whether Helm chart values, RBAC, or operator options need a matching change.
-6. Open the existing tests for each changed file and compare the new tests against them for
-   coverage and for consistency of structure and style.
-
-**Historical Context**:
-
-- Look for the established pattern for this kind of change elsewhere in the repository and prefer
-  consistency with it.
-- Note areas that have required repeated fixes and review changes there more closely.
-
-**Test Coverage Assessment**:
-
-- Note whether the changed code has unit, acceptance, or E2E coverage.
-- Flag changes to untested paths as higher risk.
-- Say so when new behavior lacks a corresponding test.
-- Compare new tests against the existing tests for the same file and flag inconsistency in
-  structure, fakes, or assertion style, or a new suite that duplicates one that already exists.
-
-### Review Output
-
-Provide targeted inline comments on the specific lines where you find an issue.
-
-For each finding, include:
-
-- **Severity**: `High` for anything that can break node provisioning, strand Azure resources, break
-  an existing cluster on upgrade, or introduce a security vulnerability. `Medium` for issues that
-  affect specific configurations, edge cases, or performance. `Low` for correctness nits worth
-  noting.
-- **Category**: one of `Correctness`, `Compatibility`, `Azure API`, `Lifecycle`, `Scheduling`,
-  `Security`, `Performance`, or `Test Coverage`.
-- The concrete scenario in which the code misbehaves — not just the rule it violates.
-- A specific fix or verification step, such as the counterpart file to update or the case to cover.
-
-**Only comment when you have a substantive finding.** Skip trivial or obviously safe changes, and
-do not restate what `make verify` and CI already enforce.
-
-### Review Philosophy
-
-Think like an experienced reviewer of this codebase:
-
-- Understand how the pieces interact before judging a diff.
-- Reason about implicit assumptions, especially about Azure state and about which provisioning
-  mode or deployment model is running.
-- Consider the upgrade path for clusters already running an older version.
-- Prefer a small number of high-confidence findings over broad coverage.
-- Say plainly when a change looks risky but you cannot prove a defect, and state what would confirm
-  it.
+- Refer to [CONTRIBUTING.md](CONTRIBUTING.md) for more guidelines.
+- It is your duty as an AI to remind the human author of what can only be done by humans and not by you. You may help guide them in the process.
+- Don't forget to call out the analyses we planned. E.g., in the PR description.
+- Keep all English text there especially concise. Use ASD-STE100 Simplified Technical English.
