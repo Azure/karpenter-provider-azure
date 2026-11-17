@@ -81,6 +81,7 @@ type Environment struct {
 	LoadBalancersAPI                *fake.LoadBalancersAPI
 	NetworkSecurityGroupAPI         *fake.NetworkSecurityGroupAPI
 	SubnetsAPI                      *fake.SubnetsAPI
+	VirtualNetworksAPI              *fake.VirtualNetworksAPI
 	DiskEncryptionSetsAPI           *fake.DiskEncryptionSetsAPI
 	CapacityReservationGroupsAPI    *fake.CapacityReservationGroupsAPI
 	CapacityReservationsAPI         *fake.CapacityReservationsAPI
@@ -219,6 +220,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.NodeResourceGroup,
 	)
 	subnetsAPI := &fake.SubnetsAPI{}
+	virtualNetworksAPI := &fake.VirtualNetworksAPI{}
 	diskEncryptionSetsAPI := &fake.DiskEncryptionSetsAPI{}
 	capacityReservationGroupsAPI := &fake.CapacityReservationGroupsAPI{}
 	capacityReservationsAPI := &fake.CapacityReservationsAPI{}
@@ -243,6 +245,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
 		subnetsAPI,
+		virtualNetworksAPI,
 		diskEncryptionSetsAPI,
 		capacityReservationGroupsAPI,
 		capacityReservationsAPI,
@@ -345,6 +348,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LoadBalancersAPI:                loadBalancersAPI,
 		NetworkSecurityGroupAPI:         networkSecurityGroupAPI,
 		SubnetsAPI:                      subnetsAPI,
+		VirtualNetworksAPI:              virtualNetworksAPI,
 		DiskEncryptionSetsAPI:           diskEncryptionSetsAPI,
 		CapacityReservationGroupsAPI:    capacityReservationGroupsAPI,
 		CapacityReservationsAPI:         capacityReservationsAPI,
@@ -403,6 +407,7 @@ func (env *Environment) Reset(ctx context.Context) {
 	env.LoadBalancersAPI.Reset()
 	env.NetworkSecurityGroupAPI.Reset()
 	env.SubnetsAPI.Reset()
+	env.VirtualNetworksAPI.Reset()
 	env.CapacityReservationGroupsAPI.Reset()
 	env.CapacityReservationsAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()

@@ -55,12 +55,12 @@ import (
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/capacityrecommendation"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -73,7 +73,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
@@ -148,7 +147,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	azClient, err := azclient.NewAZClient(ctx, azConfig, env, cred)
 	lo.Must0(err, "creating Azure client")
 	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
-		vnetGUID, err := getVnetGUID(ctx, cred, azConfig, options.FromContext(ctx).SubnetID)
+		vnetGUID, err := getVnetGUID(ctx, azClient.VirtualNetworksClient(), options.FromContext(ctx).SubnetID)
 		lo.Must0(err, "getting VNET GUID")
 		options.FromContext(ctx).VnetGUID = vnetGUID
 	}
@@ -346,28 +345,12 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 	return lo.ToPtr(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
 }
 
-func getVnetGUID(ctx context.Context, creds azcore.TokenCredential, cfg *auth.Config, subnetID string) (string, error) {
-	// TODO: Current the VNET client isn't used anywhere but this method. As such, it is not
-	// held on azclient like the other clients.
-	// We should possibly just put the vnet client on azclient, and then pass azclient in here, rather than
-	// constructing the VNET client here separate from all the other Azure clients.
-	env, err := auth.ResolveCloudEnvironment(cfg)
-	if err != nil {
-		return "", err
-	}
-
-	o := options.FromContext(ctx)
-	opts := armopts.DefaultARMOpts(env.Cloud, o.EnableAzureSDKLogging)
-	vnetClient, err := armnetwork.NewVirtualNetworksClient(cfg.SubscriptionID, creds, opts)
-	if err != nil {
-		return "", err
-	}
-
+func getVnetGUID(ctx context.Context, vnetClient azapi.VirtualNetworksAPI, subnetID string) (string, error) {
 	subnetParts, err := utils.GetVnetSubnetIDComponents(subnetID)
 	if err != nil {
 		return "", err
 	}
-	vnet, err := vnetClient.Get(context.Background(), subnetParts.ResourceGroupName, subnetParts.VNetName, nil)
+	vnet, err := vnetClient.Get(ctx, subnetParts.ResourceGroupName, subnetParts.VNetName, nil)
 	if err != nil {
 		return "", err
 	}

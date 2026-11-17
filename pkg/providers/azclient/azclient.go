@@ -59,6 +59,7 @@ type AZClient struct {
 	virtualMachinesExtensionClient  azapi.VirtualMachineExtensionsAPI
 	networkInterfacesClient         azapi.NetworkInterfacesAPI
 	subnetsClient                   azapi.SubnetsAPI
+	virtualNetworksClient           azapi.VirtualNetworksAPI
 	diskEncryptionSetsClient        azapi.DiskEncryptionSetsAPI
 	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI
 	capacityReservationsClient      azapi.CapacityReservationsAPI
@@ -78,6 +79,10 @@ type AZClient struct {
 
 func (c *AZClient) SubnetsClient() azapi.SubnetsAPI {
 	return c.subnetsClient
+}
+
+func (c *AZClient) VirtualNetworksClient() azapi.VirtualNetworksAPI {
+	return c.virtualNetworksClient
 }
 
 func (c *AZClient) DiskEncryptionSetsClient() azapi.DiskEncryptionSetsAPI {
@@ -143,6 +148,7 @@ func NewAZClientFromAPI(
 	virtualMachinesExtensionClient azapi.VirtualMachineExtensionsAPI,
 	interfacesClient azapi.NetworkInterfacesAPI,
 	subnetsClient azapi.SubnetsAPI,
+	virtualNetworksClient azapi.VirtualNetworksAPI,
 	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
 	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI,
 	capacityReservationsClient azapi.CapacityReservationsAPI,
@@ -167,6 +173,7 @@ func NewAZClientFromAPI(
 		virtualMachinesExtensionClient:     virtualMachinesExtensionClient,
 		networkInterfacesClient:            interfacesClient,
 		subnetsClient:                      subnetsClient,
+		virtualNetworksClient:              virtualNetworksClient,
 		diskEncryptionSetsClient:           diskEncryptionSetsClient,
 		capacityReservationGroupsClient:    capacityReservationGroupsClient,
 		capacityReservationsClient:         capacityReservationsClient,
@@ -198,6 +205,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	}
 
 	subnetsClient, err := armnetwork.NewSubnetsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	virtualNetworksClient, err := armnetwork.NewVirtualNetworksClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -361,6 +373,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		extensionsClient,
 		interfacesClient,
 		subnetsClient,
+		virtualNetworksClient,
 		diskEncryptionSetsClient,
 		capacityReservationGroupsClient,
 		capacityReservationsClient,
