@@ -75,8 +75,9 @@ _command_is_current() {
     else
         output="$("${command_path}" "$2" 2>&1)" || return 1
     fi
-    # -F matches fixed text, -q suppresses output, and -w requires word boundaries.
-    grep -Fqw -- "$3" <<<"${output}"
+    # Break at whitespace so we don't match partial versions (e.g. `v0.19.0-rc.1` would not match `v0.19.0`)
+    # -F matches fixed text, -q suppresses output, and -x requires a complete match
+    tr '[:space:]' '\n' <<<"${output}" | grep -Fqx -- "$3"
 }
 
 should-skip() {
@@ -90,20 +91,26 @@ should-skip() {
         echo "[INF] Installing $1 because SKIP_INSTALLED is not true"
         return 1
     fi
+
+    # If we have the correct version of the command, there's nothing to do
     if _command_is_current "$@"; then
         return
     fi
 
+    # If we're running in CI (or any other hands-off environment,
+    # we abort because we should always have the right versions preinstalled.
+    if [[ "${CI:-}" == true ]]; then
+        echo "[ERR] $1 is missing or has an incorrect version; aborting!" >&2
+        exit 1
+    fi
+
+    # When running locally, we proceed with updating
     if [[ "$#" -eq 1 ]]; then
         echo "[INF] Installing $1 because it is missing"
     else
-        if [[ "${CI:-}" == true ]] && _resolve_command "$1" >/dev/null; then
-            echo "[ERR] $1 installed version does not contain '$3'; aborting in CI" >&2
-            # A return would let conditional callers continue with installation.
-            exit 1
-        fi
         echo "[INF] Installing $1 because the installed version does not contain '$3'"
     fi
+
     return 1
 }
 
@@ -286,8 +293,6 @@ _setup_envtest_sha256() {
         darwin-arm64) printf '%s\n' "415b69c6bebad2353045eccc376b9407058aa38a3e9720b5af0232af396e62f7" ;;
         linux-amd64) printf '%s\n' "a1776d9b6266a05d1b18fc13a0788a3d2a4a44265f19eb81f5d80223ccb6262f" ;;
         linux-arm64) printf '%s\n' "f773d4c9191101c7bd714e0ebf1e0fa4a98a6548e098554ee1db379d5e84b0bb" ;;
-        linux-ppc64le) printf '%s\n' "e50ed61d2776f62db4c8f148cd75c4750c6c928adc32426a9b65d2c1201b0064" ;;
-        linux-s390x) printf '%s\n' "39222e69f6ca7313f21a17ba55607980da23af98fcb0ecb4c56b1bc7d3d66257" ;;
         *)
             echo "[ERR] no setup-envtest checksum for $1/$2" >&2
             return 1
