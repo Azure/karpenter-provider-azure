@@ -207,6 +207,8 @@ See important Make targets below.
 
 See [Karpenter design guide](https://karpenter.sh/docs/contributing/design-guide/) as a starting point.
 
+When reviewing a pull request, also read [REVIEW.md](REVIEW.md) for the review-specific checks and output requirements.
+
 ### Operational Goals
 
 - Lean towards preserving the existing functional behavior. All changes must be justifiable and explicitly addressed in the discussions.
