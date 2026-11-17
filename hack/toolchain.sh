@@ -71,13 +71,13 @@ _command_is_current() {
 
     local output
     if [[ "$#" -eq 4 ]]; then
-        output="$("${command_path}" "$2" "$4" 2>&1)" || return 1
+        output="$("${command_path}" "$2" "$4" 2>&1)" || return 2
     else
-        output="$("${command_path}" "$2" 2>&1)" || return 1
+        output="$("${command_path}" "$2" 2>&1)" || return 2
     fi
     # Break at whitespace so we don't match partial versions (e.g. `v0.19.0-rc.1` would not match `v0.19.0`)
     # -F matches fixed text, -q suppresses output, and -x requires a complete match
-    tr '[:space:]' '\n' <<<"${output}" | grep -Fqx -- "$3"
+    tr '[:space:]' '\n' <<<"${output}" | grep -Fqx -- "$3" || return 3
 }
 
 should-skip() {
@@ -93,7 +93,9 @@ should-skip() {
     fi
 
     # If we have the correct version of the command, there's nothing to do
-    if _command_is_current "$@"; then
+    local CIC=0
+    _command_is_current "$@" || CIC=$?
+    if [[ "$CIC" -eq 0 ]]; then
         return
     fi
 
@@ -105,11 +107,11 @@ should-skip() {
     fi
 
     # When running locally, we proceed with updating
-    if [[ "$#" -eq 1 ]]; then
-        echo "[INF] Installing $1 because it is missing"
-    else
-        echo "[INF] Installing $1 because the installed version does not contain '$3'"
-    fi
+    case "${CIC}" in
+        1) echo "[INF] Need to install $1 because it is missing" ;;
+        2) echo "[INF] Need to reinstall $1 because its version could not be checked" >&2 ;;
+        3) echo "[INF] Need to install $1 because the installed version is not '$3'" ;;
+    esac
 
     return 1
 }
