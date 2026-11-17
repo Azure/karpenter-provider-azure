@@ -40,6 +40,7 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
+	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -1699,6 +1700,76 @@ var _ = Describe("CloudProvider", func() {
 				Expect(lo.FromPtr(kubeOverride.ServeStaleDurationInSeconds)).To(Equal(int32(45)))
 				Expect(lo.FromPtr(kubeOverride.ServeStale)).To(Equal(armcontainerservice.LocalDNSServeStaleVerify))
 			})
+		})
+
+		Context("Flex", func() {
+			BeforeEach(func() {
+				testOptions.ProvisionMode = consts.ProvisionModeAKSMachineAPI
+				azureEnv.Reset(ctx)
+				azureEnv = test.NewEnvironment(ctx, env)
+				cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
+				cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+				coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
+				statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, testOptions.NetworkPolicy, testOptions.NetworkPlugin,
+					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache, testOptions.SystemNamespace)
+			})
+
+			DescribeTable("should provision a pod on a Flex machine", func(skuName, skuSize string) {
+				// D16 is an alternative candidate, but this small pod is expected to use D8.
+				for _, vcpus := range []int{8, 16} {
+					azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+						Name:         lo.ToPtr(fmt.Sprintf("D%d_%s", vcpus, skuSize)),
+						Size:         lo.ToPtr(skuSize),
+						Tier:         lo.ToPtr("Standard"),
+						Family:       lo.ToPtr("DFlexFamily"),
+						ResourceType: lo.ToPtr("virtualMachines"),
+						Locations:    &[]string{fake.Region},
+						LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr(fake.Region), Zones: &[]string{"1", "2", "3"}}},
+						Capabilities: &[]compute.ResourceSkuCapabilities{
+							{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr(fmt.Sprint(vcpus))},
+							{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr(fmt.Sprint(vcpus))},
+							{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr(fmt.Sprint(vcpus * 4))},
+							{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+							{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V1,V2")},
+							{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+							{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
+						},
+					})
+				}
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+
+				nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key: v1beta1.LabelSKUSeries, Operator: v1.NodeSelectorOpIn, Values: []string{"D_" + skuSize},
+					},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand},
+					},
+				)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{ResourceRequirements: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("1"),
+						v1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				}})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(skuName))
+
+				nodeClaims := ExpectNodeClaims(ctx, env.Client)
+				Expect(nodeClaims).To(HaveLen(1))
+				Expect(nodeClaims[0].Labels[v1.LabelInstanceTypeStable]).To(Equal(skuName))
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				machine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(lo.FromPtr(machine.Properties.Hardware.VMSize)).To(Equal(skuName))
+			},
+				Entry("Flex", "D8_Flex", "Flex"),
+				Entry("Flex Prime", "D8_Flex_Prime", "Flex_Prime"),
+			)
 		})
 	})
 })
