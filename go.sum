@@ -68,8 +68,8 @@ github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage/v2 v2.0
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage/v2 v2.0.0/go.mod h1:iKOtU3WyuNvNc4L1Z4IxHaoO0dGq5tg+uhLix/KRmzE=
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.5.0 h1:MaKvxE6D0KkjOg6Wd9M00iqP5PR0kUxCfiezes4JweM=
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.5.0/go.mod h1:i2h9fsTFKZorh8RdV2IcSUf/Qj98GlTkrTvUbX/s8as=
-github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.0 h1:aMFOzch6ZJo4Ct9hI4A9Y2fPen5YNRTPmkSBhe5m0ZQ=
-github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.0/go.mod h1:Oct8bx+g+DXKngU7i/LzFzYt44rmLdMu4uoofIpooVo=
+github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.1 h1:f4X/okTwHAfzJamPo8hyStXinb4sCTK36gMZj+KLQdw=
+github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.1/go.mod h1:sEd11NnHY3lizFx/zf5u7x5qNjhF0t5VZM0irRHKXVU=
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 h1:nCYfgcSyHZXJI8J0IWE5MsCGlb2xp9fJiXyxWgmOFg4=
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0/go.mod h1:ucUjca2JtSZboY8IoUqyQyuuXvwbMBVwFOm0vdQPNhA=
 github.com/Azure/go-autorest v14.2.0+incompatible h1:V5VMDjClD3GiElqLWO7mz2MxNAK/vTfRHdAubSIPRgs=
@@ -485,8 +485,8 @@ k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad h1:oXImqH8mQNk7PmvzKhmN3d
 k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad/go.mod h1:0/mqHCVhlumdJ3BhCfnjSZQE037nAhNodh1/hK0T8/I=
 k8s.io/utils v0.0.0-20260626114624-be93311217bd h1:Ea7fgQ5we8Y9T0OX5o0dAHzQOBRI07D/dEYRaB9ZZEs=
 k8s.io/utils v0.0.0-20260626114624-be93311217bd/go.mod h1:xDxuJ0whA3d0I4mf/C4ppKHxXynQ+fxnkmQH0vTHnuk=
-sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.26.0 h1:u91kk8lrgja7hJS5BltKpwHk95hXn9uSZatzuQWvWYI=
-sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.26.0/go.mod h1:YhsO+oDFRSpL5Z9zJaFDU7LROS5POV9b+AHO9rTd4KY=
+sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.26.2 h1:ijTB4HQTpY9MwX7mZDoIAKE+AyFTjtIouUs/VgAitD4=
+sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.26.2/go.mod h1:/tqq6wOAu0Oo95mIPtDYgVZMMLMMJ9hk9zToypUndZI=
 sigs.k8s.io/controller-runtime v0.25.2 h1:bEkK3PVOIVK9X8QWLGVhJgmFc++47vfT6wakSzAOLsQ=
 sigs.k8s.io/controller-runtime v0.25.2/go.mod h1:4QqLdT6z/L6Olj8JJCtvztid4/fnIiYsfaTFScegctc=
 sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 h1:IpInykpT6ceI+QxKBbEflcR5EXP7sU1kvOlxwZh5txg=
