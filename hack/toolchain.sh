@@ -31,7 +31,7 @@ _validate_version_check_args() {
         return
     fi
     if [[ "$#" -ne 3 && "$#" -ne 4 ]]; then
-        echo "[ERR] usage: should-skip <command> [version|--version <expected-pattern> [version-arg]]" >&2
+        echo "[ERR] usage: should-skip <command> [version|--version <expected-version> [version-arg]]" >&2
         return 2
     fi
     case "$2" in
@@ -76,16 +76,7 @@ _command_is_current() {
         output="$("${command_path}" "$2" 2>&1)" || return 2
     fi
 
-    # Match whole whitespace-delimited tokens against the caller's glob.
-    local token
-    while IFS= read -r token; do
-        # The caller supplies a glob pattern, not a literal version.
-        # shellcheck disable=SC2053
-        if [[ "${token}" == $3 ]]; then
-            return 0
-        fi
-    done < <(tr '[:space:]@' '\n' <<<"${output}")
-    return 3
+    grep -Fq -- "$3" <<<"${output}" || return 3
 }
 
 should-skip() {
@@ -130,11 +121,10 @@ should-skip() {
 #   go-install <app> <reference>
 #
 # Version-aware form:
-#   go-install <app> <version|--version> <expected-pattern> <reference>
+#   go-install <app> <version|--version> <expected-version> <reference>
 #
-# <app> is the binary name under TOOL_DEST, <expected-pattern> is a Bash glob
-# matched against whole whitespace-delimited version-output tokens, and
-# <reference> is the package passed to go install. Quote wildcard patterns.
+# <app> is the binary name under TOOL_DEST, <expected-version> must appear in the
+# version command output, and <reference> is the package passed to go install.
 go-install() {
     local app
     local reference
@@ -151,7 +141,7 @@ go-install() {
             check=("${TOOL_DEST}/${app}" "$2" "$3")
             ;;
         *)
-            echo "[ERR] usage: go-install <app> [version|--version <expected-pattern>] <reference>" >&2
+            echo "[ERR] usage: go-install <app> [version|--version <expected-text>] <reference>" >&2
             return 2
             ;;
     esac
@@ -196,7 +186,7 @@ go-install-golangci-lint() {
 
     # Install our custom modules in golangci-lint
     local custom_status=0
-    if should-skip "${TOOL_DEST}/golangci-lint-custom" --version 'v2.14.0*'; then
+    if should-skip "${TOOL_DEST}/golangci-lint-custom" --version v2.14.0-custom; then
         return
     else
         custom_status=$?
@@ -246,11 +236,7 @@ tools() {
 }
 
 _expected_kubernetes_version() {
-    if [[ "${K8S_VERSION}" == *.x ]]; then
-        printf 'v%s.*\n' "${K8S_VERSION%.x}"
-    else
-        printf 'v%s\n' "${K8S_VERSION}"
-    fi
+    printf 'v%s\n' "${K8S_VERSION%.x}"
 }
 
 _envtest_assets_share_directory() {
