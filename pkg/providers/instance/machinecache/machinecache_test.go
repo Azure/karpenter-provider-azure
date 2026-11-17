@@ -662,24 +662,24 @@ func TestListWithFallbackFiltersMachines(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "excludes machine with a nil nodeclaim tag",
+			name: "returns machine with a nil nodeclaim tag",
 			properties: &armcontainerservice.MachineProperties{
 				Tags: map[string]*string{
 					launchtemplate.NodePoolTagKey:                     lo.ToPtr("test-nodepool"),
 					launchtemplate.KarpenterAKSMachineNodeClaimTagKey: nil,
 				},
 			},
-			expected: false,
+			expected: true,
 		},
 		{
-			name: "excludes machine with an empty nodeclaim tag",
+			name: "returns machine with an empty nodeclaim tag",
 			properties: &armcontainerservice.MachineProperties{
 				Tags: map[string]*string{
 					launchtemplate.NodePoolTagKey:                     lo.ToPtr("test-nodepool"),
 					launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr(""),
 				},
 			},
-			expected: false,
+			expected: true,
 		},
 		{
 			name:       "excludes machine with nil properties without panic",
