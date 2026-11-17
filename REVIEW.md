@@ -51,11 +51,11 @@ Analyze PRs for these compatibility scenarios.
 
 **3. AKSNodeClass API and CRD Compatibility**
 
-- **Context**: `v1beta1` is current and `v1alpha2` is deprecated and planned for removal. CRDs are
+- **Context**: `v1beta1` is current and `v1alpha2` is deprecated and planned for removal, but need to be kept in parity. CRDs are
   generated, and the nodeclass hash feeds drift detection.
 - **What to check**: Generated artifacts and upgrade impact on objects that already exist.
 - **Breaking signals**:
-  - New fields or behavior added to `v1alpha2` rather than `v1beta1`.
+  - New fields or behavior added to only one of `v1alpha2` and `v1beta1`.
   - Hand-edited `zz_generated.deepcopy.go`, CRD YAML, or `charts/karpenter-crd/templates` content.
   - Removing or narrowing a field, tightening CEL validation, or changing a default — existing
     stored objects must remain valid.
