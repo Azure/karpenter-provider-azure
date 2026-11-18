@@ -33,6 +33,9 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
@@ -57,7 +60,7 @@ func TestScheduling(t *testing.T) {
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()
-	nodeClass = env.DefaultAKSNodeClass()
+	nodeClass = azkarptest.AKSNodeClass()
 	nodePool = env.DefaultNodePool(nodeClass)
 })
 var _ = AfterEach(func() { env.Cleanup() })
@@ -70,10 +73,8 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		// Make the NodePool requirements fully flexible, so we can match well-known label keys
 		nodePool = test.ReplaceRequirements(nodePool,
 			karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      v1beta1.LabelSKUFamily,
-					Operator: corev1.NodeSelectorOpExists,
-				},
+				Key:      v1beta1.LabelSKUFamily,
+				Operator: corev1.NodeSelectorOpExists,
 			},
 		)
 	})
@@ -84,26 +85,28 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			corev1.LabelWindowsBuild,
 			// VM SKU with GPU we are using does not populate this; won't be tested
 			v1beta1.LabelSKUGPUName,
+			// Written onto nodes by the Elastic SAN CSI driver (Azure Container Storage), which the E2E
+			// cluster does not install, so a pod selecting on it would never become Ready here. Its
+			// normalization is covered by the acceptance tests in pkg/providers/instancetype.
+			zones.LabelAzureElasticSANCSIZone,
 		)
 
-		if env.InClusterController {
-			// Can't test FIPS on self-hosted Karpenter
+		if !env.UsesSharedImageGallery() {
+			// Can't test FIPS if not using SIG
 			selectors.Insert(v1beta1.AKSLabelFIPSEnabled)
 		}
-
-		// If no spec with Label("GPU") ran (e.g., `-label-filter='!GPU'`),
-		// ignore GPU labels in the coverage assertion.
-		if !Label("GPU").MatchesLabelFilter(GinkgoLabelFilter()) {
-			selectors.Insert(
-				v1beta1.LabelSKUGPUCount,
-				v1beta1.LabelSKUGPUManufacturer,
-			)
-		}
-
 	})
 	AfterAll(func() {
-		// Ensure that we're exercising all well known labels (with the above exceptions)
-		Expect(lo.Keys(selectors)).To(ContainElements(append(karpv1.WellKnownLabels.UnsortedList(), lo.Keys(karpv1.NormalizedLabels)...)))
+		// All selector tests are unlabeled except the GPU test, so only require coverage from tests selected by the label filter.
+		expectedSelectors := sets.New(append(karpv1.WellKnownLabels.UnsortedList(), lo.Keys(karpv1.NormalizedLabels)...)...)
+		gpuSelectors := sets.New(v1beta1.LabelSKUGPUCount, v1beta1.LabelSKUGPUManufacturer)
+		if !Label().MatchesLabelFilter(GinkgoLabelFilter()) { // unlabeled tests did not run (were filtered out)
+			expectedSelectors = gpuSelectors // only require GPU selector coverage
+		}
+		if !Label("GPU").MatchesLabelFilter(GinkgoLabelFilter()) { // GPU tests did not run (were filtered out)
+			expectedSelectors = expectedSelectors.Difference(gpuSelectors) // don't require GPU selectors coverage
+		}
+		Expect(selectors.UnsortedList()).To(ContainElements(expectedSelectors.UnsortedList()))
 	})
 
 	It("should apply annotations to the node", func() {
@@ -111,11 +114,12 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			"foo":                            "bar",
 			karpv1.DoNotDisruptAnnotationKey: "true",
 		}
-		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 		env.ExpectCreatedNodeCount("==", 1)
-		Expect(env.GetNode(pod.Spec.NodeName).Annotations).To(And(HaveKeyWithValue("foo", "bar"), HaveKeyWithValue(karpv1.DoNotDisruptAnnotationKey, "true")))
+		node := env.GetNode(pods[0].Spec.NodeName)
+		Expect(node.Annotations).To(And(HaveKeyWithValue("foo", "bar"), HaveKeyWithValue(karpv1.DoNotDisruptAnnotationKey, "true")))
 	})
 
 	Context("Labels", func() {
@@ -136,9 +140,11 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				v1beta1.LabelSKUAcceleratedNetworking:     "true",
 				v1beta1.LabelSKUStoragePremiumCapable:     "true",
 				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53",
-				v1beta1.AKSLabelCluster:                   env.NodeResourceGroup,
+				v1beta1.LabelUltraSSD:                     "false",
+				v1beta1.AKSLabelCluster:                   utils.NormalizeClusterResourceGroupNameForLabel(env.NodeResourceGroup),
 				v1beta1.AKSLabelMode:                      "system",
 				v1beta1.AKSLabelScaleSetPriority:          "regular",
+				v1beta1.AKSLabelPriority:                  "regular",
 				v1beta1.AKSLabelOSSKU:                     "Ubuntu",
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
@@ -151,7 +157,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should support well-known deprecated labels -- beta.kubernetes.io/instance-type", func() {
@@ -172,7 +178,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 
 		})
@@ -181,7 +187,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				// Deprecated Labels
 				corev1.LabelFailureDomainBetaRegion: env.Region,
 				corev1.LabelFailureDomainBetaZone:   fmt.Sprintf("%s-1", env.Region),
-				"topology.disk.csi.azure.com/zone":  fmt.Sprintf("%s-1", env.Region),
+				zones.LabelAzureDiskCSIZone:         fmt.Sprintf("%s-1", env.Region),
 				"beta.kubernetes.io/arch":           "amd64",
 				"beta.kubernetes.io/os":             "linux",
 			}
@@ -195,7 +201,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should support well-known labels for topology and architecture", func() {
@@ -204,6 +210,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				karpv1.NodePoolLabelKey:     nodePool.Name,
 				corev1.LabelTopologyRegion:  env.Region,
 				corev1.LabelTopologyZone:    fmt.Sprintf("%s-1", env.Region),
+				v1beta1.LabelPlacementScope: v1beta1.PlacementScopeZonal,
 				corev1.LabelOSStable:        "linux",
 				corev1.LabelArchStable:      "amd64",
 				karpv1.CapacityTypeLabelKey: karpv1.CapacityTypeOnDemand,
@@ -218,7 +225,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		// note: this test can fail on subscription that don't have quota for GPU SKUs
@@ -237,13 +244,13 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 
 		It("should support FIPS label for instance type selection", func() {
-			if env.InClusterController {
-				Skip("FIPS tests require SIG access - skipping in self-hosted mode")
+			if !env.UsesSharedImageGallery() {
+				Skip("FIPS tests require SIG access")
 			}
 
 			nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
@@ -266,16 +273,38 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
+		})
+
+		It("should support Kata VM isolation label for instance type selection", func() {
+			selectors.Insert(v1beta1.AKSLabelKataVMIsolation)
+			if !env.IsMachineModeOrNPS() {
+				Skip("Kata Pod Sandboxing is not supported on the aksscriptless provision mode")
+			}
+
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+			deployment := test.Deployment(
+				test.DeploymentOptions{
+					Replicas: 1,
+					PodOptions: test.PodOptions{
+						NodeSelector: map[string]string{
+							corev1.LabelInstanceTypeStable:  "Standard_D4s_v5",
+							v1beta1.AKSLabelKataVMIsolation: "true",
+						},
+					}})
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 
 		DescribeTable("should support restricted label domain exceptions", func(domain string) {
 			// Assign labels to the nodepool so that it has known values
 			test.ReplaceRequirements(nodePool,
-				karpv1.NodeSelectorRequirementWithMinValues{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: domain + "/team", Operator: corev1.NodeSelectorOpExists}},
-				karpv1.NodeSelectorRequirementWithMinValues{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: domain + "/custom-label", Operator: corev1.NodeSelectorOpExists}},
-				karpv1.NodeSelectorRequirementWithMinValues{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "subdomain." + domain + "/custom-label", Operator: corev1.NodeSelectorOpExists}},
+				karpv1.NodeSelectorRequirementWithMinValues{Key: domain + "/team", Operator: corev1.NodeSelectorOpExists},
+				karpv1.NodeSelectorRequirementWithMinValues{Key: domain + "/custom-label", Operator: corev1.NodeSelectorOpExists},
+				karpv1.NodeSelectorRequirementWithMinValues{Key: "subdomain." + domain + "/custom-label", Operator: corev1.NodeSelectorOpExists},
 			)
 			nodeSelector := map[string]string{
 				domain + "/team":                        "team-1",
@@ -292,8 +321,9 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
-			node := env.ExpectCreatedNodeCount("==", 1)[0]
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
+			node := env.GetNode(pods[0].Spec.NodeName)
 			// Ensure that the requirements/labels specified above are propagated onto the node
 			for k, v := range nodeSelector {
 				Expect(node.Labels).To(HaveKeyWithValue(k, v))
@@ -306,7 +336,8 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 
 	Context("Provisioning", func() {
 		It("should provision a node for naked pods", func() {
-			pod := test.Pod()
+			// Use a direct pod because this is explicit naked-pod provisioning coverage.
+			pod := env.Pod(test.PodOptions{})
 
 			env.ExpectCreated(nodeClass, nodePool, pod)
 			env.EventuallyExpectHealthy(pod)
@@ -315,7 +346,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		It("should provision a node for a deployment", Label(debug.NoWatch), Label(debug.NoEvents), func() {
 			deployment := test.Deployment(test.DeploymentOptions{Replicas: 50})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("<=", 2) // should probably all land on a single node, but at worst two depending on batching
 		})
 		It("should provision a node for a self-affinity deployment", func() {
@@ -337,7 +368,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			})
 
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), 2)
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should provision three nodes for a zonal topology spread", func() {
@@ -383,18 +414,14 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 							},
 							Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      corev1.LabelOSStable,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{string(corev1.Linux)},
-									},
+									Key:      corev1.LabelOSStable,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{string(corev1.Linux)},
 								},
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      corev1.LabelInstanceTypeStable,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{"Standard_D2s_v5"},
-									},
+									Key:      corev1.LabelInstanceTypeStable,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"Standard_D2s_v5"},
 								},
 							},
 						},
@@ -413,18 +440,14 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 							},
 							Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      corev1.LabelOSStable,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{string(corev1.Linux)},
-									},
+									Key:      corev1.LabelOSStable,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{string(corev1.Linux)},
 								},
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      corev1.LabelInstanceTypeStable,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{"Standard_D4s_v5"},
-									},
+									Key:      corev1.LabelInstanceTypeStable,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"Standard_D4s_v5"},
 								},
 							},
 						},
@@ -434,12 +457,13 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			nodePoolLowPri = env.AdaptToClusterConfig(nodePoolLowPri)
 			nodePoolHighPri = env.AdaptToClusterConfig(nodePoolHighPri)
 
-			pod := test.Pod()
-			env.ExpectCreated(pod, nodeClass, nodePoolLowPri, nodePoolHighPri)
-			env.EventuallyExpectHealthy(pod)
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+			env.ExpectCreated(deployment, nodeClass, nodePoolLowPri, nodePoolHighPri)
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
-			Expect(env.GetVMSKU(pod.Spec.NodeName)).To(Equal("Standard_D4s_v5"))
-			Expect(env.GetNode(pod.Spec.NodeName).Labels[karpv1.NodePoolLabelKey]).To(Equal(nodePoolHighPri.Name))
+			node := env.GetNode(pods[0].Spec.NodeName)
+			Expect(env.GetVMSKU(node.Name)).To(Equal("Standard_D4s_v5"))
+			Expect(node.Labels[karpv1.NodePoolLabelKey]).To(Equal(nodePoolHighPri.Name))
 		})
 
 		DescribeTable(
@@ -449,16 +473,18 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 					Skip("native sidecar containers are only enabled on AKS 1.29+")
 				}
 
-				labels := map[string]string{"test": test.RandomName()}
+				affinityLabels := map[string]string{"test": test.RandomName()}
+				dsBufferLabels := lo.Assign(map[string]string{"app": test.RandomName()}, affinityLabels)
+				podLabels := lo.Assign(map[string]string{"app": test.RandomName()}, affinityLabels)
 				// Create a buffer pod to even out the total resource requests regardless of the daemonsets on the cluster. Assumes
 				// CPU is the resource in contention and that total daemonset CPU requests <= 3.
-				dsBufferPod := test.Pod(test.PodOptions{
+				dsBufferDeployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 					ObjectMeta: metav1.ObjectMeta{
-						Labels: labels,
+						Labels: dsBufferLabels,
 					},
 					PodRequirements: []corev1.PodAffinityTerm{{
 						LabelSelector: &metav1.LabelSelector{
-							MatchLabels: labels,
+							MatchLabels: affinityLabels,
 						},
 						TopologyKey: corev1.LabelHostname,
 					}},
@@ -472,38 +498,37 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 							}(),
 						},
 					},
-				})
+				}})
 
 				test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUCPU,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"4", "8"},
-					},
+					Key:      v1beta1.LabelSKUCPU,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"4", "8"},
 				}, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUFamily,
-						Operator: corev1.NodeSelectorOpNotIn,
-						// remove some cheap burstable types so we have more control over what gets provisioned
-						Values: []string{"B"},
-					},
+
+					Key:      v1beta1.LabelSKUFamily,
+					Operator: corev1.NodeSelectorOpNotIn,
+					// remove some cheap burstable types so we have more control over what gets provisioned
+					Values: []string{"B"},
 				})
-				pod := test.Pod(test.PodOptions{
+				deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 					ObjectMeta: metav1.ObjectMeta{
-						Labels: labels,
+						Labels: podLabels,
 					},
 					PodRequirements: []corev1.PodAffinityTerm{{
 						LabelSelector: &metav1.LabelSelector{
-							MatchLabels: labels,
+							MatchLabels: affinityLabels,
 						},
 						TopologyKey: corev1.LabelHostname,
 					}},
 					InitContainers:       initContainers,
 					ResourceRequirements: containerRequirements,
-				})
-				env.ExpectCreated(nodePool, nodeClass, dsBufferPod, pod)
-				env.EventuallyExpectHealthy(pod)
-				node := env.ExpectCreatedNodeCount("==", 1)[0]
+				}})
+				env.ExpectCreated(nodePool, nodeClass, dsBufferDeployment, deployment)
+				env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(dsBufferDeployment.Spec.Selector.MatchLabels), int(*dsBufferDeployment.Spec.Replicas))
+				pods := env.EventuallyExpectHealthyDeployment(deployment)
+				env.ExpectCreatedNodeCount("==", 1)
+				node := env.GetNode(pods[0].Spec.NodeName)
 				Expect(node.ObjectMeta.GetLabels()[v1beta1.LabelSKUCPU]).To(Equal(expectedNodeCPU))
 			},
 			Entry("sidecar requirements + later init requirements do exceed container requirements", "8", corev1.ResourceRequirements{
@@ -550,7 +575,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			if env.K8sMinorVersion() < 29 {
 				Skip("native sidecar containers are only enabled on AKS 1.29+")
 			}
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				InitContainers: []corev1.Container{
 					{
 						RestartPolicy: lo.ToPtr(corev1.ContainerRestartPolicyAlways),
@@ -568,9 +593,9 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 					corev1.ResourceCPU:    resource.MustParse("100m"),
 					corev1.ResourceMemory: resource.MustParse("128Mi"),
 				}},
-			})
-			env.ExpectCreated(nodePool, nodeClass, pod)
-			env.EventuallyExpectHealthy(pod)
+			}})
+			env.ExpectCreated(nodePool, nodeClass, deployment)
+			env.EventuallyExpectHealthyDeployment(deployment)
 		})
 	})
 
@@ -597,11 +622,11 @@ var _ = Describe("Node Overlay", func() {
 
 	It("should provision the instance that is the cheapest based on a price adjustment node overlay applied", func() {
 		overlaidInstanceType := "Standard_D8s_v5"
-		pod := test.Pod()
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
 		nodeOverlay := test.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
 				PriceAdjustment: lo.ToPtr("-99.99999999999%"),
-				Requirements: []corev1.NodeSelectorRequirement{
+				Requirements: []karpv1alpha1.NodeSelectorRequirement{
 					{
 						Key:      corev1.LabelInstanceTypeStable,
 						Operator: corev1.NodeSelectorOpIn,
@@ -610,22 +635,23 @@ var _ = Describe("Node Overlay", func() {
 				},
 			},
 		})
-		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, pod)
-		env.EventuallyExpectHealthy(pod)
-		nodes := env.EventuallyExpectInitializedNodeCount("==", 1)
+		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.GetNode(pods[0].Spec.NodeName)
 
-		instanceType, foundInstanceType := nodes[0].Labels[corev1.LabelInstanceTypeStable]
+		instanceType, foundInstanceType := node.Labels[corev1.LabelInstanceTypeStable]
 		Expect(foundInstanceType).To(BeTrue())
 		Expect(instanceType).To(Equal(overlaidInstanceType))
 	})
 
 	It("should provision the instance that is the cheapest based on a price override node overlay applied", func() {
 		overlaidInstanceType := "Standard_D8s_v5"
-		pod := test.Pod()
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
 		nodeOverlay := test.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
 				Price: lo.ToPtr("0.0000000232"),
-				Requirements: []corev1.NodeSelectorRequirement{
+				Requirements: []karpv1alpha1.NodeSelectorRequirement{
 					{
 						Key:      corev1.LabelInstanceTypeStable,
 						Operator: corev1.NodeSelectorOpIn,
@@ -634,11 +660,12 @@ var _ = Describe("Node Overlay", func() {
 				},
 			},
 		})
-		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, pod)
-		env.EventuallyExpectHealthy(pod)
-		nodes := env.EventuallyExpectInitializedNodeCount("==", 1)
+		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.GetNode(pods[0].Spec.NodeName)
 
-		instanceType, foundInstanceType := nodes[0].Labels[corev1.LabelInstanceTypeStable]
+		instanceType, foundInstanceType := node.Labels[corev1.LabelInstanceTypeStable]
 		Expect(foundInstanceType).To(BeTrue())
 		Expect(instanceType).To(Equal(overlaidInstanceType))
 	})

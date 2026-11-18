@@ -7,10 +7,17 @@ on:
     # Only release on supported semantic version tagging e.g. v0.0.1-rc.0
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-[0-9]+' # Patch to an old version (when we can't use v[0-9]+.[0-9]+.[0-9]+ due to next patch release already existing)
       - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-alpha.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-test.[a-z0-9]+'
+  workflow_dispatch:
+    inputs:
+      skip_trivy_scan:
+        description: 'Bypass the blocking Trivy scan (emergency release only). Scans still run in report-only mode. Select the release tag as the ref when running.'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -24,11 +31,11 @@ jobs:
       labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
       with:
         egress-policy: audit
 
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
 
@@ -37,6 +44,7 @@ jobs:
     - name: Build and publish image
       env:
         RELEASE_ACR: ${{ secrets.AZURE_REGISTRY }}
+        SKIP_TRIVY_SCAN: ${{ inputs.skip_trivy_scan }}
       run: |
         az login --identity
         ko version

@@ -21,7 +21,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net"
+	"strings"
 	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -30,11 +33,10 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -42,14 +44,13 @@ import (
 	"k8s.io/client-go/util/flowcontrol"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	karpv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
+	karpapis "sigs.k8s.io/karpenter/pkg/apis"
+	autoscalingv1beta1 "sigs.k8s.io/karpenter/pkg/apis/autoscaling/v1beta1"
 
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 
@@ -58,21 +59,26 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/capacityrecommendation"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 func init() {
-	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
+	zones.RegisterCSIZoneNormalization()
 }
 
 type Operator struct {
@@ -82,6 +88,11 @@ type Operator struct {
 	// of the cluster where the Karpenter pod is running. This is usually the same as operator.KubernetesInterface,
 	// but may be different if Karpenter is running in a different cluster than the one it manages.
 	InClusterKubernetesInterface kubernetes.Interface
+
+	// ManagedDynamicInterface is a dynamic client over the managed (workload) cluster, used
+	// by callers that need to inspect out-of-tree CRDs (e.g. Cilium / Calico NetworkPolicy)
+	// alongside the typed client on the embedded operator (operator.KubernetesInterface).
+	ManagedDynamicInterface dynamic.Interface
 
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
@@ -94,7 +105,14 @@ type Operator struct {
 	VMInstanceProvider        *instance.DefaultVMProvider
 	AKSMachineProvider        *instance.DefaultAKSMachineProvider
 	LoadBalancerProvider      *loadbalancer.Provider
+	QuotaProvider             *quota.DefaultProvider
 	AZClient                  *azclient.AZClient
+
+	// SubscriptionID and Location identify the Azure scope this operator manages.
+	SubscriptionID string
+	Location       string
+	// Cloud is the resolved Azure cloud, which not every feature is available in.
+	Cloud cloud.Configuration
 }
 
 func kubeDNSIP(ctx context.Context, kubernetesInterface kubernetes.Interface) (net.IP, error) {
@@ -141,6 +159,16 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	inClusterConfig.UserAgent = auth.GetUserAgentExtension()
 	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
 
+	// Build a dynamic client over the managed (workload) cluster config. operator.GetConfig()
+	// is the rest.Config that controller-runtime uses for the manager, which targets the
+	// workload cluster (via mounted kubeconfig in CCP, or same as in-cluster in non-CCP).
+	// LocalDNS gate evaluation reads out-of-tree CRDs (Cilium / Calico NetworkPolicy) through
+	// this; the typed client lives on the embedded operator (operator.KubernetesInterface).
+	managedConfig := rest.CopyConfig(operator.GetConfig())
+	managedConfig.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(float32(coreoptions.FromContext(ctx).KubeClientQPS), coreoptions.FromContext(ctx).KubeClientBurst)
+	managedConfig.UserAgent = auth.GetUserAgentExtension()
+	managedDynamicClient := dynamic.NewForConfigOrDie(managedConfig)
+
 	if options.FromContext(ctx).DNSServiceIP == "" {
 		kubeDNSIP, err := kubeDNSIP(ctx, operator.KubernetesInterface)
 		if err != nil { // fall back to default
@@ -162,9 +190,11 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	)
 
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(
+		azConfig.Location,
 		operator.KubernetesInterface,
 		cache.New(azurecache.KubernetesVersionTTL,
 			azurecache.DefaultCleanupInterval),
+		azClient.ManagedClustersClient(),
 	)
 	imageProvider := imagefamily.NewProvider(
 		azClient.ImageVersionsClient,
@@ -173,24 +203,38 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azClient.NodeImageVersionsClient,
 		cache.New(imagefamily.ImageExpirationInterval,
 			imagefamily.ImageCacheCleaningInterval),
+		operator.Clock,
 	)
+	quotaProvider := quota.NewProvider(azClient.UsageClient, azClient.QuotaCategoryVMFamilyMappingClient, azConfig.Location, operator.Clock)
 	instanceTypeProvider := instancetype.NewDefaultProvider(
 		azConfig.Location,
 		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
 		azClient.SKUClient,
 		pricingProvider,
 		unavailableOfferingsCache,
+		quotaProvider,
 	)
+
+	// Ensure we're able to hydrate instance types before starting any controllers
+	// that depend on them. The instance type controller will refresh this list
+	// perioidcally once all controllers are running.
+	lo.Must0(instanceTypeProvider.UpdateInstanceTypes(ctx))
+
 	imageResolver := imagefamily.NewDefaultResolver(
 		operator.GetClient(),
 		imageProvider,
 		instanceTypeProvider,
 		azClient.NodeBootstrappingClient,
 	)
+	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
+		azClient.NetworkSecurityGroupsClient,
+		options.FromContext(ctx).NodeResourceGroup,
+	)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
 		imageResolver,
 		imageProvider,
+		networkSecurityGroupProvider,
 		lo.Must(getCABundle(operator.GetConfig())),
 		options.FromContext(ctx).ClusterEndpoint,
 		azConfig.TenantID,
@@ -206,13 +250,19 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval),
 		options.FromContext(ctx).NodeResourceGroup,
 	)
-	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
-		azClient.NetworkSecurityGroupsClient,
-		options.FromContext(ctx).NodeResourceGroup,
+	capacityRecommendationProvider := capacityrecommendation.NewProvider(
+		azClient.SKUMixPlacementClient,
+		cache.New(cache.NoExpiration, azurecache.DefaultCleanupInterval),
+		azConfig.Location,
+	)
+	allocationStrategyProvider := allocationstrategy.NewProvider(
+		capacityRecommendationProvider,
+		options.FromContext(ctx).ComputeRecommendationMode,
 	)
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypeProvider,
+		allocationStrategyProvider,
 		launchTemplateProvider,
 		loadBalancerProvider,
 		networkSecurityGroupProvider,
@@ -223,10 +273,21 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).ProvisionMode,
 		options.FromContext(ctx).DiskEncryptionSetID,
 		env,
+		quotaProvider,
 	)
+
+	aksMachineCache := machinecache.New(
+		ctx,
+		azClient.AKSMachinesClient(),
+		azConfig.ResourceGroup,
+		options.FromContext(ctx).ClusterName,
+		options.FromContext(ctx).AKSMachinesPoolName,
+	)
+
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		azClient,
 		instanceTypeProvider,
+		allocationStrategyProvider,
 		imageResolver,
 		unavailableOfferingsCache,
 		azConfig.SubscriptionID,
@@ -234,11 +295,15 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).ClusterName,
 		options.FromContext(ctx).AKSMachinesPoolName,
 		azConfig.Location,
+		options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch,
+		aksMachineCache,
+		quotaProvider,
 	)
 
 	return ctx, &Operator{
 		Operator:                     operator,
 		InClusterKubernetesInterface: inClusterClient,
+		ManagedDynamicInterface:      managedDynamicClient,
 		UnavailableOfferingsCache:    unavailableOfferingsCache,
 		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageProvider,
@@ -249,7 +314,11 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		VMInstanceProvider:           vmInstanceProvider,
 		AKSMachineProvider:           aksMachineInstanceProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
+		QuotaProvider:                quotaProvider,
 		AZClient:                     azClient,
+		SubscriptionID:               azConfig.SubscriptionID,
+		Location:                     azConfig.Location,
+		Cloud:                        env.Cloud,
 	}
 }
 
@@ -310,16 +379,7 @@ func getVnetGUID(ctx context.Context, creds azcore.TokenCredential, cfg *auth.Co
 
 // WaitForCRDs waits for the required CRDs to be available with a timeout
 func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config, log logr.Logger) error {
-	gvk := func(obj runtime.Object) schema.GroupVersionKind {
-		return lo.Must(apiutil.GVKForObject(obj, scheme.Scheme))
-	}
-	var requiredGVKs = []schema.GroupVersionKind{
-		gvk(&karpv1.NodePool{}),
-		gvk(&karpv1.NodeClaim{}),
-		gvk(&karpv1alpha1.NodeOverlay{}),
-		gvk(&v1beta1.AKSNodeClass{}),
-	}
-
+	requiredGVKs := getRequiredGVKs(ctx)
 	client, err := rest.HTTPClientFor(config)
 	if err != nil {
 		return fmt.Errorf("creating kubernetes client, %w", err)
@@ -329,7 +389,7 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 		return fmt.Errorf("creating dynamic rest mapper, %w", err)
 	}
 
-	log.Info("waiting for required CRDs to be available", "timeout", timeout)
+	log.Info("waiting for required CRDs to be available", "gvks", requiredGVKs, "timeout", timeout)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -386,4 +446,26 @@ func getCredential(env *auth.Environment) (azcore.TokenCredential, error) {
 	}
 
 	return auth.NewTokenWrapper(cred), nil
+}
+
+func getRequiredGVKs(ctx context.Context) []schema.GroupVersionKind {
+	// controller-runtime internal, ignore them as we don't watch them
+	internalTypes := []string{"WatchEvent", "UpdateOptions", "DeleteOptions", "ListOptions", "CreateOptions", "PatchOptions", "GetOptions"}
+	requiredGroups := []string{karpapis.Group, v1beta1.Group}
+	if coreoptions.FromContext(ctx).FeatureGates.CapacityBuffer {
+		requiredGroups = append(requiredGroups, autoscalingv1beta1.Group)
+	}
+	requiredGVKs := lo.Filter(lo.Keys(scheme.Scheme.AllKnownTypes()), func(gvk schema.GroupVersionKind, _ int) bool {
+		if lo.Contains(internalTypes, gvk.Kind) {
+			return false
+		}
+
+		// Ignore lists as well, we don't watch these
+		if strings.HasSuffix(gvk.Kind, "List") {
+			return false
+		}
+
+		return lo.Contains(requiredGroups, gvk.Group)
+	})
+	return requiredGVKs
 }

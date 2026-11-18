@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.1
   name: nodeclaims.karpenter.sh
 spec:
   group: karpenter.sh
@@ -113,7 +113,7 @@ spec:
                   description: Requirements are layered with GetLabels and applied to every node.
                   items:
                     description: |-
-                      A node selector requirement with min values is a selector that contains values, a key, an operator that relates the key and values
+                      A node selector requirement is a selector that contains values, a key, an operator that relates the key and values
                       and minValues that represent the requirement to have at least that many values.
                     properties:
                       key:
@@ -122,16 +122,22 @@ spec:
                         maxLength: 316
                         pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
                         x-kubernetes-validations:
-                          - message: label domain "kubernetes.io" is restricted
-                            rule: self in ["beta.kubernetes.io/instance-type", "failure-domain.beta.kubernetes.io/region", "beta.kubernetes.io/os", "beta.kubernetes.io/arch", "failure-domain.beta.kubernetes.io/zone", "topology.kubernetes.io/zone", "topology.kubernetes.io/region", "node.kubernetes.io/instance-type", "kubernetes.io/arch", "kubernetes.io/os", "node.kubernetes.io/windows-build"] || self.find("^([^/]+)").endsWith("node.kubernetes.io") || self.find("^([^/]+)").endsWith("node-restriction.kubernetes.io") || !self.find("^([^/]+)").endsWith("kubernetes.io")
-                          - message: label domain "k8s.io" is restricted
-                            rule: self.find("^([^/]+)").endsWith("kops.k8s.io") || !self.find("^([^/]+)").endsWith("k8s.io")
                           - message: label domain "karpenter.sh" is restricted
                             rule: self in ["karpenter.sh/capacity-type", "karpenter.sh/nodepool"] || !self.find("^([^/]+)").endsWith("karpenter.sh")
                           - message: label "kubernetes.io/hostname" is restricted
                             rule: self != "kubernetes.io/hostname"
                           - message: label domain "karpenter.azure.com" is restricted
-                            rule: self in [ "karpenter.azure.com/aksnodeclass", "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-series", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count" ] || !self.find("^([^/]+)").endsWith("karpenter.azure.com")
+                            rule: self in [ "karpenter.azure.com/aksnodeclass", "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-series", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ultra-ssd", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count", "karpenter.azure.com/placement-scope" ] || !self.find("^([^/]+)").endsWith("karpenter.azure.com")
+                          - message: label domain "kubernetes.azure.com" is restricted
+                            rule: self in [ "kubernetes.azure.com/mode", "kubernetes.azure.com/scalesetpriority", "kubernetes.azure.com/priority", "kubernetes.azure.com/fips_enabled", "kubernetes.azure.com/kata-vm-isolation", "kubernetes.azure.com/os-sku", "kubernetes.azure.com/cluster", "kubernetes.azure.com/sku-cpu", "kubernetes.azure.com/sku-memory", "kubernetes.azure.com/ebpf-dataplane", "kubernetes.azure.com/ebpf-host-routing", "kubernetes.azure.com/network-policy", "kubernetes.azure.com/hostedvm", ] || !self.find("^([^/]+)").endsWith("kubernetes.azure.com")
+                          - message: label "agentpool" is restricted
+                            rule: self != 'agentpool'
+                          - message: label "storageprofile" is restricted
+                            rule: self != 'storageprofile'
+                          - message: label "storagetier" is restricted
+                            rule: self != 'storagetier'
+                          - message: label "accelerator" is restricted
+                            rule: self != 'accelerator'
                       minValues:
                         description: |-
                           This field is ALPHA and can be dropped or replaced at any time
@@ -142,8 +148,7 @@ spec:
                       operator:
                         description: |-
                           Represents a key's relationship to a set of values.
-                          Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
-                        type: string
+                          Valid operators are In, NotIn, Exists, DoesNotExist. Gt, Lt, Gte, and Lte.
                         enum:
                           - In
                           - NotIn
@@ -151,11 +156,14 @@ spec:
                           - DoesNotExist
                           - Gt
                           - Lt
+                          - Gte
+                          - Lte
+                        type: string
                       values:
                         description: |-
                           An array of string values. If the operator is In or NotIn,
                           the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                          the values array must be empty. If the operator is Gt or Lt, the values
+                          the values array must be empty. If the operator is Gt, Lt, Gte, or Lte, the values
                           array must have a single element, which will be interpreted as an integer.
                           This array is replaced during a strategic merge patch.
                         items:
@@ -170,11 +178,12 @@ spec:
                     type: object
                   maxItems: 100
                   type: array
+                  x-kubernetes-list-type: atomic
                   x-kubernetes-validations:
                     - message: requirements with operator 'In' must have a value defined
                       rule: 'self.all(x, x.operator == ''In'' ? x.values.size() != 0 : true)'
-                    - message: requirements operator 'Gt' or 'Lt' must have a single positive integer value
-                      rule: 'self.all(x, (x.operator == ''Gt'' || x.operator == ''Lt'') ? (x.values.size() == 1 && int(x.values[0]) >= 0) : true)'
+                    - message: requirements operator 'Gt', 'Lt', 'Gte', or 'Lte' must have a single positive integer value
+                      rule: 'self.all(x, (x.operator == ''Gt'' || x.operator == ''Lt'' || x.operator == ''Gte'' || x.operator == ''Lte'') ? (x.values.size() == 1 && int(x.values[0]) >= 0) : true)'
                     - message: requirements with 'minValues' must have at least that many values specified in the 'values' field
                       rule: 'self.all(x, (x.operator == ''In'' && has(x.minValues)) ? x.values.size() >= x.minValues : true)'
                 resources:
@@ -192,7 +201,7 @@ spec:
                   type: object
                 startupTaints:
                   description: |-
-                    StartupTaints are taints that are applied to nodes upon startup which are expected to be removed automatically
+                    startupTaints are taints that are applied to nodes upon startup which are expected to be removed automatically
                     within a short period of time, typically by a DaemonSet that tolerates the taint. These are commonly used by
                     daemonsets to allow initialization and enforce startup ordering.  StartupTaints are ignored for provisioning
                     purposes in that pods are not required to tolerate a StartupTaint in order to have nodes provisioned for them.
@@ -216,6 +225,10 @@ spec:
                         type: string
                         minLength: 1
                         pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
+                        maxLength: 316
+                        x-kubernetes-validations:
+                          - message: taint domain "kubernetes.azure.com" is restricted
+                            rule: '!self.startsWith("kubernetes.azure.com/") || self == "kubernetes.azure.com/scalesetpriority"'
                       timeAdded:
                         description: TimeAdded represents the time at which the taint was added.
                         format: date-time
@@ -228,9 +241,14 @@ spec:
                       - effect
                       - key
                     type: object
+                    x-kubernetes-validations:
+                      - message: taint "kubernetes.azure.com/scalesetpriority" must have value "spot"
+                        rule: self.key != "kubernetes.azure.com/scalesetpriority" || self.value == "spot"
                   type: array
+                  x-kubernetes-list-type: atomic
+                  maxItems: 100
                 taints:
-                  description: Taints will be applied to the NodeClaim's node.
+                  description: taints will be applied to the NodeClaim's node.
                   items:
                     description: |-
                       The node this Taint is attached to has the "effect" on
@@ -251,6 +269,10 @@ spec:
                         type: string
                         minLength: 1
                         pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
+                        maxLength: 316
+                        x-kubernetes-validations:
+                          - message: taint domain "kubernetes.azure.com" is restricted
+                            rule: '!self.startsWith("kubernetes.azure.com/") || self == "kubernetes.azure.com/scalesetpriority"'
                       timeAdded:
                         description: TimeAdded represents the time at which the taint was added.
                         format: date-time
@@ -263,7 +285,12 @@ spec:
                       - effect
                       - key
                     type: object
+                    x-kubernetes-validations:
+                      - message: taint "kubernetes.azure.com/scalesetpriority" must have value "spot"
+                        rule: self.key != "kubernetes.azure.com/scalesetpriority" || self.value == "spot"
                   type: array
+                  x-kubernetes-list-type: atomic
+                  maxItems: 100
                 terminationGracePeriod:
                   description: |-
                     TerminationGracePeriod is the maximum duration the controller will wait before forcefully deleting the pods on a node, measured from when deletion is first initiated.
@@ -362,6 +389,9 @@ spec:
                       - type
                     type: object
                   type: array
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
                 imageID:
                   description: ImageID is an identifier for the image that runs on the node
                   type: string

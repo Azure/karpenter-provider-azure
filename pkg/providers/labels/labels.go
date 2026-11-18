@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
@@ -37,13 +38,14 @@ import (
 // These labels are defined here rather than v1beta1 because we do not support scheduling simulation
 // on these labels
 var (
-	AKSLabelEBPFDataplane       = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
-	AKSLabelAzureCNIOverlay     = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
-	AKSLabelSubnetName          = v1beta1.AKSLabelDomain + "/network-subnet"
-	AKSLabelVNetGUID            = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
-	AKSLabelPodNetworkType      = v1beta1.AKSLabelDomain + "/podnetwork-type"
-	AKSLabelNetworkStatelessCNI = v1beta1.AKSLabelDomain + "/network-stateless-cni"
-	AKSLocalDNSStateLabelKey    = v1beta1.AKSLabelDomain + "/localdns-state"
+	AKSLabelEBPFDataplane               = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
+	AKSLabelAzureCNIOverlay             = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
+	AKSLabelSubnetName                  = v1beta1.AKSLabelDomain + "/network-subnet"
+	AKSLabelVNetGUID                    = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
+	AKSLabelPodNetworkType              = v1beta1.AKSLabelDomain + "/podnetwork-type"
+	AKSLabelNetworkStatelessCNI         = v1beta1.AKSLabelDomain + "/network-stateless-cni"
+	AKSLocalDNSStateLabelKey            = v1beta1.AKSLabelDomain + "/localdns-state"
+	AKSArtifactStreamingEnabledLabelKey = v1beta1.AKSLabelDomain + "/artifactstreaming-enabled"
 
 	AKSLabelRole = v1beta1.AKSLabelDomain + "/role"
 
@@ -83,9 +85,20 @@ const (
 	LabelArch = "beta.kubernetes.io/arch"
 )
 
+// setKataNodeLabel stamps the Kata (Pod Sandboxing) node label when the NodeClass requests it,
+// matching the requirement advertised by the instance type provider (see computeRequirements).
+func setKataNodeLabel(labels map[string]string, nodeClass *v1beta1.AKSNodeClass) {
+	if !nodeClass.IsKataEnabled() {
+		return
+	}
+	labels[v1beta1.AKSLabelKataVMIsolation] = "true"
+}
+
 func Get(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
+	arch string,
+	instanceTypeRequirements scheduling.Requirements,
 ) (map[string]string, error) {
 	labels := map[string]string{}
 	opts := options.FromContext(ctx)
@@ -109,16 +122,18 @@ func Get(
 	// See https://github.com/kubernetes-sigs/karpenter/issues/1772
 	labels[karpv1.NodeDoNotSyncTaintsLabelKey] = "true"
 	labels[v1beta1.AKSLabelScaleSetPriority] = v1beta1.ScaleSetPriorityRegular
+	labels[v1beta1.AKSLabelPriority] = v1beta1.PriorityRegular
 	// Add os-sku label based on imageFamily
 	labels[v1beta1.AKSLabelOSSKU] = v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))
-	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
+	if nodeClass.IsFIPSEnabled() {
 		labels[v1beta1.AKSLabelFIPSEnabled] = "true"
 	}
+	setKataNodeLabel(labels, nodeClass)
 
 	// Add os-sku-requested label that exactly matches the imageFamily specified on the NodeClass
 	labels[v1beta1.AKSLabelOSSKURequested] = lo.FromPtr(nodeClass.Spec.ImageFamily)
 	// nil static parameters here is safe only because we're not using the resulting imageFamily for anything except to get its name
-	imageFamily := imagefamily.GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, nil)
+	imageFamily := imagefamily.GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), kubernetesVersion, nil)
 	labels[v1beta1.AKSLabelOSSKUEffective] = imageFamily.Name()
 
 	if opts.IsAzureCNIOverlay() {
@@ -150,20 +165,30 @@ func Get(
 		labels[AKSLabelEBPFDataplane] = consts.NetworkDataplaneCilium
 	}
 
-	if nodeClass.IsLocalDNSEnabled() {
+	// LocalDNS is a per-node decision, not a per-NodeClass one: under
+	// Mode=Preferred a VM size below the LocalDNS floor runs without it while its
+	// larger siblings in the same NodePool run with it. Label what this node
+	// actually gets, so the users can see which nodes got which configuration.
+	if localdns.IsSupportedForInstanceType(nodeClass, instanceTypeRequirements) {
 		labels[AKSLocalDNSStateLabelKey] = "enabled"
 	} else {
 		labels[AKSLocalDNSStateLabelKey] = "disabled"
 	}
 
+	// Only set the artifact streaming label when it's enabled (matching AKS RP behavior)
+	// ARM64 nodes do not support artifact streaming
+	if nodeClass.IsArtifactStreamingEnabled(arch) {
+		labels[AKSArtifactStreamingEnabledLabelKey] = "true"
+	}
+
 	return labels, nil
 }
 
-// IsKubeletLabel returns true if the given label is a label kubelet is allowed to set.
+// CanKubeletSetLabel returns true if the given label is a label kubelet is allowed to set.
 // This is similar to the method one used by the node restriction admission
 // https://github.com/kubernetes/kubernetes/blob/e319c541f144e9bee6160f1dd8671638a9029f4c/staging/src/k8s.io/kubelet/pkg/apis/well_known_labels.go#L67
 // with the isKubernetesLabel check from https://github.com/kubernetes/kubernetes/blob/4bed36e03e7bd699b089d33da6f7d7c9ef9eb661/cmd/kubelet/app/options/options.go#L176C6-L176C23.
-func IsKubeletLabel(key string) bool {
+func CanKubeletSetLabel(key string) bool {
 	if kubeletLabels.Has(key) {
 		return true
 	}
@@ -180,6 +205,10 @@ func IsKubeletLabel(key string) bool {
 	}
 
 	return false
+}
+
+func IsLabelKubeletManaged(key string) bool {
+	return kubeletLabels.Has(key)
 }
 
 // GetWellKnownSingleValuedRequirementLabels converts well-known Azure single-value instanceType.Requirements to labels

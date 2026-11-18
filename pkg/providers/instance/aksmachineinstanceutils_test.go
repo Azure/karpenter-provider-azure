@@ -18,14 +18,9 @@ package instance
 
 import (
 	"context"
-	"fmt"
-	"io"
-	"net/http"
-	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -37,23 +32,13 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
-
-// createAzureResponseError creates a proper Azure SDK error with the given error code and message
-func createAzureResponseError(errorCode, errorMessage string, statusCode int) error {
-	errorBody := fmt.Sprintf(`{"error": {"code": "%s", "message": "%s"}}`, errorCode, errorMessage)
-	return &azcore.ResponseError{
-		ErrorCode:  errorCode,
-		StatusCode: statusCode,
-		RawResponse: &http.Response{
-			Body: io.NopCloser(strings.NewReader(errorBody)),
-		},
-	}
-}
 
 var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
@@ -113,13 +98,12 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 					Priority:   lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular),
 					ResourceID: lo.ToPtr("/subscriptions/test/resourceGroups/test/providers/Microsoft.Compute/virtualMachines/test-vm"),
 					Status: &armcontainerservice.MachineStatus{
-						CreationTimestamp: lo.ToPtr(creationTime.Add(10 * time.Minute)),
+						CreationTimestamp: lo.ToPtr(creationTime),
 					},
 					NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-202501.28.0"),
 					Tags: map[string]*string{
-						NodePoolTagKey: lo.ToPtr("test-nodepool"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey:         lo.ToPtr("test-nodeclaim"),
-						launchtemplate.KarpenterAKSMachineCreationTimestampTagKey: lo.ToPtr(AKSMachineTimestampToTag(creationTime)),
+						launchtemplate.NodePoolTagKey:                     lo.ToPtr("test-nodepool"),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
 					},
 				},
 			}
@@ -133,14 +117,30 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.Name).To(Equal("test-nodeclaim"))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
 			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelScaleSetPriority, v1beta1.ScaleSetPriorityRegular))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelPriority, v1beta1.PriorityRegular))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
 			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
 			Expect(nodeClaim.Labels).To(HaveKey(v1.LabelTopologyZone))
 			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal("eastus-1"))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
 			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
+			Expect(nodeClaim.Annotations).ToNot(HaveKey(v1beta1.AnnotationAKSMachineVMState))
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
 		})
+
+		DescribeTable("should propagate AKS machine VM state to the NodeClaim", func(vmState armcontainerservice.VMState) {
+			aksMachine.Properties.Status.VMState = lo.ToPtr(vmState)
+
+			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSMachineVMState, string(vmState)))
+		},
+			Entry("running", armcontainerservice.VMStateRunning),
+			Entry("deleted", armcontainerservice.VMStateDeleted),
+		)
 
 		It("should handle missing zone gracefully", func() {
 			aksMachine.Zones = []*string{}
@@ -152,32 +152,15 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.Name).To(Equal("test-nodeclaim"))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
 			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelScaleSetPriority, v1beta1.ScaleSetPriorityRegular))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelPriority, v1beta1.PriorityRegular))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
 			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
-			Expect(nodeClaim.Labels).ToNot(HaveKey(v1.LabelTopologyZone))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeRegional))
 			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
-		})
-
-		It("should handle missing creation time gracefully", func() {
-			// Remove the creation timestamp tag to test missing timestamp handling
-			delete(aksMachine.Properties.Tags, launchtemplate.KarpenterAKSMachineCreationTimestampTagKey)
-
-			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
-
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nodeClaim).ToNot(BeNil())
-			Expect(nodeClaim.Name).To(Equal("test-nodeclaim"))
-			Expect(nodeClaim.Labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
-			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
-			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
-			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
-			Expect(nodeClaim.Labels).To(HaveKey(v1.LabelTopologyZone))
-			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal("eastus-1"))
-			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
-			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
-			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.Time{}))
 		})
 
 		It("should return error when properties is missing", func() {
@@ -269,10 +252,10 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 	})
 
-	Context("GetAKSMachineNameFromNodeClaimName", func() {
+	Context("GetLinuxAKSMachineName / GetWindowsAKSMachineName", func() {
 		It("should return the same name when under length limit", func() {
 			nodeClaimName := "default-a1b2c"
-			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+			machineName, err := GetLinuxAKSMachineName(nodeClaimName)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(machineName).To(Equal(nodeClaimName))
@@ -280,35 +263,35 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should handle short names correctly", func() {
 			nodeClaimName := "d-a1b2c"
-			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+			machineName, err := GetLinuxAKSMachineName(nodeClaimName)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(machineName).To(Equal(nodeClaimName))
 		})
 
 		It("should return the same name when at the length limit", func() {
-			nodeClaimName := "123456789-123456789-123456789-a1b2c"
-			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+			nodeClaimName := "123456789-123456789-12345678-a1b2c"
+			machineName, err := GetLinuxAKSMachineName(nodeClaimName)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(machineName).To(Equal(nodeClaimName))
 		})
 
 		It("should truncate and hash when at the length limit +1", func() {
-			nodeClaimName := "123456789-123456789-1234567890-a1b2c"
-			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+			nodeClaimName := "123456789-123456789-123456789-a1b2c"
+			machineName, err := GetLinuxAKSMachineName(nodeClaimName)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(machineName).To(HaveLen(35))
+			Expect(machineName).To(HaveLen(34))
 			Expect(machineName).To(HaveSuffix("-a1b2c"))
-			Expect(machineName).To(HavePrefix("123456789-123456789-123"))
+			Expect(machineName).To(HavePrefix("123456789-123456789-12"))
 		})
 
 		It("should truncate and hash differently when at the length limit +1", func() {
-			nodeClaimName1 := "123456789-123456789-1234567890-a1b2c"
-			nodeClaimName2 := "123456789-123456789-1234567891-a1b2c"
-			machineName1, err1 := GetAKSMachineNameFromNodeClaimName(nodeClaimName1)
-			machineName2, err2 := GetAKSMachineNameFromNodeClaimName(nodeClaimName2)
+			nodeClaimName1 := "123456789-123456789-123456789-a1b2c"
+			nodeClaimName2 := "123456789-123456789-12345678X-a1b2c"
+			machineName1, err1 := GetLinuxAKSMachineName(nodeClaimName1)
+			machineName2, err2 := GetLinuxAKSMachineName(nodeClaimName2)
 
 			Expect(err1).ToNot(HaveOccurred())
 			Expect(err2).ToNot(HaveOccurred())
@@ -317,18 +300,18 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should truncate and hash when above the length limit", func() {
 			nodeClaimName := "123456789-123456789-123456789-123456789-a1b2c"
-			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+			machineName, err := GetLinuxAKSMachineName(nodeClaimName)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(machineName).To(HaveLen(35))
+			Expect(machineName).To(HaveLen(34))
 			Expect(machineName).To(HaveSuffix("-a1b2c"))
-			Expect(machineName).To(HavePrefix("123456789-123456789-123"))
+			Expect(machineName).To(HavePrefix("123456789-123456789-12"))
 		})
 
 		It("should produce deterministic results for same input", func() {
 			nodeClaimName := "consistent-very-long-nodepool-name-test-xyz12"
-			machineName1, err1 := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
-			machineName2, err2 := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+			machineName1, err1 := GetLinuxAKSMachineName(nodeClaimName)
+			machineName2, err2 := GetLinuxAKSMachineName(nodeClaimName)
 
 			Expect(err1).ToNot(HaveOccurred())
 			Expect(err2).ToNot(HaveOccurred())
@@ -337,25 +320,25 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should preserve the suffix from NodeClaim name", func() {
 			longNodeClaimName := "extremely-long-nodepool-name-that-definitely-exceeds-limits-xyz7890"
-			machineName, err := GetAKSMachineNameFromNodeClaimName(longNodeClaimName)
+			machineName, err := GetLinuxAKSMachineName(longNodeClaimName)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(machineName).To(HaveSuffix("-xyz7890"))
 		})
 
 		It("should handle complex cases correctly", func() {
-			nodeClaimName1 := "a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a1b2c"
+			nodeClaimName1 := "-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a1b2c"
 			nodeClaimName2 := "a-a-a-a-a-a-a-a-a-a-a-a-a-a-a--a1b2c"
 			nodeClaimName3 := "-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a1b2c"
-			nodeClaimName4 := "-a-a-a-a-a-a-a-a-a-a-a-a-a-a--a1b2c"
-			nodeClaimName5 := "------------------------------a1b2c"
+			nodeClaimName4 := "-a-a-a-a-a-a-a-a-a-a-a-a-a--a1b2c"
+			nodeClaimName5 := "-----------------------------a1b2c"
 			nodeClaimName6 := "-------------------------------a1b2c"
-			machineName1, err1 := GetAKSMachineNameFromNodeClaimName(nodeClaimName1)
-			machineName2, err2 := GetAKSMachineNameFromNodeClaimName(nodeClaimName2)
-			machineName3, err3 := GetAKSMachineNameFromNodeClaimName(nodeClaimName3)
-			machineName4, err4 := GetAKSMachineNameFromNodeClaimName(nodeClaimName4)
-			machineName5, err5 := GetAKSMachineNameFromNodeClaimName(nodeClaimName5)
-			machineName6, err6 := GetAKSMachineNameFromNodeClaimName(nodeClaimName6)
+			machineName1, err1 := GetLinuxAKSMachineName(nodeClaimName1)
+			machineName2, err2 := GetLinuxAKSMachineName(nodeClaimName2)
+			machineName3, err3 := GetLinuxAKSMachineName(nodeClaimName3)
+			machineName4, err4 := GetLinuxAKSMachineName(nodeClaimName4)
+			machineName5, err5 := GetLinuxAKSMachineName(nodeClaimName5)
+			machineName6, err6 := GetLinuxAKSMachineName(nodeClaimName6)
 
 			Expect(err1).ToNot(HaveOccurred())
 			Expect(err2).ToNot(HaveOccurred())
@@ -368,17 +351,65 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(machineName4).To(Equal(nodeClaimName4))
 			Expect(machineName5).To(Equal(nodeClaimName5))
 
-			Expect(machineName2).To(HaveLen(35))
+			Expect(machineName2).To(HaveLen(34))
 			Expect(machineName2).To(HaveSuffix("-a1b2c"))
-			Expect(machineName2).To(HavePrefix("a-a-a-a-a-a-a-a-a-a-a-a"))
+			Expect(machineName2).To(HavePrefix("a-a-a-a-a-a-a-a-a-a-a-"))
 
-			Expect(machineName3).To(HaveLen(35))
+			Expect(machineName3).To(HaveLen(34))
 			Expect(machineName3).To(HaveSuffix("-a1b2c"))
-			Expect(machineName3).To(HavePrefix("-a-a-a-a-a-a-a-a-a-a-a-"))
+			Expect(machineName3).To(HavePrefix("-a-a-a-a-a-a-a-a-a-a-a"))
 
-			Expect(machineName6).To(HaveLen(35))
+			Expect(machineName6).To(HaveLen(34))
 			Expect(machineName6).To(HaveSuffix("-a1b2c"))
-			Expect(machineName6).To(HavePrefix("-----------------------"))
+			Expect(machineName6).To(HavePrefix("----------------------"))
+		})
+
+		It("should produce a 12-character name for managed NAP Windows machines", func() {
+			for _, nodeClaimName := range []string{
+				"default-a1b2c",
+				"extremely-long-nodepool-name-that-definitely-exceeds-limits-xyz78",
+			} {
+				machineName, err := GetWindowsAKSMachineName(nodeClaimName, "aksmanagedap")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(machineName).To(HaveLen(12))
+				Expect(machineName).To(HaveSuffix("-" + nodeClaimName[len(nodeClaimName)-5:]))
+			}
+		})
+
+		It("should be deterministic and unique for Windows", func() {
+			n1, err1 := GetWindowsAKSMachineName("nodepool-windows-a1b2c", "aksmanagedap")
+			n1Again, _ := GetWindowsAKSMachineName("nodepool-windows-a1b2c", "aksmanagedap")
+			n2, err2 := GetWindowsAKSMachineName("nodepool-windows-x9y8z", "aksmanagedap")
+			Expect(err1).ToNot(HaveOccurred())
+			Expect(err2).ToNot(HaveOccurred())
+			Expect(n1).To(Equal(n1Again), "must be deterministic")
+			Expect(n1).ToNot(Equal(n2), "distinct NodeClaims must map to distinct machine names")
+		})
+
+		It("should use only the NodeClaim suffix for custom pools", func() {
+			short, err := GetWindowsAKSMachineName("nodepool-windows-a1b2c", "mpool")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(short).To(Equal("a1b2c"))
+		})
+
+		It("should hash the entire NodePool name for managed NAP", func() {
+			first, err := GetWindowsAKSMachineName("first-nodepool-a1b2c", "aksmanagedap")
+			Expect(err).ToNot(HaveOccurred())
+			second, err := GetWindowsAKSMachineName("second-nodepool-a1b2c", "aksmanagedap")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(first).To(HaveSuffix("-a1b2c"))
+			Expect(second).To(HaveSuffix("-a1b2c"))
+			Expect(first).ToNot(Equal(second))
+		})
+
+		It("should reject a NodeClaim name without a NodePool prefix", func() {
+			_, err := GetWindowsAKSMachineName("a1b2c", "aksmanagedap")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should reject a NodeClaim name with a non-standard suffix", func() {
+			_, err := GetWindowsAKSMachineName("nodepool-a1b2c3", "aksmanagedap")
+			Expect(err).To(HaveOccurred())
 		})
 	})
 
@@ -516,7 +547,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		It("should return true when provisioning state is Deleting", func() {
 			machine := &armcontainerservice.Machine{
 				Properties: &armcontainerservice.MachineProperties{
-					ProvisioningState: lo.ToPtr("Deleting"),
+					ProvisioningState: lo.ToPtr(consts.ProvisioningStateDeleting),
 				},
 			}
 
@@ -574,7 +605,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(zone).To(Equal("eastus-1"))
 		})
 
-		It("should return empty string for AKS machine with no zones", func() {
+		It("should return RegionalZone for AKS machine with no zones", func() {
 			machine := &armcontainerservice.Machine{
 				Zones: []*string{},
 			}
@@ -583,10 +614,10 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			zone, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(zone).To(Equal(""))
+			Expect(zone).To(Equal(zones.Regional))
 		})
 
-		It("should return empty string for AKS machine with nil zones", func() {
+		It("should return RegionalZone for AKS machine with nil zones", func() {
 			machine := &armcontainerservice.Machine{
 				Zones: nil,
 			}
@@ -595,7 +626,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			zone, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(zone).To(Equal(""))
+			Expect(zone).To(Equal(zones.Regional))
 		})
 
 		It("should return error for nil AKS machine", func() {
@@ -616,7 +647,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			_, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("AKS machine is missing location"))
+			Expect(err.Error()).To(ContainSubstring("location is required for zonal resource"))
 		})
 
 		It("should return error for AKS machine with multiple zones", func() {
@@ -628,7 +659,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			_, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("AKS machine has multiple zones"))
+			Expect(err.Error()).To(ContainSubstring("resource has multiple zones"))
 		})
 
 		It("should handle different zones correctly", func() {
@@ -652,67 +683,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(zone).To(Equal(tc.expected))
 			}
-		})
-	})
-
-	Context("IsAKSMachineOrMachinesPoolNotFound", func() {
-		It("should return false for nil error", func() {
-			result := IsAKSMachineOrMachinesPoolNotFound(nil)
-			Expect(result).To(BeFalse())
-		})
-
-		It("should return true for HTTP 404 status code", func() {
-			azureError := &azcore.ResponseError{
-				ErrorCode:   "lol",
-				StatusCode:  404,
-				RawResponse: nil,
-			}
-
-			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeTrue())
-		})
-
-		It("should return true for InvalidParameter error with 'Cannot find any valid machines' message", func() {
-			// Create the exact error message from your example
-			errorMessage := "Cannot find any valid machines to delete. Please check your input machine names. The valid machines to delete in agent pool 'testmpool' are: testmachine."
-			azureError := createAzureResponseError("InvalidParameter", errorMessage, 400)
-
-			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeTrue())
-		})
-
-		It("should return false for HTTP 400 with InvalidParameter but different message", func() {
-			// Create an InvalidParameter error with a different message that shouldn't match
-			differentMessage := "InvalidParameter: Some other validation error"
-			azureError := createAzureResponseError("InvalidParameter", differentMessage, 400)
-
-			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeFalse())
-		})
-
-		It("should return false for other HTTP status codes", func() {
-			azureError := &azcore.ResponseError{
-				ErrorCode:   "Unauthorized",
-				StatusCode:  401,
-				RawResponse: nil,
-			}
-
-			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeFalse())
-
-			azureError = &azcore.ResponseError{
-				ErrorCode:   "InternalOperationError",
-				StatusCode:  500,
-				RawResponse: nil,
-			}
-
-			result = IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeFalse())
-		})
-
-		It("should return false for non-Azure SDK errors", func() {
-			result := IsAKSMachineOrMachinesPoolNotFound(fmt.Errorf("some generic error"))
-			Expect(result).To(BeFalse())
 		})
 	})
 

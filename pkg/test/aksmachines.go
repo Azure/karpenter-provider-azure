@@ -21,7 +21,8 @@ import (
 	"time"
 
 	"dario.cat/mergo"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/samber/lo"
 )
@@ -102,7 +103,7 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 		}
 	}
 	if options.Properties.ProvisioningState == nil {
-		options.Properties.ProvisioningState = lo.ToPtr("Succeeded")
+		options.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateSucceeded)
 	}
 
 	// Set Priority field (required field that was missing) - must be set AFTER default Priority is established
@@ -129,15 +130,21 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 
 	// Set NodeImageVersion - matching setDefaultMachineValues default
 	if options.Properties.NodeImageVersion == nil {
-		// Default node image version if none provided
-		options.Properties.NodeImageVersion = lo.ToPtr("AKSUbuntu-2204gen2containerd-2023.11.15")
+		switch lo.FromPtr(options.Properties.OperatingSystem.OSSKU) {
+		case armcontainerservice.OSSKUWindows2022:
+			options.Properties.NodeImageVersion = lo.ToPtr("AKSWindows-2022-containerd-20348.5499.260812")
+		case armcontainerservice.OSSKUWindows2025:
+			options.Properties.NodeImageVersion = lo.ToPtr("AKSWindows-2025-26100.33296.260812")
+		default:
+			options.Properties.NodeImageVersion = lo.ToPtr("AKSUbuntu-2204gen2containerd-2023.11.15")
+		}
 	}
 
 	if options.NodepoolName == "" {
 		options.NodepoolName = "default"
 	}
 	if options.Properties.Tags == nil {
-		options.Properties.Tags = ManagedTagsAKSMachine(options.NodepoolName, "some-nodeclaim", (*options.Properties.Status.CreationTimestamp).Add(-1*time.Minute))
+		options.Properties.Tags = ManagedTagsAKSMachine(options.NodepoolName, "some-nodeclaim")
 	}
 
 	// Construct the AKS Machine

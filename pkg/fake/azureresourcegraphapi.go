@@ -25,7 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
@@ -43,18 +43,20 @@ type AzureResourceGraphBehavior struct {
 }
 
 // assert that the fake implements the interface
-var _ azclient.AzureResourceGraphAPI = &AzureResourceGraphAPI{}
+var _ azapi.AzureResourceGraphAPI = &AzureResourceGraphAPI{}
 
 type AzureResourceGraphAPI struct {
-	vmListQuery  string
-	nicListQuery string
+	vmListQuery                 string
+	nicListQuery                string
+	nicListQueryWithAKSMachines string
 	AzureResourceGraphBehavior
 }
 
 func NewAzureResourceGraphAPI(resourceGroup string, virtualMachinesAPI *VirtualMachinesAPI, networkInterfacesAPI *NetworkInterfacesAPI) *AzureResourceGraphAPI {
 	return &AzureResourceGraphAPI{
-		vmListQuery:  instance.GetVMListQueryBuilder(resourceGroup).String(),
-		nicListQuery: instance.GetNICListQueryBuilder(resourceGroup).String(),
+		vmListQuery:                 instance.GetVMListQueryBuilder(resourceGroup).String(),
+		nicListQuery:                instance.GetNICListQueryBuilder(resourceGroup, false).String(),
+		nicListQueryWithAKSMachines: instance.GetNICListQueryBuilder(resourceGroup, true).String(),
 		AzureResourceGraphBehavior: AzureResourceGraphBehavior{
 			VirtualMachinesAPI:   virtualMachinesAPI,
 			NetworkInterfacesAPI: networkInterfacesAPI,
@@ -104,23 +106,30 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 			return convertBytesToInterface(b)
 		})
 		return resourceList
+	case c.nicListQueryWithAKSMachines:
+		nicList := lo.Filter(c.loadNicObjects(), func(nic armnetwork.Interface, _ int) bool {
+			return nic.Tags != nil && nic.Tags[launchtemplate.NodePoolTagKey] != nil
+		})
+		resourceList := lo.Map(nicList, func(nic armnetwork.Interface, _ int) interface{} {
+			b, _ := json.Marshal(nic)
+			return convertBytesToInterface(b)
+		})
+		return resourceList
 	}
 	return nil
 }
 
 func (c *AzureResourceGraphAPI) loadVMObjects() (vmList []armcompute.VirtualMachine) {
-	c.VirtualMachinesAPI.Instances.Range(func(k, v any) bool {
-		vm, _ := c.VirtualMachinesAPI.Instances.Load(k)
-		vmList = append(vmList, vm.(armcompute.VirtualMachine))
+	c.VirtualMachinesAPI.Instances.Range(func(k string, v armcompute.VirtualMachine) bool {
+		vmList = append(vmList, v)
 		return true
 	})
 	return vmList
 }
 
 func (c *AzureResourceGraphAPI) loadNicObjects() (nicList []armnetwork.Interface) {
-	c.NetworkInterfacesAPI.NetworkInterfaces.Range(func(k, v any) bool {
-		nic, _ := c.NetworkInterfacesAPI.NetworkInterfaces.Load(k)
-		nicList = append(nicList, nic.(armnetwork.Interface))
+	c.NetworkInterfacesAPI.NetworkInterfaces.Range(func(k string, v armnetwork.Interface) bool {
+		nicList = append(nicList, v)
 		return true
 	})
 	return nicList

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-K8S_VERSION="${K8S_VERSION:="1.29.x"}"
+# Keep the default version aligned with .github/actions/install-deps/action.yaml
+# and jobs.ci.env.K8S_VERSION in .github/workflows/ci.yml.
+K8S_VERSION="${K8S_VERSION:="1.34.x"}"
 KUBEBUILDER_ASSETS="/usr/local/kubebuilder/bin"
 
 # Default SKIP_INSTALLED to false if not set
@@ -63,14 +65,14 @@ crosscompilers() {
 }
 
 tools() {
-    go-install go-licenses github.com/google/go-licenses@v1.6.0
+    go-install go-licenses github.com/google/go-licenses/v2@3e084b0caf710f7bfead967567539214f598c0a2 // v2.0.1
     go-install ko github.com/google/ko@v0.17.1
     go-install yq github.com/mikefarah/yq/v4@v4.45.1
     go-install helm-docs github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2
     go-install controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0
     go-install cosign github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
 #   go install -tags extended github.com/gohugoio/hugo@v0.110.0
-    go-install govulncheck golang.org/x/vuln/cmd/govulncheck@v1.1.4
+    go-install govulncheck golang.org/x/vuln/cmd/govulncheck@v1.8.0
     go-install ginkgo github.com/onsi/ginkgo/v2/ginkgo@latest
     go-install actionlint github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
     go-install goveralls github.com/mattn/goveralls@v0.0.12
@@ -83,7 +85,7 @@ tools() {
         echo "Go workspace's \"bin\" directory is not in PATH. Run 'export PATH=\"\$PATH:\${GOPATH:-\$HOME/go}/bin\"'."
     fi
 
-    go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
+    go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 
     # Install our custom modules in golangci-lint
     if ! should-skip "golangci-lint-custom"; then
@@ -117,11 +119,13 @@ kubebuilder() {
 }
 
 gettrivy() {
-    if ! command -v trivy &> /dev/null; then
-        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
-        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-        sudo apt-get update
-        sudo apt-get install -y trivy
+    TRIVY_VERSION="0.74.0"
+    TRIVY_SHA256="cf1e32ec8d4d8823e023096a28cadb14f5b5123ce03f201fb633c5b76aa712dd"
+    if ! command -v trivy &> /dev/null || [[ "$(trivy --version | head -n 1)" != "Version: ${TRIVY_VERSION}" ]]; then
+        wget -qO /tmp/trivy.deb "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb"
+        echo "${TRIVY_SHA256}  /tmp/trivy.deb" | sha256sum --check --strict
+        sudo dpkg -i /tmp/trivy.deb
+        rm /tmp/trivy.deb
     fi
 }
 

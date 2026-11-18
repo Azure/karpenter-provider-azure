@@ -48,6 +48,7 @@ func (o *Options) Validate() error {
 		o.validateAdditionalTags(),
 		o.validateDiskEncryptionSetID(),
 		o.validateClusterDNSIP(),
+		o.validateComputeRecommendationMode(),
 		validate.Struct(o),
 	)
 }
@@ -118,7 +119,7 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
+	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && !o.IsAKSMachineAPIMode() {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	switch o.ProvisionMode {
@@ -126,13 +127,34 @@ func (o *Options) validateProvisionMode() error {
 		if o.NodeBootstrappingServerURL == "" {
 			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
 		}
-	case consts.ProvisionModeAKSMachineAPI:
+	case consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch:
 		if o.AKSMachinesPoolName == "" {
-			return fmt.Errorf("aks-machines-pool-name is required when provision-mode is aksmachineapi")
+			return fmt.Errorf("aks-machines-pool-name is required when provision-mode is %s", o.ProvisionMode)
 		}
 		if !o.UseSIG {
-			return fmt.Errorf("use-sig is required to be true when provision-mode is aksmachineapi")
+			return fmt.Errorf("use-sig is required to be true when provision-mode is %s", o.ProvisionMode)
 		}
+		if o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+			if err := o.validateBatchOptions(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (o *Options) validateBatchOptions() error {
+	if o.ProviderBatchMaxSize < 1 || o.ProviderBatchMaxSize > consts.AKSMachineAPIHeaderBatchMaxSize {
+		return fmt.Errorf("provider-batch-max-size must be between 1 and %d, got %d", consts.AKSMachineAPIHeaderBatchMaxSize, o.ProviderBatchMaxSize)
+	}
+	if o.ProviderBatchIdleDuration < 0 {
+		return fmt.Errorf("provider-batch-idle-duration must be non-negative, got %s", o.ProviderBatchIdleDuration)
+	}
+	if o.ProviderBatchMaxDuration < 0 {
+		return fmt.Errorf("provider-batch-max-duration must be non-negative, got %s", o.ProviderBatchMaxDuration)
+	}
+	if o.ProviderBatchMaxDuration < o.ProviderBatchIdleDuration {
+		return fmt.Errorf("provider-batch-max-duration (%s) must be >= provider-batch-idle-duration (%s)", o.ProviderBatchMaxDuration, o.ProviderBatchIdleDuration)
 	}
 	return nil
 }
@@ -161,8 +183,8 @@ func (o *Options) validateRequiredFields() error {
 
 func (o *Options) validateUseSIG() error {
 	if o.UseSIG {
-		if o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
-			// For ProvisionModeAKSMachineAPI, we don't need SIGAccessTokenServerURL etc. given AKS Machine API would handle it.
+		if !o.IsAKSMachineAPIMode() {
+			// For AKS Machine API modes, we don't need SIGAccessTokenServerURL etc. given AKS Machine API would handle it.
 			if o.SIGAccessTokenServerURL == "" {
 				return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
 			}
@@ -259,4 +281,15 @@ func (o *Options) validateDiskEncryptionSetID() error {
 
 	o.ParsedDiskEncryptionSetID = parsedID
 	return nil
+}
+
+func (o *Options) validateComputeRecommendationMode() error {
+	switch o.ComputeRecommendationMode {
+	case consts.ComputeRecommendationModeDisabled,
+		consts.ComputeRecommendationModeLog,
+		consts.ComputeRecommendationModeEnabled:
+		return nil
+	default:
+		return fmt.Errorf("compute-recommendation-mode %q is invalid, must be one of 'disabled', 'log-only', or 'enabled'", o.ComputeRecommendationMode)
+	}
 }

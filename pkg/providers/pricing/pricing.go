@@ -38,6 +38,11 @@ const pricingUpdatePeriod = 12 * time.Hour
 
 const defaultRegion = "eastus"
 
+// MissingPrice is a high penalty price assigned to SKUs with no known pricing data.
+// Setting to a high value means it won't be chosen automatically,
+// but will still be available if chosen explicitly.
+const MissingPrice float64 = 999.0
+
 // Provider provides actual pricing data to the Azure cloud provider to allow it to make more informed decisions
 // regarding which instances to launch.  This is initialized at startup with a periodically updated static price list to
 // support running in locations where pricing data is unavailable.  In those cases the static pricing data provides a
@@ -55,12 +60,6 @@ type Provider struct {
 	spotUpdateTime     time.Time
 	spotPrices         map[string]float64
 	done               chan struct{}
-}
-
-type Err struct {
-	error
-	lastOnDemandUpdateTime time.Time
-	lastSpotUpdateTime     time.Time
 }
 
 // NewPricingAPI returns a pricing API
@@ -84,9 +83,9 @@ func NewProvider(
 
 	p := &Provider{
 		region:             region,
-		onDemandUpdateTime: initialPriceUpdate,
+		onDemandUpdateTime: InitialPriceUpdate,
 		onDemandPrices:     staticPricing,
-		spotUpdateTime:     initialPriceUpdate,
+		spotUpdateTime:     InitialPriceUpdate,
 		// default our spot pricing to the same as the on-demand pricing until a price update
 		spotPrices: staticPricing,
 		pricing:    pricing,
@@ -153,34 +152,28 @@ func (p *Provider) SpotLastUpdated() time.Time {
 	return p.spotUpdateTime
 }
 
-// OnDemandPrice returns the last known on-demand price for a given instance type, returning false if there is no
-// known on-demand pricing for the instance type.
+// OnDemandPrice returns the last known on-demand price for a given instance type.
+// The boolean return indicates whether a real price was found (true) or the penalty
+// MissingPrice is being returned (false).
 func (p *Provider) OnDemandPrice(instanceType string) (float64, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	price, ok := p.onDemandPrices[instanceType]
 	if !ok {
-		// if we don't have a price, check if it's a known SKU with missing price
-		if price, ok = skusWithMissingPrice[instanceType]; ok {
-			return price, true
-		}
-		return 0.0, false
+		return MissingPrice, false
 	}
 	return price, true
 }
 
-// SpotPrice returns the last known spot price for a given instance type, returning false
-// if there is no known spot pricing for that instance type
+// SpotPrice returns the last known spot price for a given instance type.
+// The boolean return indicates whether a real price was found (true) or the penalty
+// MissingPrice is being returned (false).
 func (p *Provider) SpotPrice(instanceType string) (float64, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	price, ok := p.spotPrices[instanceType]
 	if !ok {
-		// if we don't have a price, check if it's a known SKU with missing price
-		if price, ok = skusWithMissingPrice[instanceType]; ok {
-			return price, true
-		}
-		return 0.0, false
+		return MissingPrice, false
 	}
 	return price, true
 }
@@ -190,65 +183,46 @@ func (p *Provider) updatePricing(ctx context.Context) {
 		return
 	}
 
-	prices := map[client.Item]bool{}
-	err := p.fetchPricing(ctx, processPage(prices))
+	onDemandPrices, spotPrices, err := FetchPricing(ctx, p.pricing, p.region)
 	if err != nil {
 		if ctx.Err() != nil {
 			return
 		}
-		log.FromContext(ctx).Error(err, "failed to fetch updated pricing, using existing pricing data",
-			"lastOnDemandUpdateTime", err.lastOnDemandUpdateTime.Format(time.RFC3339),
-			"lastSpotUpdateTime", err.lastSpotUpdateTime.Format(time.RFC3339),
-		)
+		log.FromContext(ctx).Error(err, "failed to fetch updated pricing, using existing pricing data")
 		return
 	}
 
-	onDemandPrices, spotPrices := categorizePrices(prices)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := p.UpdateOnDemandPricing(ctx, onDemandPrices); err != nil {
-			log.FromContext(ctx).Error(err, "failed to update on-demand pricing, using existing pricing data",
-				"lastOnDemandUpdateTime", err.lastOnDemandUpdateTime.Format(time.RFC3339),
-			)
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := p.UpdateSpotPricing(ctx, spotPrices); err != nil {
-			log.FromContext(ctx).Error(err, "failed to update spot pricing, using existing pricing data",
-				"lastSpotUpdateTime", err.lastSpotUpdateTime.Format(time.RFC3339),
-			)
-		}
-	}()
-
-	wg.Wait()
-}
-
-func (p *Provider) UpdateOnDemandPricing(ctx context.Context, onDemandPrices map[string]float64) *Err {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if len(onDemandPrices) == 0 {
-		return &Err{error: errors.New("no on-demand pricing found"), lastOnDemandUpdateTime: p.onDemandUpdateTime}
+
+	if len(onDemandPrices) > 0 {
+		p.onDemandPrices = onDemandPrices
+		p.onDemandUpdateTime = time.Now()
+		if p.cm.HasChanged("on-demand-prices", p.onDemandPrices) {
+			log.FromContext(ctx).Info("updated on-demand pricing",
+				"instanceTypeCount", len(p.onDemandPrices),
+			)
+		}
+	} else {
+		log.FromContext(ctx).Error(errors.New("no on-demand pricing found"), "using existing on-demand pricing data")
 	}
 
-	p.onDemandPrices = lo.Assign(onDemandPrices)
-	p.onDemandUpdateTime = time.Now()
-	if p.cm.HasChanged("on-demand-prices", p.onDemandPrices) {
-		log.FromContext(ctx).Info("updated on-demand pricing",
-			"instanceTypeCount", len(p.onDemandPrices),
-		)
+	if len(spotPrices) > 0 {
+		p.spotPrices = spotPrices
+		p.spotUpdateTime = time.Now()
+		if p.cm.HasChanged("spot-prices", p.spotPrices) {
+			log.FromContext(ctx).Info("updated spot pricing",
+				"instanceTypeCount", len(p.spotPrices),
+			)
+		}
+	} else {
+		log.FromContext(ctx).Error(errors.New("no spot pricing found"), "using existing spot pricing data")
 	}
-	return nil
 }
 
-func (p *Provider) fetchPricing(ctx context.Context, pageHandler func(output *client.ProductsPricePage)) *Err {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+// FetchPricing fetches VM pricing from the Azure retail pricing API for the given region,
+// returning on-demand and spot prices keyed by ARM SKU name.
+func FetchPricing(ctx context.Context, pricingAPI client.PricingAPI, region string) (onDemandPrices, spotPrices map[string]float64, err error) {
 	filters := []*client.Filter{
 		{
 			Field:    "priceType",
@@ -273,23 +247,38 @@ func (p *Provider) fetchPricing(ctx context.Context, pageHandler func(output *cl
 		{
 			Field:    "armRegionName",
 			Operator: client.Equals,
-			Value:    p.region,
+			Value:    region,
 		}}
-	err := p.pricing.GetProductsPricePages(ctx, filters, pageHandler)
-	if err != nil {
-		return &Err{error: err, lastOnDemandUpdateTime: p.onDemandUpdateTime, lastSpotUpdateTime: p.spotUpdateTime}
+
+	prices := map[client.Item]bool{}
+	if err := pricingAPI.GetProductsPricePages(ctx, filters, processPage(prices, time.Now())); err != nil {
+		return nil, nil, err
 	}
-	return nil
+
+	onDemandPrices, spotPrices = categorizePrices(ctx, prices)
+	return onDemandPrices, spotPrices, nil
 }
 
-func processPage(prices map[client.Item]bool) func(page *client.ProductsPricePage) {
+func processPage(prices map[client.Item]bool, fetchTime time.Time) func(page *client.ProductsPricePage) {
 	return func(page *client.ProductsPricePage) {
 		for _, pItem := range page.Items {
-			if strings.HasSuffix(pItem.ProductName, " Windows") {
+			if strings.HasSuffix(pItem.ProductName, " Windows") ||
+				// a few SKUs have a "Win" suffix rather than Windows, so exclude that too
+				strings.HasSuffix(pItem.ProductName, " Win") ||
+				strings.HasSuffix(pItem.ProductName, " Windows VM") {
+				continue
+			}
+			if !pItem.EffectiveEndDate.IsZero() && pItem.EffectiveEndDate.Before(fetchTime) {
 				continue
 			}
 			if strings.HasSuffix(pItem.MeterName, " Low Priority") {
 				// https://learn.microsoft.com/en-us/azure/batch/batch-spot-vms#differences-between-spot-and-low-priority-vms
+				continue
+			}
+			// Some advertised prices have a different Cloud Services and Virtual Machines price. The only way
+			// to differentiate seems to be by looking at the product name suffix. We want the VM price not the cloud services price.
+			if strings.HasSuffix(pItem.ProductName, " Cloud Services") ||
+				strings.HasSuffix(pItem.ProductName, " CloudServices") {
 				continue
 			}
 			prices[pItem] = true
@@ -297,31 +286,26 @@ func processPage(prices map[client.Item]bool) func(page *client.ProductsPricePag
 	}
 }
 
-func (p *Provider) UpdateSpotPricing(ctx context.Context, spotPrices map[string]float64) *Err {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if len(spotPrices) == 0 {
-		return &Err{error: errors.New("no spot pricing found"), lastSpotUpdateTime: p.spotUpdateTime}
-	}
-
-	p.spotPrices = lo.Assign(spotPrices)
-	p.spotUpdateTime = time.Now()
-	if p.cm.HasChanged("spot-prices", p.spotPrices) {
-		log.FromContext(ctx).Info("updated spot pricing",
-			"instanceTypeCount", len(p.spotPrices),
-		)
-	}
-	return nil
-}
-
-func categorizePrices(prices map[client.Item]bool) (map[string]float64, map[string]float64) {
-	var onDemandPrices, spotPrices = map[string]float64{}, map[string]float64{}
+func categorizePrices(ctx context.Context, prices map[client.Item]bool) (map[string]float64, map[string]float64) {
+	onDemandPrices := map[string]float64{}
+	spotPrices := map[string]float64{}
 	for price := range prices {
+		capacityType := "on-demand"
+		targetPrices := onDemandPrices
 		if strings.HasSuffix(price.SkuName, " Spot") {
-			spotPrices[price.ArmSkuName] = price.RetailPrice
-		} else {
-			onDemandPrices[price.ArmSkuName] = price.RetailPrice
+			capacityType = "spot"
+			targetPrices = spotPrices
 		}
+		if existingPrice, ok := targetPrices[price.ArmSkuName]; ok && existingPrice != price.RetailPrice {
+			log.FromContext(ctx).Info(
+				"found conflicting prices for instance type",
+				"instanceType", price.ArmSkuName,
+				"capacityType", capacityType,
+				"existingPrice", existingPrice,
+				"newPrice", price.RetailPrice,
+			)
+		}
+		targetPrices[price.ArmSkuName] = price.RetailPrice
 	}
 	return onDemandPrices, spotPrices
 }
@@ -345,7 +329,9 @@ func (p *Provider) Reset() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.onDemandPrices = staticPricing
-	p.onDemandUpdateTime = initialPriceUpdate
+	p.onDemandUpdateTime = InitialPriceUpdate
+	p.spotPrices = staticPricing
+	p.spotUpdateTime = InitialPriceUpdate
 }
 
 // WaitUntilDone should be called after canceling the context passed to NewProvider to wait until all goroutines have exited

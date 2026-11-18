@@ -61,12 +61,12 @@ var azureResourceGroupNameRE = regexp.MustCompile(`.*/subscriptions/(?:.*)/resou
 // Inlined from sigs.k8s.io/cloud-provider-azure/pkg/provider to avoid pulling in a dependency
 // that has incompatible armcompute version requirements.
 func convertResourceGroupNameToLower(resourceID string) (string, error) {
-	matches := azureResourceGroupNameRE.FindStringSubmatch(resourceID)
-	if len(matches) != 2 {
+	matches := azureResourceGroupNameRE.FindStringSubmatchIndex(resourceID)
+	if len(matches) != 4 {
 		return "", fmt.Errorf("%q isn't in Azure resource ID format %q", resourceID, azureResourceGroupNameRE.String())
 	}
-	resourceGroup := matches[1]
-	return strings.Replace(resourceID, resourceGroup, strings.ToLower(resourceGroup), 1), nil
+	start, end := matches[2], matches[3]
+	return resourceID[:start] + strings.ToLower(resourceID[start:end]) + resourceID[end:], nil
 }
 
 func VMResourceIDToProviderID(ctx context.Context, id string) string {
@@ -210,7 +210,8 @@ func HasChanged(existing, new any, options *hashstructure.HashOptions) bool {
 // Be mindful of collision risks with short lengths. Also note that length > 13 provides no additional
 // collision resistance because the underlying hashstructure library returns a 64-bit hash, which only
 // fills ~13 base36 characters; extra characters are just leading zeros.
-// At the time of writing, this is being used in AKS machine instance provider/GetAKSMachineNameFromNodeClaimName(). See that for context.
+// At the time of writing, this is used by the AKS machine instance provider's GetLinuxAKSMachineName /
+// GetWindowsAKSMachineName (see pkg/providers/instance/aksmachineinstanceutils.go) for context.
 func GetAlphanumericHash(input string, length int) (string, error) {
 	if length <= 0 {
 		return "", fmt.Errorf("length must be positive, got %d", length)

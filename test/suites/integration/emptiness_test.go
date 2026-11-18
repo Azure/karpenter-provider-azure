@@ -111,7 +111,7 @@ var _ = Describe("Emptiness", func() {
 		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
-		env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), numPods)
+		env.EventuallyExpectHealthyDeployment(deployment)
 
 		By("making the nodeclaim empty")
 		persisted := deployment.DeepCopy()

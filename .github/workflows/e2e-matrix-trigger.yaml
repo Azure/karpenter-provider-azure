@@ -8,26 +8,22 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "westus3"
-      provision_mode:
-        type: choice
-        description: "the karpenter provisioning mode to run the e2e test in"
-        default: aksscriptless
-        options:
-          - aksscriptless
-          - aksmachineapi
       k8s_version:
         type: choice
         description: "Kubernetes version ('default' = AKS default)"
         options:
           - "default"
-          - "1.28"
-          - "1.29"
-          - "1.30"
           - "1.31"
           - "1.32"
           - "1.33"
           - "1.34"
           - "1.35"
+          - "1.36"
+          - "1.37"
+      azure_vm_size:
+        type: string
+        description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
+        default: "Standard_D4ds_v5"  # We have more quota for this VM size so force it to avoid quota errors
   push:
     branches: [main]
 
@@ -41,16 +37,19 @@ jobs:
   e2e-matrix:
     permissions:
       contents: read
-      id-token: write # This is required for requesting the JWT
       statuses: write # ./.github/actions/commit-status/*
     needs: [resolve]
+    strategy:
+      fail-fast: false
+      matrix:
+        provision_mode: [aksscriptless, aksmachineapi]
     uses: ./.github/workflows/e2e-matrix.yaml
     with:
       git_ref: ${{ needs.resolve.outputs.GIT_REF }}
       location: ${{ inputs.location || 'westus3' }}
-      provision_mode: ${{ inputs.provision_mode || 'aksscriptless' }}
+      provision_mode: ${{ matrix.provision_mode }}
       k8s_version: ${{ inputs.k8s_version }}
+      azure_vm_size: ${{ inputs.azure_vm_size }}
     secrets:
-      E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
-      E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
-      E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+      E2E_CLIENT_ID_TEST: ${{ secrets.E2E_CLIENT_ID_TEST }}
+      E2E_SUBSCRIPTION_ID_TEST: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST }}

@@ -3,40 +3,44 @@ description: 'Installs Go Downloads and installs Karpenter Dependencies'
 inputs:
   k8sVersion:
     description: Kubernetes version to use when installing the toolchain
-    default: "1.32.x"
+    # Keep the default version aligned with hack/toolchain.sh and
+    # jobs.ci.env.K8S_VERSION in .github/workflows/ci.yml.
+    default: "1.34.x"
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       id: setup-go
       with:
         go-version-file: go.mod
-        check-latest: true
+        go-download-base-url: "https://aka.ms/golang/release/latest"
         cache-dependency-path: "**/go.sum"
     # Root path permission workaround for caching https://github.com/actions/cache/issues/845#issuecomment-1252594999
     - run: sudo chown "$USER" /usr/local
       shell: bash
-    - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       id: cache-toolchain
       with:
         path: |
           /usr/local/kubebuilder/bin
           ~/go/bin
         # Include runner.environment in key because ~/go/bin expands differently on github-hosted vs self-hosted runners
-        key: ${{ runner.os }}-${{ runner.environment }}-${{ inputs.k8sVersion }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
+        key: ${{ runner.os }}-${{ runner.environment }}-${{ inputs.k8sVersion }}-go-${{ steps.setup-go.outputs.go-version }}-microsoft-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
     - if: ${{ steps.cache-toolchain.outputs.cache-hit != 'true' }}
       shell: bash
       env:
         K8S_VERSION: ${{ inputs.k8sVersion }}
       run: make toolchain
-    # Install trivy separately since apt installs to /usr/bin which isn't cacheable
+    # Install trivy v0.74.0 with SHA256 verification (pinned binary, no apt repo trust)
     - shell: bash
       run: |
-        if ! command -v trivy &> /dev/null; then
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update
-          sudo apt-get install -y trivy
+        TRIVY_VERSION="0.74.0"
+        TRIVY_SHA256="cf1e32ec8d4d8823e023096a28cadb14f5b5123ce03f201fb633c5b76aa712dd"
+        if ! command -v trivy &> /dev/null || [[ "$(trivy --version | head -n 1)" != "Version: ${TRIVY_VERSION}" ]]; then
+          wget -qO /tmp/trivy.deb "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb"
+          echo "${TRIVY_SHA256}  /tmp/trivy.deb" | sha256sum --check --strict
+          sudo dpkg -i /tmp/trivy.deb
+          rm /tmp/trivy.deb
         fi
     # Install CGO cross-compilers for multi-arch builds (apt installs to /usr which isn't cacheable)
     - shell: bash

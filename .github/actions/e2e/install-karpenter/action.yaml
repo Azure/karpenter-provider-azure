@@ -1,18 +1,9 @@
 name: InstallKarpenter
 description: 'Installs Karpenter on the aks cluster'
 inputs:
-  client_id:
-    description: "ID of the client to install Karpenter with"
-    required: true
-  tenant_id:
-    description: "ID of the tenant containing the cluster to install Karpenter into"
-    required: true
   subscription_id:
     description: "ID of the subscription containing the cluster to install Karpenter into"
     required: true
-  # region:
-  #   description: "Region to create aks cluster"
-  #   required: true
   resource_group:
     description: "Name of the resource group containing the cluster to install Karpenter into"
     required: true
@@ -31,23 +22,16 @@ inputs:
   provision_mode:
     description: "the Karpenter provisioning mode to run the e2e test in"
     default: "aksscriptless"
+  aks_machines_pool_name:
+    description: "Name of the AKS 'machines' mode agent pool (machine API modes only). Must match the pool created at cluster-create time."
+    required: false
+    default: "mpool"
 runs:
   using: "composite"
   steps:
-  - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     with:
       ref: ${{ inputs.git_ref }}
-  - name: az login
-    uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
-    with:
-      client-id: ${{ inputs.client_id }}
-      tenant-id: ${{ inputs.tenant_id }}
-      subscription-id: ${{ inputs.subscription_id }}
-  - name: az set sub
-    shell: bash
-    env:
-      SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
-    run: az account set --subscription "$SUBSCRIPTION_ID"
   - name: Build, publish, configure, and install Karpenter
     shell: bash
     env:
@@ -55,10 +39,14 @@ runs:
       AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
       AZURE_LOCATION: ${{ inputs.location }}
       PROVISION_MODE: ${{ inputs.provision_mode }}
+      AKS_MACHINES_POOL_NAME: ${{ inputs.aks_machines_pool_name }}
       AZURE_ACR_NAME: ${{ inputs.acr_name }}
+      # Redirect Go temp/cache to /mnt/ (Azure temporary disk) which has more disk
+      # space than the OS disk. 1ES pool VMs can run out of disk on / during large builds.
+      GOTMPDIR: /mnt/go-tmp
+      GOCACHE: /mnt/go-cache
+      KOCACHE: /mnt/ko-cache
     run: |
+      sudo mkdir -p "$GOTMPDIR" "$GOCACHE" "$KOCACHE"
+      sudo chown "$(id -u):$(id -g)" "$GOTMPDIR" "$GOCACHE" "$KOCACHE"
       make ci-install
-  - name: taint nodes as karpenter-system
-    shell: bash
-    run: |
-      make az-taintnodes

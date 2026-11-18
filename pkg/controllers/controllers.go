@@ -21,9 +21,10 @@ import (
 
 	"github.com/awslabs/operatorpkg/controller"
 	"github.com/awslabs/operatorpkg/status"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/clock"
 
-	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/events"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,44 +32,66 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	nodeclasshash "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/hash"
 	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	nodeclasstermination "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/termination"
 
+	instancetypecontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	quotacontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/quota"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	instancetypeprovider "github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 )
 
 func NewControllers(
 	ctx context.Context,
 	mgr manager.Manager,
+	clk clock.Clock,
 	kubeClient client.Client,
+	location string,
+	subscriptionID string,
 	recorder events.Recorder,
-	cloudProvider cloudprovider.CloudProvider,
+	cloudProvider nodeclaimgarbagecollection.CloudProvider,
 	vmInstanceProvider instance.VMProvider,
 	aksMachineInstanceProvider instance.AKSMachineProvider,
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
+	instanceTypesProvider instancetypeprovider.Provider,
+	unavailableOfferings *azurecache.UnavailableOfferings,
+	quotaProvider quota.Provider,
 	inClusterKubernetesInterface kubernetes.Interface,
-	subnetsClient azclient.SubnetsAPI,
-	diskEncryptionSetsClient azclient.DiskEncryptionSetsAPI,
+	managedKubernetesInterface kubernetes.Interface,
+	managedDynamicInterface dynamic.Interface,
+	subnetsClient azapi.SubnetsAPI,
+	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
+	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI,
+	capacityReservationsClient azapi.CapacityReservationsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
+	networkPolicy string,
+	networkPlugin string,
 ) []controller.Controller {
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
-		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID),
+		nodeclassstatus.NewController(kubeClient, subscriptionID, location, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, managedKubernetesInterface, managedDynamicInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID, networkPolicy, networkPlugin,
+			capacityReservationGroupsClient, capacityReservationsClient, instanceTypesProvider, unavailableOfferings, options.FromContext(ctx).SystemNamespace),
 		nodeclasstermination.NewController(kubeClient, recorder),
 
-		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),
+		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider, clk),
 		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, vmInstanceProvider),
 
 		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, vmInstanceProvider, aksMachineInstanceProvider),
-		status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
+		status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")), //nolint:staticcheck,nolintlint // SA1019: will be replaced by mgr.GetEventRecorder once operatorpkg is updated
+
+		instancetypecontroller.NewController(instanceTypesProvider),
+		quotacontroller.NewController(quotaProvider, clk),
 	}
 	return controllers
 }

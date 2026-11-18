@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -45,11 +46,39 @@ func TestAPIs(t *testing.T) {
 	RunSpecs(t, "Validation")
 }
 
+func TestV1Alpha2IsUnserved(t *testing.T) {
+	g := NewWithT(t)
+	found := false
+	for _, crd := range apis.CRDs {
+		for i := range crd.Spec.Versions {
+			if crd.Spec.Versions[i].Name == "v1alpha2" {
+				found = true
+				g.Expect(crd.Spec.Versions[i].Served).To(BeFalse())
+			}
+		}
+	}
+	g.Expect(found).To(BeTrue())
+}
+
 var _ = BeforeSuite(func() {
 	ctx = options.ToContext(ctx, test.Options())
-	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
+	env = coretest.NewEnvironment(coretest.WithCRDs(servedCRDsForLegacyTests()...), coretest.WithCRDs(v1alpha1.CRDs...))
 	azureEnv = test.NewEnvironment(ctx, env)
 })
+
+func servedCRDsForLegacyTests() []*apiextensionsv1.CustomResourceDefinition {
+	crds := make([]*apiextensionsv1.CustomResourceDefinition, 0, len(apis.CRDs))
+	for _, crd := range apis.CRDs {
+		crd = crd.DeepCopy()
+		for i := range crd.Spec.Versions {
+			if crd.Spec.Versions[i].Name == "v1alpha2" {
+				crd.Spec.Versions[i].Served = true
+			}
+		}
+		crds = append(crds, crd)
+	}
+	return crds
+}
 
 var _ = AfterEach(func() {
 	ExpectCleanedUp(ctx, env.Client)

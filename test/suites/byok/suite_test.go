@@ -37,6 +37,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -65,8 +66,12 @@ var _ = Describe("BYOK", func() {
 	BeforeEach(func() {
 
 	})
-	It("should provision a VM with customer-managed key disk encryption", Label("runner"), func(ctx SpecContext) {
+	It("should provision a VM with customer-managed key disk encryption", func(ctx SpecContext) {
 		var diskEncryptionSetID string
+
+		if env.IsAKSMachineAPIMode() {
+			Skip("Machine mode doesn't use the NODE_OSDISK_DISKENCRYPTIONSET_ID env setting, so overriding it below doesn't do anything and the test will fail")
+		}
 
 		By("Phase 1: Setting up DES (Disk Encryption Set)")
 		if env.InClusterController {
@@ -75,14 +80,14 @@ var _ = Describe("BYOK", func() {
 		}
 
 		By("Phase 2: Creating NodeClass and NodePool")
-		nodeClass := env.DefaultAKSNodeClass()
+		nodeClass := azkarptest.AKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
 
-		By("Phase 3: Creating test Pod")
-		pod := test.Pod()
+		By("Phase 3: Creating test Deployment")
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
 
 		By("Applying resources to Kubernetes")
-		env.ExpectCreated(nodeClass, nodePool, pod)
+		env.ExpectCreated(nodeClass, nodePool, deployment)
 
 		By("Phase 4: Verifying AKSNodeClass status shows validation success and is Ready")
 		Eventually(func(g Gomega) {
@@ -98,11 +103,11 @@ var _ = Describe("BYOK", func() {
 		By("Phase 5: Waiting for VM to be created and node to be registered")
 		env.EventuallyExpectCreatedNodeCount("==", 1)
 
-		By("Phase 6: Verifying Pod becomes healthy")
-		env.EventuallyExpectHealthy(pod)
+		By("Phase 6: Verifying Deployment becomes healthy")
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
 		By("Phase 7: Verifying VM disk encryption configuration")
-		vm := env.GetVM(pod.Spec.NodeName)
+		vm := env.GetVM(pods[0].Spec.NodeName)
 		Expect(vm.Properties).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
@@ -115,8 +120,12 @@ var _ = Describe("BYOK", func() {
 		}
 	})
 
-	It("should provision a VM with ephemeral OS disk and customer-managed key disk encryption", Label("runner"), func(ctx SpecContext) {
+	It("should provision a VM with ephemeral OS disk and customer-managed key disk encryption", func(ctx SpecContext) {
 		var diskEncryptionSetID string
+
+		if env.IsAKSMachineAPIMode() {
+			Skip("Machine mode doesn't use the NODE_OSDISK_DISKENCRYPTIONSET_ID env setting, so overriding it below doesn't do anything and the test will fail")
+		}
 
 		By("Phase 1: Setting up DES (Disk Encryption Set)")
 		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
@@ -126,32 +135,30 @@ var _ = Describe("BYOK", func() {
 		}
 
 		By("Phase 2: Creating NodeClass with ephemeral disk configuration")
-		nodeClass := env.DefaultAKSNodeClass()
+		nodeClass := azkarptest.AKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
 
 		By("Phase 3: Configuring ephemeral OS disk requirement")
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
-				Operator: corev1.NodeSelectorOpGt,
-				Values:   []string{"50"},
-			}})
+			Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+			Operator: corev1.NodeSelectorOpGt,
+			Values:   []string{"50"}})
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
 
-		By("Phase 4: Creating test Pod")
-		pod := test.Pod()
+		By("Phase 4: Creating test Deployment")
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
 
 		By("Applying resources to Kubernetes")
-		env.ExpectCreated(nodeClass, nodePool, pod)
+		env.ExpectCreated(nodeClass, nodePool, deployment)
 
 		By("Phase 5: Waiting for VM to be created and node to be registered")
 		env.EventuallyExpectCreatedNodeCount("==", 1)
 
-		By("Phase 6: Verifying Pod becomes healthy")
-		env.EventuallyExpectHealthy(pod)
+		By("Phase 6: Verifying Deployment becomes healthy")
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
 		By("Phase 7: Verifying VM disk configuration")
-		vm := env.GetVM(pod.Spec.NodeName)
+		vm := env.GetVM(pods[0].Spec.NodeName)
 		Expect(vm.Properties).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
@@ -188,7 +195,7 @@ var _ = Describe("BYOK", func() {
 		env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetWithoutRBAC})
 
 		By("Phase 3: Creating a NodeClass and NodePool")
-		nodeClass := env.DefaultAKSNodeClass()
+		nodeClass := azkarptest.AKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
 
 		By("Phase 4: Applying NodeClass and NodePool to cluster")

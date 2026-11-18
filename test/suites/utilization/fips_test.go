@@ -19,6 +19,7 @@ package utilization_test
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	opstatus "github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/ginkgo/v2"
@@ -36,7 +37,7 @@ import (
 var _ = Describe("FIPS", Label("runner"), func() {
 	Context("FIPS Validation", func() {
 		It("should reject FIPS without SIG access", func() {
-			if !env.InClusterController {
+			if env.UsesSharedImageGallery() {
 				Skip("Testing FIPS usage cleanly fails without SIG access only makes sense in self-hosted mode - NAP has SIG access")
 			}
 
@@ -62,19 +63,25 @@ var _ = Describe("FIPS", Label("runner"), func() {
 
 	Context("FIPS Provisioning", func() {
 		BeforeEach(func() {
-			if env.InClusterController {
+			if !env.UsesSharedImageGallery() {
 				Skip("FIPS tests require SIG access - skipping in self-hosted mode")
 			}
 		})
 
 		It("should provision FIPS-enabled Ubuntu nodes", func() {
+			deadline := lo.Must(time.Parse(time.RFC3339, "2027-01-15T00:00:00Z"))
+			if time.Now().Before(deadline) {
+				Skip("Ubuntu + FIPS doesn't work on 1.34 + Cilium. Should re-enable when we have Ubuntu2204 support for 1.35")
+			}
+
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
 
-			pod := test.Pod()
-			env.ExpectCreated(nodeClass, nodePool, pod)
-			env.EventuallyExpectHealthy(pod)
-			node := env.ExpectCreatedNodeCount("==", 1)[0]
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
+			node := env.GetNode(pods[0].Spec.NodeName)
 
 			imageRef := expectNodeUsesFIPS(node)
 			expectNodeClassHasExpectedImages(nodeClass, imageRef, true) // true = expect FIPS images
@@ -84,10 +91,11 @@ var _ = Describe("FIPS", Label("runner"), func() {
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
 
-			pod := test.Pod()
-			env.ExpectCreated(nodeClass, nodePool, pod)
-			env.EventuallyExpectHealthy(pod)
-			node := env.ExpectCreatedNodeCount("==", 1)[0]
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
+			node := env.GetNode(pods[0].Spec.NodeName)
 
 			imageRef := expectNodeUsesFIPS(node)
 			expectNodeClassHasExpectedImages(nodeClass, imageRef, true) // true = expect FIPS images
@@ -104,10 +112,11 @@ var _ = Describe("FIPS", Label("runner"), func() {
 			// - Additionally, the default (unset behavior) may change in the future depending upon other settings.
 			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeDisabled)
 
-			pod := test.Pod()
-			env.ExpectCreated(nodeClass, nodePool, pod)
-			env.EventuallyExpectHealthy(pod)
-			node := env.ExpectCreatedNodeCount("==", 1)[0]
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
+			node := env.GetNode(pods[0].Spec.NodeName)
 
 			imageRef := expectNodeDoesNotUseFIPS(node)
 			expectNodeClassHasExpectedImages(nodeClass, imageRef, false) // false = expect non-FIPS images

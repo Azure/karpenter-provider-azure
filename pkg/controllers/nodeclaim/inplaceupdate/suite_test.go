@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
@@ -41,7 +41,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -163,11 +162,10 @@ var _ = Describe("Unit tests", func() {
 			Expect(hash1).ToNot(Equal(hash2))
 
 			// Hash should be the same with the same NodeClass tags
-			nodeClass2 := test.AKSNodeClass()
-			nodeClass2.Spec.Tags = map[string]string{
-				"nodeclass-tag1": "nodeclass-value",
-				"nodeclass-tag2": "nodeclass-value",
-			}
+			nodeClass2 := test.AKSNodeClass(test.WithAdditionalTags(
+				"nodeclass-tag1", "nodeclass-value",
+				"nodeclass-tag2", "nodeclass-value",
+			))
 			hash3, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nodeClass2)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(hash1).To(Equal(hash3))
@@ -246,20 +244,17 @@ var _ = Describe("Unit tests", func() {
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 		})
 
 		It("should not update AKS machine when tags already match", func() {
-			createTimeString := instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())
 			aksMachine := &armcontainerservice.Machine{
 				Properties: &armcontainerservice.MachineProperties{
 					Tags: map[string]*string{
-						"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
-						"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaim.Name),
-						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(createTimeString),
-						"compute.aks.billing":                              lo.ToPtr("linux"),
-						"test-tag":                                         lo.ToPtr("my-tag"),
-						"nodeclass-tag":                                    lo.ToPtr("nodeclass-value"),
+						"karpenter.azure.com_cluster":              lo.ToPtr(opts.ClusterName),
+						"karpenter.azure.com_aksmachine_nodeclaim": lo.ToPtr(nodeClaim.Name),
+						"compute.aks.billing":                      lo.ToPtr("linux"),
+						"test-tag":                                 lo.ToPtr("my-tag"),
+						"nodeclass-tag":                            lo.ToPtr("nodeclass-value"),
 					},
 				},
 			}
@@ -277,10 +272,9 @@ var _ = Describe("Unit tests", func() {
 			Expect(patchExists).To(BeFalse())
 
 			// Verify original aksMachine tags remain unchanged
-			Expect(aksMachine.Properties.Tags).To(HaveLen(6))
+			Expect(aksMachine.Properties.Tags).To(HaveLen(5))
 			Expect(aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(lo.ToPtr(opts.ClusterName)))
 			Expect(aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal(lo.ToPtr(nodeClaim.Name)))
-			Expect(aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]).To(Equal(lo.ToPtr(createTimeString)))
 			Expect(aksMachine.Properties.Tags["test-tag"]).To(Equal(lo.ToPtr("my-tag")))
 			Expect(aksMachine.Properties.Tags["nodeclass-tag"]).To(Equal(lo.ToPtr("nodeclass-value")))
 		})
@@ -305,16 +299,14 @@ var _ = Describe("Unit tests", func() {
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 		})
 
 		It("should replace existing tags with expected tags", func() {
 			aksMachine := &armcontainerservice.Machine{
 				Properties: &armcontainerservice.MachineProperties{
 					Tags: map[string]*string{
-						"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
-						"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaim.Name),
-						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())),
+						"karpenter.azure.com_cluster":              lo.ToPtr(opts.ClusterName),
+						"karpenter.azure.com_aksmachine_nodeclaim": lo.ToPtr(nodeClaim.Name),
 						"old-tag": lo.ToPtr("old-value"),
 					},
 				},
@@ -334,7 +326,6 @@ var _ = Describe("Unit tests", func() {
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 			Expect(aksMachine.Properties.Tags).ToNot(HaveKey("old-tag"))
 		})
 
@@ -362,7 +353,6 @@ var _ = Describe("Unit tests", func() {
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 		})
 	})
 
@@ -792,7 +782,7 @@ var _ = Describe("In Place Update Controller", func() {
 
 			ctx = options.ToContext(ctx, test.Options())
 
-			azureEnv.Reset()
+			azureEnv.Reset(ctx)
 		})
 
 		AfterEach(func() {

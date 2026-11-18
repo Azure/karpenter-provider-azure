@@ -61,7 +61,7 @@ func TestDrift(t *testing.T) {
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()
-	nodeClass = env.DefaultAKSNodeClass()
+	nodeClass = test.AKSNodeClass()
 	nodePool = env.DefaultNodePool(nodeClass)
 })
 var _ = AfterEach(func() { env.Cleanup() })
@@ -94,11 +94,9 @@ var _ = Describe("Drift", func() {
 		It("should respect budgets for empty drift", func() {
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUCPU,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"8"},
-					},
+					Key:      v1beta1.LabelSKUCPU,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"8"},
 				},
 			)
 			// We're expecting to create 3 nodes, so normally one would expect to see 2 nodes deleting at one time.
@@ -156,11 +154,9 @@ var _ = Describe("Drift", func() {
 		It("should respect budgets for non-empty delete drift", func() {
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUCPU,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"8"},
-					},
+					Key:      v1beta1.LabelSKUCPU,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"8"},
 				},
 			)
 			// We're expecting to create 3 nodes, so we'll expect to see at most 2 nodes deleting at one time.
@@ -438,14 +434,14 @@ var _ = Describe("Drift", func() {
 			Spec: karpv1.NodeClaimTemplateSpec{
 				// since this will overwrite the default requirements, add SKU family selector back into requirements
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: karpv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot}}},
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: v1beta1.LabelSKUFamily, Operator: corev1.NodeSelectorOpIn, Values: []string{"D"}}},
+					{Key: karpv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot}},
+					{Key: v1beta1.LabelSKUFamily, Operator: corev1.NodeSelectorOpIn, Values: []string{"D"}},
 				},
 			},
 		}),
 	)
 	DescribeTable("AKSNodeClass", func(nodeClassSpec v1beta1.AKSNodeClassSpec) {
-		updatedNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *nodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: nodeClassSpec})
+		updatedNodeClass := test.AKSNodeClass(test.WithMergedSpec(nodeClass.Spec), test.WithMergedSpec(nodeClassSpec))
 		updatedNodeClass.ObjectMeta = nodeClass.ObjectMeta
 
 		env.ExpectCreated(dep, nodeClass, nodePool)
@@ -478,17 +474,17 @@ var _ = Describe("Drift", func() {
 
 	Context("FIPS Drift", func() {
 		BeforeEach(func() {
-			if env.InClusterController {
-				Skip("FIPS drift tests require SIG access - skipping in self-hosted mode")
+			if !env.UsesSharedImageGallery() {
+				Skip("FIPS drift tests require SIG access")
 			}
 		})
 
 		DescribeTable("AKSNodeClass FIPS", func(initialNodeClassSpec, updatedNodeClassSpec v1beta1.AKSNodeClassSpec) {
 			// Apply initial modifications to ensure we start with the right base state
-			initialNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *nodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: initialNodeClassSpec})
+			initialNodeClass := test.AKSNodeClass(test.WithMergedSpec(nodeClass.Spec), test.WithMergedSpec(initialNodeClassSpec))
 			initialNodeClass.ObjectMeta = nodeClass.ObjectMeta
 
-			updatedNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *initialNodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: updatedNodeClassSpec})
+			updatedNodeClass := test.AKSNodeClass(test.WithMergedSpec(initialNodeClass.Spec), test.WithMergedSpec(updatedNodeClassSpec))
 			updatedNodeClass.ObjectMeta = nodeClass.ObjectMeta
 
 			env.ExpectCreated(dep, initialNodeClass, nodePool)
@@ -529,6 +525,70 @@ var _ = Describe("Drift", func() {
 		)
 	})
 
+	Context("Windows Drift", func() {
+		var windowsDep *appsv1.Deployment
+		var windowsSelector labels.Selector
+
+		BeforeEach(func() {
+			env.SkipIfNotWindowsCapable()
+			windowsDep = env.WindowsDeployment(coretest.DeploymentOptions{
+				Replicas: 1,
+				PodOptions: coretest.PodOptions{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels:      map[string]string{"app": "windows-drift"},
+						Annotations: map[string]string{karpv1.DoNotDisruptAnnotationKey: "true"},
+					},
+					TerminationGracePeriodSeconds: lo.ToPtr[int64](0),
+				},
+			})
+			windowsSelector = labels.SelectorFromSet(windowsDep.Spec.Selector.MatchLabels)
+		})
+
+		It("should drift a Windows node when the NodePool template changes", func() {
+			windowsNodeClass := test.AKSNodeClass(test.WithImageFamily(v1beta1.Windows2022ImageFamily))
+			windowsNodePool := env.WindowsNodePool(windowsNodeClass)
+
+			env.ExpectCreated(windowsDep, windowsNodeClass, windowsNodePool)
+
+			// Windows nodes take noticeably longer to provision and pull images than Linux.
+			pod := env.EventuallyExpectHealthyPodCountWithTimeout(25*time.Minute, windowsSelector, 1)[0]
+			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+			node := env.ExpectCreatedNodeCount("==", 1)[0]
+			Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelOSStable, string(corev1.Windows)))
+
+			// Changing the NodeClaim template drifts the node regardless of OS, so this exercises
+			// the Windows disruption path without depending on a new image being published.
+			windowsNodePool.Spec.Template.Annotations = lo.Assign(windowsNodePool.Spec.Template.Annotations,
+				map[string]string{"drift-trigger": "windows"})
+			env.ExpectCreatedOrUpdated(windowsNodePool)
+
+			env.EventuallyExpectDrifted(nodeClaim)
+
+			delete(pod.Annotations, karpv1.DoNotDisruptAnnotationKey)
+			env.ExpectUpdated(pod)
+			env.EventuallyExpectNotFound(pod, node)
+			env.EventuallyExpectHealthyPodCountWithTimeout(25*time.Minute, windowsSelector, 1)
+		})
+
+		// Guards the inverse of the case above: a Windows node must stay put when nothing has
+		// changed. Windows pins its node image at create time, so a mismatch between the pinned
+		// value and what the NodeClass reports would otherwise drift every Windows node forever.
+		It("should not drift a Windows node when nothing changes", func() {
+			windowsNodeClass := test.AKSNodeClass(test.WithImageFamily(v1beta1.Windows2022ImageFamily))
+			windowsNodePool := env.WindowsNodePool(windowsNodeClass)
+
+			env.ExpectCreated(windowsDep, windowsNodeClass, windowsNodePool)
+
+			env.EventuallyExpectHealthyPodCountWithTimeout(25*time.Minute, windowsSelector, 1)
+			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+			env.ExpectCreatedNodeCount("==", 1)
+
+			env.ConsistentlyExpectNoDisruptions(1, 2*time.Minute)
+			nodeClaim = env.ExpectExists(nodeClaim).(*karpv1.NodeClaim)
+			Expect(nodeClaim.StatusConditions().Get(karpv1.ConditionTypeDrifted).IsTrue()).To(BeFalse())
+		})
+	})
+
 	It("should update the nodepool-hash annotation on the nodepool and nodeclaim when the nodepool's nodepool-hash-version annotation does not match the controller hash version", func() {
 		env.ExpectCreated(dep, nodeClass, nodePool)
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
@@ -557,7 +617,7 @@ var _ = Describe("Drift", func() {
 		nodePool.Spec.Template.Annotations = lo.Assign(nodePool.Spec.Template.Annotations, map[string]string{
 			"test-key": "test-value",
 		})
-		nodeClaim.Annotations = lo.Assign(nodePool.Annotations, map[string]string{
+		nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
 			karpv1.NodePoolHashAnnotationKey:        "test-hash-2",
 			karpv1.NodePoolHashVersionAnnotationKey: "test-hash-version-2",
 		})
@@ -606,7 +666,7 @@ var _ = Describe("Drift", func() {
 		// nodeclass. However, the aksnodeclass-hash-version does not match the controller hash version, so we will see that
 		// none of the nodeclaims will be drifted and all nodeclaims will have an updated `aksnodeclass-hash` and `aksnodeclass-hash-version` annotation
 		nodeClass.Spec.MaxPods = lo.ToPtr[int32](10)
-		nodeClaim.Annotations = lo.Assign(nodePool.Annotations, map[string]string{
+		nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
 			v1beta1.AnnotationAKSNodeClassHash:        "test-hash-2",
 			v1beta1.AnnotationAKSNodeClassHashVersion: "test-hash-version-2",
 		})

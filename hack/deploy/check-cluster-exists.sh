@@ -19,9 +19,9 @@ if [ -z "$CLUSTER_NAME" ] || [ -z "$RESOURCE_GROUP" ] || [ -z "$EXPECTED_TAG" ];
 fi
 
 # Check if cluster exists
-if az aks show --name "$CLUSTER_NAME" --resource-group "$RESOURCE_GROUP" -o none 2>/dev/null; then
+if az aks show --name "$CLUSTER_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
     # Cluster exists, check the tag
-    EXISTING_TAG=$(az aks show --name "$CLUSTER_NAME" --resource-group "$RESOURCE_GROUP" --query "tags.\"make-command\"" -o tsv 2>/dev/null || echo "")
+    EXISTING_TAG=$(az aks show --name "$CLUSTER_NAME" --resource-group "$RESOURCE_GROUP" --query "tags.\"make-command\"" --output tsv 2>/dev/null || echo "")
 
     if [ "$EXISTING_TAG" = "$EXPECTED_TAG" ]; then
         echo "Cluster $CLUSTER_NAME already exists with correct tag, skipping creation"

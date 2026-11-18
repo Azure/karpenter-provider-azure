@@ -1,0 +1,87 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package zones_test
+
+import (
+	"testing"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
+)
+
+func TestMakeAKSLabelZoneFromVM(t *testing.T) {
+	tc := []struct {
+		testName      string
+		input         *armcompute.VirtualMachine
+		expectedZone  string
+		expectedError string
+	}{
+		{
+			testName:      "invalid virtual machine struct",
+			input:         nil,
+			expectedError: "cannot pass in a nil virtual machine",
+		},
+		{
+			testName: "happy case",
+			input: &armcompute.VirtualMachine{
+				Location: lo.ToPtr("region"),
+				Zones:    []*string{lo.ToPtr("1")},
+			},
+			expectedZone: "region-1",
+		},
+		{
+			testName: "missing Location",
+			input: &armcompute.VirtualMachine{
+				Zones: []*string{lo.ToPtr("1")},
+			},
+			expectedError: "location is required for zonal resource",
+		},
+		{
+			testName: "multiple zones",
+			input: &armcompute.VirtualMachine{
+				Zones: []*string{lo.ToPtr("1"), lo.ToPtr("2")},
+			},
+			expectedError: "resource has multiple zones",
+		},
+		{
+			testName: "empty Zones",
+			input: &armcompute.VirtualMachine{
+				Zones: []*string{},
+			},
+			expectedZone: zones.Regional,
+		},
+		{
+			testName:     "nil Zones",
+			input:        &armcompute.VirtualMachine{},
+			expectedZone: zones.Regional,
+		},
+	}
+
+	for _, c := range tc {
+		g := NewWithT(t)
+		z, err := zones.MakeAKSLabelZoneFromVM(c.input)
+		g.Expect(z).To(Equal(c.expectedZone), c.testName)
+		if err == nil && c.expectedError != "" {
+			g.Expect(err).To(HaveOccurred(), c.testName)
+		}
+		if err != nil {
+			g.Expect(err.Error()).To(Equal(c.expectedError), c.testName)
+		}
+	}
+}

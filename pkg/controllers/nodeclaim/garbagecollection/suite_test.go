@@ -47,10 +47,12 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
@@ -81,16 +83,23 @@ var _ = BeforeSuite(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	testOptions = test.Options()
 	ctx = options.ToContext(ctx, testOptions)
-	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
+	env = coretest.NewEnvironment(
+		coretest.WithCRDs(apis.CRDs...),
+		coretest.WithCRDs(v1alpha1.CRDs...),
+		coretest.WithFieldIndexers(
+			coretest.NodeProviderIDFieldIndexer(ctx),
+			coretest.NodeClaimProviderIDFieldIndexer(ctx),
+		),
+	)
 	//	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
-	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
-	InstanceGCController = garbagecollection.NewInstance(env.Client, cloudProvider)
+	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
+	fakeClock = clock.NewFakeClock(time.Now())
+	InstanceGCController = garbagecollection.NewInstance(env.Client, cloudProvider, fakeClock)
 	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider)
 	networkInterfaceGCController = garbagecollection.NewNetworkInterface(env.Client, azureEnv.VMInstanceProvider)
-	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-	prov = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
+	prov = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
 
 })
 
@@ -100,7 +109,7 @@ var _ = AfterSuite(func() {
 })
 
 var _ = BeforeEach(func() {
-	nodeClass = test.AKSNodeClass()
+	nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 	test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
 	nodePool = coretest.NodePool(karpv1.NodePool{
@@ -118,7 +127,9 @@ var _ = BeforeEach(func() {
 	})
 
 	cluster.Reset()
-	azureEnv.Reset()
+	azureEnv.Reset(ctx)
+	fakeClock.SetTime(time.Now())
+	InstanceGCController = garbagecollection.NewInstance(env.Client, cloudProvider, fakeClock)
 })
 
 var _ = AfterEach(func() {
@@ -186,7 +197,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 								TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
 							},
 						})
-						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), newVM)
+						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), *newVM)
 						ids = append(ids, *vm.ID)
 					}
 				}
@@ -227,7 +238,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 								TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
 							},
 						})
-						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), newVM)
+						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), *newVM)
 						nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 							Status: karpv1.NodeClaimStatus{
 								ProviderID: utils.VMResourceIDToProviderID(ctx, *vm.ID),

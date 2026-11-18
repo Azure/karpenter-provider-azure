@@ -34,12 +34,14 @@ type StaticParameters struct {
 	GPUDriverVersion               string
 	GPUDriverType                  string
 	GPUImageSHA                    string
+	GPUDriverInstallationEnabled   bool
 	TenantID                       string
 	SubscriptionID                 string
 	KubeletIdentityClientID        string
 	Location                       string
 	ResourceGroup                  string
-	ClusterID                      string
+	NetworkSecurityGroupName       string
+	RouteTableName                 string
 	APIServerName                  string
 	KubeletClientTLSBootstrapToken string
 	NetworkPlugin                  string
@@ -59,6 +61,7 @@ type Parameters struct {
 	ScriptlessCustomData           bootstrap.Bootstrapper
 	CustomScriptsNodeBootstrapping customscriptsbootstrap.Bootstrapper
 	ImageID                        string
+	EnableFIPS1403Encryption       bool
 	StorageProfileDiskType         string
 	StorageProfileIsEphemeral      bool
 	StorageProfilePlacement        armcompute.DiffDiskPlacement

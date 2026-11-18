@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/samber/lo"
+	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -35,10 +36,6 @@ const (
 	maxFailuresPerWindow = 10
 	windowBackoff        = 60 * time.Minute
 )
-
-type Clock interface {
-	Now() time.Time
-}
 
 // SubscriptionsAPI defines the interface for Azure Subscriptions client operations
 type SubscriptionsAPI interface {
@@ -54,11 +51,11 @@ type SubscriptionsAPI interface {
 type Provider struct {
 	subscriptionsAPI SubscriptionsAPI
 	subscriptionID   string
-	clock            Clock
+	clock            clock.PassiveClock
 
-	// Cached zone support data - maps region name to zone support boolean
-	zoneSupport map[string]bool
-	hasLoaded   bool
+	// Cached zone list data - maps region name to list of available zones
+	zoneList  map[string][]string
+	hasLoaded bool
 	// failures is the number of times loading zone support from the Azure API has failed
 	failures    int
 	lastAttempt time.Time
@@ -68,14 +65,14 @@ type Provider struct {
 // NewProvider creates a new zone provider
 func NewProvider(
 	subscriptionsAPI SubscriptionsAPI,
-	clock Clock,
+	clock clock.PassiveClock,
 	subscriptionID string,
 ) *Provider {
 	result := &Provider{
 		subscriptionsAPI: subscriptionsAPI,
 		subscriptionID:   subscriptionID,
 		clock:            clock,
-		zoneSupport:      lo.Assign(fallbackZonalRegions), // deepcopy
+		zoneList:         make(map[string][]string),
 	}
 
 	return result
@@ -86,23 +83,37 @@ func (p *Provider) SupportsZones(ctx context.Context, region string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	p.ensureLoadedLocked(ctx)
+	return len(p.zoneList[region]) > 0
+}
+
+// GetAvailableZones returns the list of available zones for a given region.
+// Returns nil if the region doesn't support zones or zone data hasn't been loaded.
+func (p *Provider) GetAvailableZones(ctx context.Context, region string) []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.ensureLoadedLocked(ctx)
+	return p.zoneList[region]
+}
+
+// ensureLoadedLocked attempts to load zone data from Azure API if not already loaded.
+// Must be called with p.mu held.
+func (p *Provider) ensureLoadedLocked(ctx context.Context) {
 	// NOTE: We considered doing this in a separate goroutine or inline on provider construction but
 	// we want:
 	// 1. To block provisioning until we've at least attempted to load zone support data from the API once.
-	// 2. To avoid blocking provisioning forever and eventually fall back to the hardcoded list.
+	// 2. To avoid blocking provisioning forever if the API is unavailable.
 	// It seems like this is the simplest way to accomplish that.
 	if !p.hasLoaded && p.shouldTryAgain() {
-		// Try to load zone support data from Azure API
 		if err := p.loadFromAzure(ctx); err != nil {
 			p.failures++
 			p.lastAttempt = p.clock.Now()
-			log.FromContext(ctx).Error(err, "failed to load zone support from Azure API, falling back to hardcoded list")
+			log.FromContext(ctx).Error(err, "failed to load zone support from Azure API")
 		} else {
 			p.hasLoaded = true
 		}
 	}
-
-	return p.zoneSupport[region] // if cache doesn't have our region, assume no zone support
 }
 
 // loadFromAzure discovers zone support by calling Azure Subscriptions API
@@ -111,7 +122,7 @@ func (p *Provider) loadFromAzure(ctx context.Context) error {
 	log.V(1).Info("discovering zone support for regions", "subscriptionID", p.subscriptionID)
 
 	pager := p.subscriptionsAPI.NewListLocationsPager(p.subscriptionID, nil)
-	result := make(map[string]bool)
+	zoneListResult := make(map[string][]string)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
@@ -124,12 +135,21 @@ func (p *Provider) loadFromAzure(ctx context.Context) error {
 				continue
 			}
 
-			result[locationName] = len(location.AvailabilityZoneMappings) > 0
+			zones := make([]string, 0, len(location.AvailabilityZoneMappings))
+			for _, zoneMapping := range location.AvailabilityZoneMappings {
+				if zoneMapping.LogicalZone != nil {
+					zones = append(zones, *zoneMapping.LogicalZone)
+				}
+			}
+
+			if len(zones) > 0 {
+				zoneListResult[locationName] = zones
+			}
 		}
 	}
 
-	log.Info("discovered zone support for regions", "regionCount", len(result))
-	p.zoneSupport = lo.Assign(p.zoneSupport, result) // Merge with existing cache in case some regions are not returned
+	log.Info("discovered zone support for regions", "regionCount", len(zoneListResult))
+	p.zoneList = zoneListResult
 	return nil
 }
 
@@ -147,55 +167,4 @@ func (p *Provider) shouldTryAgain() bool {
 	}
 
 	return false
-}
-
-// TODO: We may be able to remove this fallback entirely if we have data that suggests this API is very reliable
-// Hardcoded fallback list of zonal regions - used when Azure API is unavailable
-// Source: https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1
-var fallbackZonalRegions = map[string]bool{
-	// Special
-	"eastus2euap": true,
-	// Americas
-	"brazilsouth":    true,
-	"canadacentral":  true,
-	"centralus":      true,
-	"eastus":         true,
-	"eastus2":        true,
-	"southcentralus": true,
-	"usgovvirginia":  true,
-	"westus2":        true,
-	"westus3":        true,
-	"chilecentral":   true,
-	"mexicocentral":  true,
-	// Europe
-	"austriaeast":        true,
-	"francecentral":      true,
-	"italynorth":         true,
-	"germanywestcentral": true,
-	"norwayeast":         true,
-	"northeurope":        true,
-	"uksouth":            true,
-	"westeurope":         true,
-	"swedencentral":      true,
-	"switzerlandnorth":   true,
-	"polandcentral":      true,
-	"spaincentral":       true,
-	// Middle East
-	"qatarcentral":  true,
-	"uaenorth":      true,
-	"israelcentral": true,
-	// Africa
-	"southafricanorth": true,
-	// Asia Pacific
-	"australiaeast":    true,
-	"centralindia":     true,
-	"japaneast":        true,
-	"koreacentral":     true,
-	"southeastasia":    true,
-	"eastasia":         true,
-	"chinanorth3":      true,
-	"indonesiacentral": true,
-	"japanwest":        true,
-	"newzealandnorth":  true,
-	"malaysiawest":     true,
 }

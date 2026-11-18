@@ -44,7 +44,7 @@ func UsingAKSNodeClassPredicate() predicate.Funcs {
 		if nodeClaim.Spec.NodeClassRef == nil {
 			return false
 		}
-		return nodeClaim.Spec.NodeClassRef.Kind == "AKSNodeClass"
+		return nodeClaim.Spec.NodeClassRef.Kind == v1beta1.AKSNodeClassKind
 	})
 }
 

@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -36,7 +36,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
@@ -59,10 +58,9 @@ var _ = Describe("In Place Update Controller", func() {
 				MachinesPoolName: opts.AKSMachinesPoolName,
 				Properties: &armcontainerservice.MachineProperties{
 					Tags: map[string]*string{
-						"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
-						"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaimName),
-						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())),
-						"compute.aks.billing":                              lo.ToPtr("linux"),
+						"karpenter.azure.com_cluster":              lo.ToPtr(opts.ClusterName),
+						"karpenter.azure.com_aksmachine_nodeclaim": lo.ToPtr(nodeClaimName),
+						"compute.aks.billing":                      lo.ToPtr("linux"),
 					},
 				},
 			})
@@ -95,7 +93,7 @@ var _ = Describe("In Place Update Controller", func() {
 			// Apply the nodeClass to the test environment
 			ExpectApplied(ctx, env.Client, nodeClass)
 
-			azureEnv.Reset()
+			azureEnv.Reset(ctx)
 
 			aksMachinesPool := test.AKSAgentPool(test.AKSAgentPoolOptions{
 				ClusterName: opts.ClusterName,
@@ -202,7 +200,6 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("test-tag"))
 
@@ -244,61 +241,10 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
 		})
 
-		It("should set creation timestamp to minimum time when no existing timestamp tag exists", func() {
-			// Remove the creation timestamp tag that was set by BeforeEach
-			originalName := *aksMachine.Name
-			delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_creationtimestamp")
-			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-			ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
-			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
-
-			// Should have made an API call to add the timestamp tag
-			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(Equal(1))
-			// Should not have made any delete calls
-			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.Calls()).To(Equal(0))
-
-			// Verify the same machine was updated (not a new one created)
-			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-			updatedAKSMachine := createInput.AKSMachine
-			Expect(*updatedAKSMachine.Name).To(Equal(originalName))
-
-			// Verify the timestamp was set to minimum time (1970-01-01T00:00:00.000Z)
-			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
-			timestampTag := updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]
-			Expect(*timestampTag).To(Equal("1970-01-01T00:00:00.00Z"))
-		})
-
-		It("should set creation timestamp to minimum time when existing timestamp tag is corrupt", func() {
-			// Set a corrupt timestamp tag
-			originalName := *aksMachine.Name
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr("invalid-timestamp-format")
-			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-			ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
-			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
-
-			// Should have made an API call to fix the timestamp tag
-			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(Equal(1))
-			// Should not have made any delete calls
-			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.Calls()).To(Equal(0))
-
-			// Verify the same machine was updated (not a new one created)
-			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-			updatedAKSMachine := createInput.AKSMachine
-			Expect(*updatedAKSMachine.Name).To(Equal(originalName))
-
-			// Verify the timestamp was set to minimum time (1970-01-01T00:00:00.000Z)
-			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
-			timestampTag := updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]
-			Expect(*timestampTag).To(Equal("1970-01-01T00:00:00.00Z"))
-		})
-
 		It("should clear existing tags on AKS machine", func() {
 			aksMachine.Properties.Tags = map[string]*string{
-				"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
-				"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaim.Name),
-				"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())),
+				"karpenter.azure.com_cluster":              lo.ToPtr(opts.ClusterName),
+				"karpenter.azure.com_aksmachine_nodeclaim": lo.ToPtr(nodeClaim.Name),
 				"test-tag":      lo.ToPtr("my-tag"),
 				"nodeclass-tag": lo.ToPtr("nodeclass-value"),
 			}
@@ -317,7 +263,6 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
 			Expect(updatedAKSMachine.Properties.Tags).ToNot(HaveKey("test-tag")) // should be removed
 
@@ -361,7 +306,6 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
 
 			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(lo.ToPtr(opts.ClusterName)))
@@ -453,6 +397,37 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(*updatedAKSMachine.Properties.ETag).ToNot(Equal(`"valid-etag"`))
 
 			// Verify API was called
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(Equal(1))
+		})
+
+		It("should preserve the capacity reservation when updating an AKS machine", func() {
+			groupID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"
+			aksMachine.Properties.CapacityReservation = &armcontainerservice.CapacityReservation{
+				CapacityReservationGroup: &armcontainerservice.CapacityReservationGroup{
+					ID: lo.ToPtr(groupID),
+				},
+			}
+			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+			ctx = options.ToContext(
+				ctx,
+				test.Options(
+					test.OptionsFields{
+						ManageExistingAKSMachines: lo.ToPtr(true),
+						AdditionalTags: map[string]string{
+							"test-tag": "my-tag",
+						},
+					}))
+
+			ExpectApplied(ctx, env.Client, nodeClaim)
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+
+			updatedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updatedAKSMachine.Properties.Tags).To(HaveKeyWithValue("test-tag", lo.ToPtr("my-tag")))
+			Expect(updatedAKSMachine.Properties.CapacityReservation).ToNot(BeNil())
+			Expect(updatedAKSMachine.Properties.CapacityReservation.CapacityReservationGroup).ToNot(BeNil())
+			Expect(lo.FromPtr(updatedAKSMachine.Properties.CapacityReservation.CapacityReservationGroup.ID)).To(Equal(groupID))
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(Equal(1))
 		})
 

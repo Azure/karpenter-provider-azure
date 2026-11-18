@@ -34,7 +34,17 @@ type API interface {
 	NewListPager(resourceGroupName string, options *armnetwork.SecurityGroupsClientListOptions) *runtime.Pager[armnetwork.SecurityGroupsClientListResponse]
 }
 
-var managedNSGRegex = regexp.MustCompile(`(?i)^aks-agentpool-\d{8}-nsg$`)
+var managedNSGRegex = regexp.MustCompile(`(?i)^aks-agentpool-(\d{8})-nsg$`)
+
+// GetClusterIDFromNSGName extracts the 8-digit cluster ID from a managed NSG name.
+// For example, "aks-agentpool-46593302-nsg" returns "46593302".
+func GetClusterIDFromNSGName(nsgName string) string {
+	match := managedNSGRegex.FindStringSubmatch(nsgName)
+	if len(match) < 2 {
+		return ""
+	}
+	return match[1]
+}
 
 type Provider struct {
 	nsgAPI        API

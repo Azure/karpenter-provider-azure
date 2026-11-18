@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp/cmpopts"
 	. "github.com/onsi/ginkgo/v2"
@@ -33,6 +34,7 @@ import (
 
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 )
@@ -51,6 +53,7 @@ var _ = Describe("Options", func() {
 		"CLUSTER_NAME",
 		"CLUSTER_ENDPOINT",
 		"VM_MEMORY_OVERHEAD_PERCENT",
+		"ENABLE_NODE_HARDENING",
 		"CLUSTER_ID",
 		"KUBELET_BOOTSTRAP_TOKEN",
 		"SSH_PUBLIC_KEY",
@@ -70,8 +73,16 @@ var _ = Describe("Options", func() {
 		"LINUX_ADMIN_USERNAME",
 		"ADDITIONAL_TAGS",
 		"ENABLE_AZURE_SDK_LOGGING",
+		"ENABLE_FIPS",
 		"AKS_MACHINES_POOL_NAME",
 		"MANAGE_EXISTING_AKS_MACHINES",
+		"PROVIDER_BATCH_IDLE_DURATION",
+		"PROVIDER_BATCH_MAX_DURATION",
+		"PROVIDER_BATCH_MAX_SIZE",
+		"COMPUTE_RECOMMENDATION_MODE",
+		"SYSTEM_NAMESPACE",
+		"LEGACY_NODE_REPAIR",
+		"FEATURE_GATES",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -102,11 +113,74 @@ var _ = Describe("Options", func() {
 		}
 	})
 
+	Context("Core repair defaults", func() {
+		It("should register Azure's core option defaults for both entry points", func() {
+			Expect(coreoptions.Injectables).To(ContainElement(BeAssignableToTypeOf(&options.CoreOptions{})))
+		})
+
+		It("should preserve core option values and unrelated injectables when overriding defaults", func() {
+			before := &options.Options{ClusterName: "before"}
+			after := &options.Options{ClusterName: "after"}
+			coreOpts := &coreoptions.Options{IgnoreDRARequests: true, LegacyNodeRepair: true}
+			injectables := []coreoptions.Injectable{before, coreOpts, after}
+
+			options.OverrideCoreOptions(injectables)
+
+			Expect(injectables).To(HaveLen(3))
+			Expect(injectables[0]).To(BeIdenticalTo(before))
+			Expect(injectables[1]).To(Equal(&options.CoreOptions{Options: *coreOpts}))
+			Expect(injectables[2]).To(BeIdenticalTo(after))
+		})
+
+		DescribeTable("should panic when upstream core options are missing", func(injectables []coreoptions.Injectable) {
+			Expect(func() {
+				options.OverrideCoreOptions(injectables)
+			}).To(PanicWith("cannot apply Azure legacy repair defaults: *coreoptions.Options not found in coreoptions.Injectables"))
+		},
+			Entry("empty registry", []coreoptions.Injectable{}),
+			Entry("different registered type", []coreoptions.Injectable{&options.Options{}}),
+		)
+
+		It("should leave NodeRepair disabled by default", func() {
+			coreOpts := &options.CoreOptions{}
+			coreOpts.AddFlags(fs)
+			Expect(coreOpts.Parse(fs)).To(Succeed())
+			Expect(coreOpts.FeatureGates.NodeRepair).To(BeFalse())
+			Expect(coreOpts.LegacyNodeRepair).To(BeTrue())
+		})
+
+		DescribeTable("should select legacy repair unless explicitly disabled", func(envValue string, args []string, expected bool) {
+			if envValue != "" {
+				Expect(os.Setenv("LEGACY_NODE_REPAIR", envValue)).To(Succeed())
+			}
+			coreOpts := &options.CoreOptions{}
+			coreOpts.AddFlags(fs)
+			Expect(coreOpts.Parse(fs, args...)).To(Succeed())
+			Expect(coreoptions.FromContext(coreOpts.ToContext(ctx)).LegacyNodeRepair).To(Equal(expected))
+		},
+			Entry("unset", "", nil, true),
+			Entry("NodeRepair enabled without changing the repair controller", "", []string{"--feature-gates=NodeRepair=true"}, true),
+			Entry("environment enables legacy repair", "true", nil, true),
+			Entry("environment opts into budget-aware repair", "false", nil, false),
+			Entry("flag enables legacy repair", "", []string{"--legacy-node-repair=true"}, true),
+			Entry("flag opts into budget-aware repair", "", []string{"--legacy-node-repair=false"}, false),
+			Entry("false flag overrides true environment", "true", []string{"--legacy-node-repair=false"}, false),
+			Entry("true flag overrides false environment", "false", []string{"--legacy-node-repair=true"}, true),
+		)
+
+		It("should reject an invalid repair flag value", func() {
+			coreOpts := &options.CoreOptions{}
+			coreOpts.AddFlags(fs)
+			Expect(coreOpts.Parse(fs, "--legacy-node-repair=invalid")).ToNot(Succeed())
+		})
+	})
+
 	Context("Env Vars", func() {
 		It("should correctly fallback to env vars when CLI flags aren't set", func() {
 			os.Setenv("CLUSTER_NAME", "env-cluster")
 			os.Setenv("CLUSTER_ENDPOINT", "https://environment-cluster-id-value-for-testing")
 			os.Setenv("VM_MEMORY_OVERHEAD_PERCENT", "0.3")
+			os.Setenv("ENABLE_NODE_HARDENING", "true")
 			os.Setenv("KUBELET_BOOTSTRAP_TOKEN", "env-bootstrap-token")
 			os.Setenv("SSH_PUBLIC_KEY", "env-ssh-public-key")
 			os.Setenv("NETWORK_PLUGIN", "none") // Testing with none to make sure the default isn't overriding or something like that with "azure"
@@ -125,8 +199,13 @@ var _ = Describe("Options", func() {
 			os.Setenv("KUBELET_IDENTITY_CLIENT_ID", "12345678-1234-1234-1234-123456789012")
 			os.Setenv("LINUX_ADMIN_USERNAME", "customadminusername")
 			os.Setenv("ADDITIONAL_TAGS", "test-tag=test-value")
-			os.Setenv("AKS_MACHINES_POOL_NAME", "testmpool")
+			os.Setenv("ENABLE_FIPS", "true")
+			os.Setenv("AKS_MACHINES_POOL_NAME", "mpool")
 			os.Setenv("MANAGE_EXISTING_AKS_MACHINES", "true")
+			os.Setenv("PROVIDER_BATCH_IDLE_DURATION", "1500ms")
+			os.Setenv("PROVIDER_BATCH_MAX_DURATION", "6s")
+			os.Setenv("PROVIDER_BATCH_MAX_SIZE", "42")
+			os.Setenv("SYSTEM_NAMESPACE", " kube-system ")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -137,7 +216,7 @@ var _ = Describe("Options", func() {
 				ClusterName:                    lo.ToPtr("env-cluster"),
 				ClusterEndpoint:                lo.ToPtr("https://environment-cluster-id-value-for-testing"),
 				VMMemoryOverheadPercent:        lo.ToPtr(0.3),
-				ClusterID:                      lo.ToPtr("46593302"),
+				EnableNodeHardening:            lo.ToPtr(true),
 				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
 				LinuxAdminUsername:             lo.ToPtr("customadminusername"),
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
@@ -155,14 +234,59 @@ var _ = Describe("Options", func() {
 				NodeResourceGroup:              lo.ToPtr("my-node-rg"),
 				KubeletIdentityClientID:        lo.ToPtr("12345678-1234-1234-1234-123456789012"),
 				AdditionalTags:                 map[string]string{"test-tag": "test-value"},
+				EnableFIPS:                     lo.ToPtr(true),
 				ClusterDNSServiceIP:            lo.ToPtr("10.244.0.1"),
 				ManageExistingAKSMachines:      lo.ToPtr(true),
-				AKSMachinesPoolName:            lo.ToPtr("testmpool"),
+				AKSMachinesPoolName:            lo.ToPtr("mpool"),
+				ProviderBatchIdleDuration:      lo.ToPtr(1500 * time.Millisecond),
+				ProviderBatchMaxDuration:       lo.ToPtr(6 * time.Second),
+				ProviderBatchMaxSize:           lo.ToPtr(42),
+				SystemNamespace:                lo.ToPtr("kube-system"),
 			})
 			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
+			Expect(fs.Lookup("system-namespace")).To(BeNil())
 		})
 	})
 	Context("Validation", func() {
+		It("should validate provider batch duration flags", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapiheaderbatch",
+				"--aks-machines-pool-name", "mpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+				"--provider-batch-idle-duration", "6s",
+				"--provider-batch-max-duration", "3s",
+			)
+
+			Expect(err).To(MatchError(ContainSubstring("provider-batch-max-duration (3s) must be >= provider-batch-idle-duration (6s)")))
+		})
+
+		It("should validate provider batch max size flag", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapiheaderbatch",
+				"--aks-machines-pool-name", "mpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+				"--provider-batch-max-size", "0",
+			)
+
+			Expect(err).To(MatchError(ContainSubstring("provider-batch-max-size must be between 1 and 50, got 0")))
+		})
+
 		It("should fail when kubelet-identity-client-id is not a uuid", func() {
 			errMsg := "kubelet-identity-client-id not-a-uuid is malformed"
 			err := opts.Parse(
@@ -174,6 +298,34 @@ var _ = Describe("Options", func() {
 				"--kubelet-identity-client-id", "not-a-uuid",
 			)
 			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
+		It("should fail when compute-recommendation-mode is invalid", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--compute-recommendation-mode", "invalid-mode",
+			)
+			Expect(err).To(MatchError(ContainSubstring("compute-recommendation-mode \"invalid-mode\" is invalid")))
+		})
+		It("should accept valid compute-recommendation-mode values", func() {
+			for _, mode := range []string{"disabled"} { // TODO: Add other modes in the future, "log-only", "enabled"
+				err := opts.Parse(
+					fs,
+					"--cluster-name", "my-name",
+					"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+					"--kubelet-bootstrap-token", "flag-bootstrap-token",
+					"--ssh-public-key", "flag-ssh-public-key",
+					"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+					"--node-resource-group", "my-node-rg",
+					"--compute-recommendation-mode", mode,
+				)
+				Expect(err).ToNot(HaveOccurred(), "mode %q should be valid", mode)
+			}
 		})
 		It("should fail when vnet guid is not a uuid", func() {
 			errMsg := "vnet-guid null is malformed"
@@ -751,7 +903,7 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
 				"--provision-mode", "aksmachineapi",
-				"--aks-machines-pool-name", "testmpool",
+				"--aks-machines-pool-name", "mpool",
 				"--use-sig",
 				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
 			)
@@ -813,12 +965,29 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 				"--manage-existing-aks-machines",
 				"--provision-mode", "aksmachineapi",
-				"--aks-machines-pool-name", "testmpool",
+				"--aks-machines-pool-name", "mpool",
 				"--use-sig",
 				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(opts.ManageExistingAKSMachines).To(BeTrue())
+		})
+
+		It("should succeed with provision-mode aksmachineapiheaderbatch", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapiheaderbatch",
+				"--aks-machines-pool-name", "mpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+			)
+			Expect(err).ToNot(HaveOccurred())
 		})
 	})
 
@@ -935,3 +1104,30 @@ var _ = Describe("Options", func() {
 		})
 	})
 })
+
+func TestShouldUseNodeHardening(t *testing.T) {
+	tests := []struct {
+		name          string
+		enabled       bool
+		provisionMode string
+		want          bool
+	}{
+		{name: "disabled for scriptless", provisionMode: consts.ProvisionModeAKSScriptless},
+		{name: "enabled for scriptless", enabled: true, provisionMode: consts.ProvisionModeAKSScriptless, want: true},
+		{name: "skipped for bootstrapping client", enabled: true, provisionMode: consts.ProvisionModeBootstrappingClient},
+		{name: "enabled for machine API", enabled: true, provisionMode: consts.ProvisionModeAKSMachineAPI, want: true},
+		{name: "enabled for machine API header batch", enabled: true, provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, want: true},
+		{name: "skipped for unknown mode", enabled: true, provisionMode: "unknown"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			opts := &options.Options{
+				EnableNodeHardening: test.enabled,
+				ProvisionMode:       test.provisionMode,
+			}
+			g.Expect(opts.ShouldUseNodeHardening()).To(Equal(test.want))
+		})
+	}
+}

@@ -22,135 +22,130 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armrecommender"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/capacityrecommendation"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"github.com/Azure/skewer"
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
 
-type AKSMachinesAPI interface {
-	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, parameters armcontainerservice.Machine, options *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error)
-	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error)
-	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
-}
-
-type AKSAgentPoolsAPI interface {
-	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.AgentPoolsClientGetOptions) (armcontainerservice.AgentPoolsClientGetResponse, error)
-	BeginDeleteMachines(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachines armcontainerservice.AgentPoolDeleteMachinesParameter, options *armcontainerservice.AgentPoolsClientBeginDeleteMachinesOptions) (*runtime.Poller[armcontainerservice.AgentPoolsClientDeleteMachinesResponse], error)
-}
-
-type VirtualMachinesAPI interface {
-	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachine, options *armcompute.VirtualMachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error)
-	Get(ctx context.Context, resourceGroupName string, vmName string, options *armcompute.VirtualMachinesClientGetOptions) (armcompute.VirtualMachinesClientGetResponse, error)
-	BeginUpdate(ctx context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachineUpdate, options *armcompute.VirtualMachinesClientBeginUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientUpdateResponse], error)
-	BeginDelete(ctx context.Context, resourceGroupName string, vmName string, options *armcompute.VirtualMachinesClientBeginDeleteOptions) (*runtime.Poller[armcompute.VirtualMachinesClientDeleteResponse], error)
-}
-
-type AzureResourceGraphAPI interface {
-	Resources(ctx context.Context, query armresourcegraph.QueryRequest, options *armresourcegraph.ClientResourcesOptions) (armresourcegraph.ClientResourcesResponse, error)
-}
-
-type VirtualMachineExtensionsAPI interface {
-	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, vmName string, vmExtensionName string, extensionParameters armcompute.VirtualMachineExtension, options *armcompute.VirtualMachineExtensionsClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse], error)
-	BeginUpdate(ctx context.Context, resourceGroupName string, vmName string, vmExtensionName string, extensionParameters armcompute.VirtualMachineExtensionUpdate, options *armcompute.VirtualMachineExtensionsClientBeginUpdateOptions) (*runtime.Poller[armcompute.VirtualMachineExtensionsClientUpdateResponse], error)
-}
-
-type NetworkInterfacesAPI interface {
-	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, networkInterfaceName string, parameters armnetwork.Interface, options *armnetwork.InterfacesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armnetwork.InterfacesClientCreateOrUpdateResponse], error)
-	BeginDelete(ctx context.Context, resourceGroupName string, networkInterfaceName string, options *armnetwork.InterfacesClientBeginDeleteOptions) (*runtime.Poller[armnetwork.InterfacesClientDeleteResponse], error)
-	Get(ctx context.Context, resourceGroupName string, networkInterfaceName string, options *armnetwork.InterfacesClientGetOptions) (armnetwork.InterfacesClientGetResponse, error)
-	UpdateTags(ctx context.Context, resourceGroupName string, networkInterfaceName string, tags armnetwork.TagsObject, options *armnetwork.InterfacesClientUpdateTagsOptions) (armnetwork.InterfacesClientUpdateTagsResponse, error)
-}
-
-type SubnetsAPI interface {
-	Get(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error)
-}
-
-type DiskEncryptionSetsAPI interface {
-	Get(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error)
-}
-
 type AZClient struct {
-	azureResourceGraphClient       AzureResourceGraphAPI
-	virtualMachinesClient          VirtualMachinesAPI
-	aksMachinesClient              AKSMachinesAPI
-	agentPoolsClient               AKSAgentPoolsAPI
-	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
-	networkInterfacesClient        NetworkInterfacesAPI
-	subnetsClient                  SubnetsAPI
-	diskEncryptionSetsClient       DiskEncryptionSetsAPI
+	azureResourceGraphClient        azapi.AzureResourceGraphAPI
+	virtualMachinesClient           azapi.VirtualMachinesAPI
+	aksMachinesClient               azapi.AKSMachinesAPI
+	aksMachinesBatchClient          aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI
+	agentPoolsClient                azapi.AKSAgentPoolsAPI
+	managedClustersClient           azapi.AKSManagedClustersAPI
+	virtualMachinesExtensionClient  azapi.VirtualMachineExtensionsAPI
+	networkInterfacesClient         azapi.NetworkInterfacesAPI
+	subnetsClient                   azapi.SubnetsAPI
+	diskEncryptionSetsClient        azapi.DiskEncryptionSetsAPI
+	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI
+	capacityReservationsClient      azapi.CapacityReservationsAPI
 
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
 	NodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
-	SKUClient                   skewer.ResourceClient
-	LoadBalancersClient         loadbalancer.LoadBalancersAPI
-	NetworkSecurityGroupsClient networksecuritygroup.API
-	SubscriptionsClient         zone.SubscriptionsAPI
+	SKUClient                          skewer.ResourceClient
+	LoadBalancersClient                loadbalancer.LoadBalancersAPI
+	NetworkSecurityGroupsClient        networksecuritygroup.API
+	SubscriptionsClient                zone.SubscriptionsAPI
+	UsageClient                        quota.UsageAPI
+	QuotaCategoryVMFamilyMappingClient quota.QuotaCategoryVMFamilyMappingAPI
+	SKUMixPlacementClient              capacityrecommendation.SKUMixPlacementScoresAPI
 }
 
-func (c *AZClient) SubnetsClient() SubnetsAPI {
+func (c *AZClient) SubnetsClient() azapi.SubnetsAPI {
 	return c.subnetsClient
 }
 
-func (c *AZClient) DiskEncryptionSetsClient() DiskEncryptionSetsAPI {
+func (c *AZClient) DiskEncryptionSetsClient() azapi.DiskEncryptionSetsAPI {
 	return c.diskEncryptionSetsClient
 }
 
-func (c *AZClient) AKSMachinesClient() AKSMachinesAPI {
+func (c *AZClient) CapacityReservationGroupsClient() azapi.CapacityReservationGroupsAPI {
+	return c.capacityReservationGroupsClient
+}
+
+func (c *AZClient) CapacityReservationsClient() azapi.CapacityReservationsAPI {
+	return c.capacityReservationsClient
+}
+
+func (c *AZClient) AKSMachinesClient() azapi.AKSMachinesAPI {
 	return c.aksMachinesClient
 }
 
-// SetAKSMachinesClient replaces the AKS machines client. This is used to wrap the client
-// with a batching layer when BatchCreationEnabled is true.
-func (c *AZClient) SetAKSMachinesClient(client AKSMachinesAPI) {
-	c.aksMachinesClient = client
+func (c *AZClient) AKSMachinesBatchClient() aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI {
+	return c.aksMachinesBatchClient
 }
 
-func (c *AZClient) AgentPoolsClient() AKSAgentPoolsAPI {
+func (c *AZClient) AgentPoolsClient() azapi.AKSAgentPoolsAPI {
 	return c.agentPoolsClient
 }
 
-func (c *AZClient) VirtualMachinesClient() VirtualMachinesAPI {
+func (c *AZClient) ManagedClustersClient() azapi.AKSManagedClustersAPI {
+	return c.managedClustersClient
+}
+
+func (c *AZClient) VirtualMachinesClient() azapi.VirtualMachinesAPI {
 	return c.virtualMachinesClient
 }
 
-func (c *AZClient) VirtualMachineExtensionsClient() VirtualMachineExtensionsAPI {
+func (c *AZClient) VirtualMachineExtensionsClient() azapi.VirtualMachineExtensionsAPI {
 	return c.virtualMachinesExtensionClient
 }
 
-func (c *AZClient) NetworkInterfacesClient() NetworkInterfacesAPI {
+func (c *AZClient) NetworkInterfacesClient() azapi.NetworkInterfacesAPI {
 	return c.networkInterfacesClient
 }
 
-func (c *AZClient) AzureResourceGraphClient() AzureResourceGraphAPI {
+func (c *AZClient) AzureResourceGraphClient() azapi.AzureResourceGraphAPI {
 	return c.azureResourceGraphClient
 }
 
+func newAKSMachinesClient(subscriptionID string, cred azcore.TokenCredential, opts *arm.ClientOptions) (*armcontainerservice.MachinesClient, error) {
+	machinesClientOptions := opts.Clone()
+	if machinesClientOptions == nil {
+		machinesClientOptions = &arm.ClientOptions{}
+	}
+	machinesClientOptions.PerCallPolicies = append(machinesClientOptions.PerCallPolicies, &spotSystemNodePolicy{}, &machinesListExpandPolicy{})
+	return armcontainerservice.NewMachinesClient(subscriptionID, cred, machinesClientOptions)
+}
+
 func NewAZClientFromAPI(
-	virtualMachinesClient VirtualMachinesAPI,
-	azureResourceGraphClient AzureResourceGraphAPI,
-	aksMachinesClient AKSMachinesAPI,
-	agentPoolsClient AKSAgentPoolsAPI,
-	virtualMachinesExtensionClient VirtualMachineExtensionsAPI,
-	interfacesClient NetworkInterfacesAPI,
-	subnetsClient SubnetsAPI,
-	diskEncryptionSetsClient DiskEncryptionSetsAPI,
+	virtualMachinesClient azapi.VirtualMachinesAPI,
+	azureResourceGraphClient azapi.AzureResourceGraphAPI,
+	aksMachinesClient azapi.AKSMachinesAPI,
+	aksMachinesBatchClient aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI,
+	agentPoolsClient azapi.AKSAgentPoolsAPI,
+	managedClustersClient azapi.AKSManagedClustersAPI,
+	virtualMachinesExtensionClient azapi.VirtualMachineExtensionsAPI,
+	interfacesClient azapi.NetworkInterfacesAPI,
+	subnetsClient azapi.SubnetsAPI,
+	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
+	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI,
+	capacityReservationsClient azapi.CapacityReservationsAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
 	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
@@ -158,23 +153,33 @@ func NewAZClientFromAPI(
 	nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI,
 	skuClient skewer.ResourceClient,
 	subscriptionsClient zone.SubscriptionsAPI,
+	usageClient quota.UsageAPI,
+	quotaCategoryVMFamilyMappingClient quota.QuotaCategoryVMFamilyMappingAPI,
+	skuMixPlacementClient capacityrecommendation.SKUMixPlacementScoresAPI,
 ) *AZClient {
 	return &AZClient{
-		virtualMachinesClient:          virtualMachinesClient,
-		azureResourceGraphClient:       azureResourceGraphClient,
-		aksMachinesClient:              aksMachinesClient,
-		agentPoolsClient:               agentPoolsClient,
-		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
-		networkInterfacesClient:        interfacesClient,
-		subnetsClient:                  subnetsClient,
-		diskEncryptionSetsClient:       diskEncryptionSetsClient,
-		ImageVersionsClient:            imageVersionsClient,
-		NodeImageVersionsClient:        nodeImageVersionsClient,
-		NodeBootstrappingClient:        nodeBootstrappingClient,
-		SKUClient:                      skuClient,
-		LoadBalancersClient:            loadBalancersClient,
-		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
-		SubscriptionsClient:            subscriptionsClient,
+		virtualMachinesClient:              virtualMachinesClient,
+		azureResourceGraphClient:           azureResourceGraphClient,
+		aksMachinesClient:                  aksMachinesClient,
+		aksMachinesBatchClient:             aksMachinesBatchClient,
+		agentPoolsClient:                   agentPoolsClient,
+		managedClustersClient:              managedClustersClient,
+		virtualMachinesExtensionClient:     virtualMachinesExtensionClient,
+		networkInterfacesClient:            interfacesClient,
+		subnetsClient:                      subnetsClient,
+		diskEncryptionSetsClient:           diskEncryptionSetsClient,
+		capacityReservationGroupsClient:    capacityReservationGroupsClient,
+		capacityReservationsClient:         capacityReservationsClient,
+		ImageVersionsClient:                imageVersionsClient,
+		NodeImageVersionsClient:            nodeImageVersionsClient,
+		NodeBootstrappingClient:            nodeBootstrappingClient,
+		SKUClient:                          skuClient,
+		LoadBalancersClient:                loadBalancersClient,
+		NetworkSecurityGroupsClient:        networkSecurityGroupsClient,
+		SubscriptionsClient:                subscriptionsClient,
+		UsageClient:                        usageClient,
+		QuotaCategoryVMFamilyMappingClient: quotaCategoryVMFamilyMappingClient,
+		SKUMixPlacementClient:              skuMixPlacementClient,
 	}
 }
 
@@ -200,7 +205,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
 	var auxiliaryTokenClient auth.AuxiliaryTokenServer
-	if o.UseSIG && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI { // Not doing this if PROVISION_MODE is aksmachineapi as Create will never use VM client, but want to allow other VM client operations
+	if o.UseSIG && !o.IsAKSMachineAPIMode() { // Not doing this if PROVISION_MODE is an AKS machine API mode as Create will never use VM client, but want to allow other VM client operations
 		log.FromContext(ctx).Info("using SIG for image versions with auxiliary token policy for creating virtual machines")
 		auxiliaryTokenClient = armopts.DefaultHTTPClient()
 		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, auth.TokenScope(env.Cloud))
@@ -226,6 +231,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
+	managedClustersClient, err := armcontainerservice.NewManagedClustersClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	loadBalancersClient, err := armnetwork.NewLoadBalancersClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
@@ -246,14 +256,45 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
+	capacityReservationGroupsClient, err := armcompute.NewCapacityReservationGroupsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	capacityReservationsClient, err := armcompute.NewCapacityReservationsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Note that this is the Microsoft.Compute/locations/usages API,
+	// which is different than the Microsoft.Quota API. We use it here because:
+	//   * It is what the portal uses.
+	//   * It doesn't require additional RBAC over and above VM contributor which we already require.
+	//   * It is functionally identical to the Microsoft.Quota API.
+	// See designs/0012-quota-fungibility-reactivity-improvements.md for more details.
+	usageClient, err := armcompute.NewUsageClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+	quotaCategoryVMFamilyMappingAPI, err := armcomputelimit.NewVMFamiliesClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	skuMixPlacementClient, err := armrecommender.NewSKUMixPlacementScoresClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(cfg.SubscriptionID, cred, env.Cloud)
 
 	// These clients are used for Azure instance management.
 	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
-	var aksMachinesClient AKSMachinesAPI
-	var agentPoolsClient AKSAgentPoolsAPI
+	var aksMachinesClient azapi.AKSMachinesAPI
+	var aksMachinesBatchClient aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI
+	var agentPoolsClient azapi.AKSAgentPoolsAPI
 
 	// Only create the bootstrapping client if we need to use it.
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
@@ -273,8 +314,8 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 
 	// Only create AKS machine clients if we need to use them.
 	// Otherwise, use the no-op dry clients, which will act like there are no AKS machines present.
-	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ManageExistingAKSMachines {
-		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
+	if o.IsAKSMachineAPIMode() || o.ManageExistingAKSMachines {
+		aksMachinesClient, err = newAKSMachinesClient(cfg.SubscriptionID, cred, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -298,15 +339,31 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		}
 	}
 
+	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+		aksMachinesBatchClient = aksmachinesheaderbatch.NewClient(
+			ctx,
+			aksMachinesClient,
+			batcher.Options{
+				IdleTimeout:  o.ProviderBatchIdleDuration,
+				MaxTimeout:   o.ProviderBatchMaxDuration,
+				MaxBatchSize: o.ProviderBatchMaxSize,
+			},
+		)
+	}
+
 	return NewAZClientFromAPI(
 		virtualMachinesClient,
 		azureResourceGraphClient,
 		aksMachinesClient,
+		aksMachinesBatchClient,
 		agentPoolsClient,
+		managedClustersClient,
 		extensionsClient,
 		interfacesClient,
 		subnetsClient,
 		diskEncryptionSetsClient,
+		capacityReservationGroupsClient,
+		capacityReservationsClient,
 		loadBalancersClient,
 		networkSecurityGroupsClient,
 		communityImageVersionsClient,
@@ -314,5 +371,8 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		nodeBootstrappingClient,
 		skuClient,
 		subscriptionsClient,
+		usageClient,
+		quotaCategoryVMFamilyMappingAPI,
+		skuMixPlacementClient,
 	), nil
 }

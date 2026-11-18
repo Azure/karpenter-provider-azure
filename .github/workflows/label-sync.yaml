@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -21,6 +21,9 @@ jobs:
             aquasecurity.github.io:443
             azure.archive.ubuntu.com:80
             esm.ubuntu.com:443
+            aka.ms:443
+            download.visualstudio.microsoft.com:443
+            download.microsoft.com:443
             github.com:443
             packages.microsoft.com:443
             proxy.golang.org:443
@@ -31,7 +34,7 @@ jobs:
             packages.microsoft.com:443
             esm.ubuntu.com:443
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/install-deps
 
       # Note that this does not delete labels, it only adds/updates them. If labels need to be deleted

@@ -62,8 +62,14 @@ type ProvisionClientBootstrap struct {
 	StorageProfile                 string
 	OSSKU                          string
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
+	GPUDriverInstallationEnabled   bool
 	FIPSMode                       *v1beta1.FIPSMode
+	WorkloadRuntime                *v1beta1.WorkloadRuntime
 	LocalDNSProfile                *v1beta1.LocalDNS
+	ArtifactStreaming              *v1beta1.ArtifactStreaming
+	LinuxOSConfig                  *v1beta1.LinuxOSConfiguration
+	VTPMEnabled                    *bool
+	SecureBootEnabled              *bool
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -103,12 +109,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 	nodeLabels := lo.Assign(map[string]string{}, p.Labels)
 
-	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, Ubuntu 24.04, and for Azure Linux v3
-	// enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
-	//		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
-	// Temporarily disable artifact streaming altogether, until node provisioning performance is fixed
-	// (or until we make artifact streaming configurable)
-	enableArtifactStreaming := false
+	enableArtifactStreaming := p.ArtifactStreaming.IsEnabled(p.Arch)
 
 	// unspecified FIPSMode is effectively no FIPS for now
 	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS
@@ -126,9 +127,9 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		NodeInitializationTaints: lo.Map(p.StartupTaints, func(taint v1.Taint, _ int) string { return taint.ToString() }),
 		NodeTaints:               lo.Map(p.Taints, func(taint v1.Taint, _ int) string { return taint.ToString() }),
 		SecurityProfile: &models.AgentPoolSecurityProfile{
-			SSHAccess: lo.ToPtr(models.SSHAccessLocalUser),
-			// EnableVTPM:       lo.ToPtr(false), // Unsupported as of now (Trusted launch)
-			// EnableSecureBoot: lo.ToPtr(false), // Unsupported as of now (Trusted launch)
+			SSHAccess:        lo.ToPtr(models.SSHAccessLocalUser),
+			EnableVTPM:       p.VTPMEnabled,
+			EnableSecureBoot: p.SecureBootEnabled,
 		},
 		MaxPods: lo.ToPtr(p.KubeletConfig.MaxPods),
 
@@ -137,9 +138,12 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		// AgentPoolWindowsProfile: &models.AgentPoolWindowsProfile{},               // Unsupported as of now; TODO(Windows)
 		// KubeletDiskType:         lo.ToPtr(models.KubeletDiskTypeUnspecified),    // Unsupported as of now
 		// CustomLinuxOSConfig:     &models.CustomLinuxOSConfig{},                   // Unsupported as of now (sysctl)
-		EnableFIPS: lo.ToPtr(enableFIPS),
+		CustomLinuxOSConfig: convertLinuxOSConfigToModel(p.LinuxOSConfig),
+		EnableFIPS:          lo.ToPtr(enableFIPS),
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
-		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
+		// WorkloadRuntime is left unset for the default OCIContainer case so existing payloads are
+		// unchanged; it is only sent when Pod Sandboxing (Kata) is requested.
+		WorkloadRuntime: convertWorkloadRuntimeToModel(p.WorkloadRuntime),
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
 			Enabled: lo.ToPtr(enableArtifactStreaming),
 		},
@@ -165,6 +169,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 			ImageGcLowThreshold:  p.KubeletConfig.ImageGCLowThresholdPercent,
 			ContainerLogMaxFiles: p.KubeletConfig.ContainerLogMaxFiles,
 			PodMaxPids:           ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+			FailSwapOn:           p.KubeletConfig.FailSwapOn,
 		}
 
 		if p.KubeletConfig.ContainerLogMaxSize != nil {
@@ -195,7 +200,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	if utils.IsNvidiaEnabledSKU(p.InstanceType.Name) {
 		provisionProfile.GpuProfile = &models.GPUProfile{
 			DriverType:       lo.ToPtr(lo.Ternary(utils.UseGridDrivers(p.InstanceType.Name), models.DriverTypeGRID, models.DriverTypeCUDA)),
-			InstallGPUDriver: lo.ToPtr(true),
+			InstallGPUDriver: lo.ToPtr(p.GPUDriverInstallationEnabled),
 		}
 	}
 
@@ -208,4 +213,14 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		ProvisionProfile:      provisionProfile,
 		ProvisionHelperValues: provisionHelperValues,
 	}, nil
+}
+
+// convertWorkloadRuntimeToModel maps the AKSNodeClass workloadRuntime onto the node bootstrapping
+// contract's WorkloadRuntime enum. It returns nil for the default OCIContainer case so non-Kata
+// NodeClasses keep their existing wire payload.
+func convertWorkloadRuntimeToModel(workloadRuntime *v1beta1.WorkloadRuntime) *int32 {
+	if lo.FromPtr(workloadRuntime) == v1beta1.WorkloadRuntimeKataVMIsolation {
+		return lo.ToPtr(models.WorkloadRuntimeKataVMIsolation)
+	}
+	return nil
 }

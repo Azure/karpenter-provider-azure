@@ -45,7 +45,16 @@ func (u Ubuntu2004) Name() string {
 	return v1beta1.UbuntuImageFamily
 }
 
-func (u Ubuntu2004) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+func (u Ubuntu2004) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
+	// Trusted Launch is not supported for Ubuntu 20.04
+	if trustedLaunch {
+		return []types.DefaultImageOutput{}
+	}
+	// There is no Kata (Pod Sandboxing) image for Ubuntu — only AzureLinux publishes one.
+	if kataEnabled {
+		return []types.DefaultImageOutput{}
+	}
+
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		// Ubuntu2004 doesn't have default node images (only FIPS)
@@ -90,17 +99,18 @@ func (u Ubuntu2004) ScriptlessCustomData(
 ) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
-			ClusterName:      u.Options.ClusterName,
-			ClusterEndpoint:  u.Options.ClusterEndpoint,
-			KubeletConfig:    kubeletConfig,
-			Taints:           taints,
-			Labels:           labels,
-			CABundle:         caBundle,
-			GPUNode:          u.Options.GPUNode,
-			GPUDriverVersion: u.Options.GPUDriverVersion,
-			GPUDriverType:    u.Options.GPUDriverType,
-			GPUImageSHA:      u.Options.GPUImageSHA,
-			SubnetID:         u.Options.SubnetID,
+			ClusterName:                  u.Options.ClusterName,
+			ClusterEndpoint:              u.Options.ClusterEndpoint,
+			KubeletConfig:                kubeletConfig,
+			Taints:                       taints,
+			Labels:                       labels,
+			CABundle:                     caBundle,
+			GPUNode:                      u.Options.GPUNode,
+			GPUDriverVersion:             u.Options.GPUDriverVersion,
+			GPUDriverType:                u.Options.GPUDriverType,
+			GPUImageSHA:                  u.Options.GPUImageSHA,
+			GPUDriverInstallationEnabled: u.Options.GPUDriverInstallationEnabled,
+			SubnetID:                     u.Options.SubnetID,
 		},
 		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,
@@ -108,7 +118,8 @@ func (u Ubuntu2004) ScriptlessCustomData(
 		Location:                       u.Options.Location,
 		KubeletIdentityClientID:        u.Options.KubeletIdentityClientID,
 		ResourceGroup:                  u.Options.ResourceGroup,
-		ClusterID:                      u.Options.ClusterID,
+		NetworkSecurityGroupName:       u.Options.NetworkSecurityGroupName,
+		RouteTableName:                 u.Options.RouteTableName,
 		APIServerName:                  u.Options.APIServerName,
 		KubeletClientTLSBootstrapToken: u.Options.KubeletClientTLSBootstrapToken,
 		NetworkPlugin:                  u.Options.NetworkPlugin,
@@ -128,7 +139,12 @@ func (u Ubuntu2004) CustomScriptsNodeBootstrapping(
 	storageProfile string,
 	nodeBootstrappingClient types.NodeBootstrappingAPI,
 	fipsMode *v1beta1.FIPSMode,
+	workloadRuntime *v1beta1.WorkloadRuntime,
 	_ *v1beta1.LocalDNS, // Ubuntu 20.04 does not support LocalDNS
+	artifactStreaming *v1beta1.ArtifactStreaming,
+	linuxOSConfig *v1beta1.LinuxOSConfiguration,
+	vtpmEnabled *bool,
+	secureBootEnabled *bool,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -146,8 +162,14 @@ func (u Ubuntu2004) CustomScriptsNodeBootstrapping(
 		InstanceType:                   instanceType,
 		StorageProfile:                 storageProfile,
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
+		GPUDriverInstallationEnabled:   u.Options.GPUDriverInstallationEnabled,
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
 		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
 		FIPSMode:                       fipsMode,
+		WorkloadRuntime:                workloadRuntime,
+		ArtifactStreaming:              artifactStreaming,
+		LinuxOSConfig:                  linuxOSConfig,
+		VTPMEnabled:                    vtpmEnabled,
+		SecureBootEnabled:              secureBootEnabled,
 	}
 }

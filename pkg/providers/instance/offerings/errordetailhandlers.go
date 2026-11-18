@@ -20,9 +20,10 @@ import (
 	"context"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/skewer"
+	"github.com/samber/lo"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
@@ -46,6 +47,12 @@ func NewErrorDetailHandler(unavailableOfferings *cache.UnavailableOfferings) *Er
 	return &ErrorDetailHandler{
 		UnavailableOfferings: unavailableOfferings,
 		HandlerEntries: []errorDetailHandlerEntry{
+			{
+				match: func(detail armcontainerservice.ErrorDetail) bool {
+					return lo.FromPtr(detail.Code) == InvalidAvailabilityZoneReason
+				},
+				handle: handleInvalidAvailabilityZoneError,
+			},
 			{
 				match:  sdkerrors.LowPriorityQuotaHasBeenReachedInErrorDetail,
 				handle: handleLowPriorityQuotaError,
@@ -93,11 +100,13 @@ func (h *ErrorDetailHandler) extractErrorCodeAndMessage(errorDetail armcontainer
 	return code, message
 }
 
-func (h *ErrorDetailHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, errorDetail armcontainerservice.ErrorDetail) error {
+// Handle scopes capacity failures to capacityReservationGroupID, or to unreserved capacity
+// when it is empty.
+func (h *ErrorDetailHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, capacityReservationGroupID string, errorDetail armcontainerservice.ErrorDetail) error {
 	for _, handler := range h.HandlerEntries {
 		if handler.match(errorDetail) {
 			errorCode, errorMessage := h.extractErrorCodeAndMessage(errorDetail)
-			return handler.handle(ctx, h.UnavailableOfferings, sku, instanceType, zone, capacityType, errorCode, errorMessage)
+			return handler.handle(ctx, h.UnavailableOfferings.ForCapacityReservationGroup(capacityReservationGroupID), sku, instanceType, zone, capacityType, errorCode, errorMessage)
 		}
 	}
 

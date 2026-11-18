@@ -19,6 +19,7 @@ package fake
 import (
 	"context"
 	"net/http"
+	"sync"
 	"sync/atomic"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -29,8 +30,25 @@ type MockedFunction[I any, O any] struct {
 	CalledWithInput AtomicPtrStack[I] // Stack used to keep track of passed input to this function
 	Error           AtomicError       // Error to return a certain number of times defined by custom error options
 
-	successfulCalls atomic.Int32 // Internal construct to keep track of the number of times this function has successfully been called
-	failedCalls     atomic.Int32 // Internal construct to keep track of the number of times this function has failed (with error)
+	successfulCalls     atomic.Int32 // Internal construct to keep track of the number of times this function has successfully been called
+	failedCalls         atomic.Int32 // Internal construct to keep track of the number of times this function has failed (with error)
+	customTransformerMu sync.RWMutex
+	customTransformer   func(*I) error // Optional hook called before the default transformer; can modify input or return an error to short-circuit
+}
+
+// SetCustomTransformer sets an optional hook that is called before the default
+// transformer in Invoke. The hook may modify the input in place or return an
+// error to short-circuit the call.
+func (m *MockedFunction[I, O]) SetCustomTransformer(fn func(*I) error) {
+	m.customTransformerMu.Lock()
+	defer m.customTransformerMu.Unlock()
+	m.customTransformer = fn
+}
+
+func (m *MockedFunction[I, O]) getCustomTransformer() func(*I) error {
+	m.customTransformerMu.RLock()
+	defer m.customTransformerMu.RUnlock()
+	return m.customTransformer
 }
 
 // Reset must be called between tests otherwise tests will pollute
@@ -39,6 +57,7 @@ func (m *MockedFunction[I, O]) Reset() {
 	m.Output.Reset()
 	m.CalledWithInput.Reset()
 	m.Error.Reset()
+	m.SetCustomTransformer(nil)
 
 	m.successfulCalls.Store(0)
 	m.failedCalls.Store(0)
@@ -51,6 +70,14 @@ func (m *MockedFunction[I, O]) Invoke(input *I, defaultTransformer func(*I) (O, 
 		m.failedCalls.Add(1)
 		return *new(O), err
 	}
+
+	if ct := m.getCustomTransformer(); ct != nil {
+		if err := ct(input); err != nil {
+			m.failedCalls.Add(1)
+			return *new(O), err
+		}
+	}
+
 	if !m.Output.IsNil() {
 		m.successfulCalls.Add(1)
 		return *m.Output.Clone(), nil
@@ -83,13 +110,8 @@ type MockedLRO[I any, O any] struct {
 
 // Reset must be called between tests otherwise tests will pollute each other.
 func (m *MockedLRO[I, O]) Reset() {
-	m.Output.Reset()
-	m.CalledWithInput.Reset()
+	m.MockedFunction.Reset()
 	m.BeginError.Reset()
-	m.Error.Reset()
-
-	m.successfulCalls.Store(0)
-	m.failedCalls.Store(0)
 }
 
 func (m *MockedLRO[I, O]) Invoke(input *I, defaultTransformer func(*I) (*O, error)) (*runtime.Poller[O], error) {
@@ -102,6 +124,13 @@ func (m *MockedLRO[I, O]) Invoke(input *I, defaultTransformer func(*I) (*O, erro
 	if err := m.Error.Get(); err != nil {
 		m.failedCalls.Add(1)
 		return newMockPoller[O](nil, err)
+	}
+
+	if ct := m.getCustomTransformer(); ct != nil {
+		if err := ct(input); err != nil {
+			m.failedCalls.Add(1)
+			return nil, err
+		}
 	}
 
 	if !m.Output.IsNil() {

@@ -66,6 +66,15 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
 	fipsMode := lo.ToPtr(v1beta1.FIPSModeDisabled)
 	localDNS := &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
+	artifactStreaming := &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)}
+	linuxOSConfig := &v1beta1.LinuxOSConfiguration{
+		SwapFileSize:               lo.ToPtr("1500Mi"),
+		TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledMadvise),
+	}
+	vtpmEnabled := lo.ToPtr(true)
+	secureBootEnabled := lo.ToPtr(true)
+
+	var workloadRuntime *v1beta1.WorkloadRuntime // default OCIContainer
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -77,7 +86,12 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		storageProfile,
 		nodeBootstrappingClient,
 		fipsMode,
+		workloadRuntime,
 		localDNS,
+		artifactStreaming,
+		linuxOSConfig,
+		vtpmEnabled,
+		secureBootEnabled,
 	)
 
 	g := NewWithT(t)
@@ -106,10 +120,77 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	g.Expect(provisionBootstrapper.OSSKU).To(Equal(customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204), "ImageFamily field must be set to prevent unsupported image family errors")
 	g.Expect(provisionBootstrapper.FIPSMode).To(Equal(fipsMode), "FIPSMode field must match the input parameter")
 	g.Expect(provisionBootstrapper.LocalDNSProfile).To(Equal(localDNS), "LocalDNSProfile field must match the input parameter")
+	g.Expect(provisionBootstrapper.LinuxOSConfig).To(Equal(linuxOSConfig), "LinuxOSConfig field must match the input parameter")
+	g.Expect(provisionBootstrapper.VTPMEnabled).To(Equal(lo.ToPtr(true)))
+	g.Expect(provisionBootstrapper.SecureBootEnabled).To(Equal(lo.ToPtr(true)))
 }
 
 func TestUbuntu2204_Name(t *testing.T) {
 	g := NewWithT(t)
 	ubuntu := imagefamily.Ubuntu2204{}
 	g.Expect(ubuntu.Name()).To(Equal(v1beta1.Ubuntu2204ImageFamily))
+}
+
+func TestUbuntu2204_DefaultImages(t *testing.T) {
+	ubuntu := &imagefamily.Ubuntu2204{
+		Options: &parameters.StaticParameters{},
+	}
+
+	t.Run("should return correct default images", func(t *testing.T) {
+		g := NewWithT(t)
+		images := ubuntu.DefaultImages(false, nil, false, false)
+		g.Expect(images).To(HaveLen(3))
+
+		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2ImageDefinition))
+		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-containerd-22.04-gen2"))
+
+		g.Expect(images[1].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen1ImageDefinition))
+		g.Expect(images[1].Distro).To(Equal("aks-ubuntu-containerd-22.04"))
+
+		g.Expect(images[2].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2ArmImageDefinition))
+		g.Expect(images[2].Distro).To(Equal("aks-ubuntu-arm64-containerd-22.04-gen2"))
+	})
+
+	t.Run("should return correct images for TrustedLaunch", func(t *testing.T) {
+		g := NewWithT(t)
+		images := ubuntu.DefaultImages(false, nil, true, false)
+		g.Expect(images).To(HaveLen(1))
+		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2TrustedLaunchImageDefinition))
+		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-containerd-22.04-tl-gen2"))
+	})
+
+	t.Run("should return empty images for FIPS mode without SIG", func(t *testing.T) {
+		g := NewWithT(t)
+		fipsMode := v1beta1.FIPSModeFIPS
+		images := ubuntu.DefaultImages(false, &fipsMode, false, false)
+		g.Expect(images).To(BeEmpty())
+	})
+
+	t.Run("should return images for FIPS mode with SIG", func(t *testing.T) {
+		g := NewWithT(t)
+		fipsMode := v1beta1.FIPSModeFIPS
+		images := ubuntu.DefaultImages(true, &fipsMode, false, false)
+		g.Expect(images).To(HaveLen(2))
+
+		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2FIPSImageDefinition))
+		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-fips-containerd-22.04-gen2"))
+
+		g.Expect(images[1].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen1FIPSImageDefinition))
+		g.Expect(images[1].Distro).To(Equal("aks-ubuntu-fips-containerd-22.04"))
+	})
+
+	t.Run("should return TrustedLaunch images for FIPS mode with SIG", func(t *testing.T) {
+		g := NewWithT(t)
+		fipsMode := v1beta1.FIPSModeFIPS
+		images := ubuntu.DefaultImages(true, &fipsMode, true, false)
+		g.Expect(images).To(HaveLen(1))
+		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2FIPSTLImageDefinition))
+		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-fips-containerd-22.04-tl-gen2"))
+	})
+
+	t.Run("should return empty images when Kata is enabled", func(t *testing.T) {
+		g := NewWithT(t)
+		images := ubuntu.DefaultImages(true, nil, false, true)
+		g.Expect(images).To(BeEmpty())
+	})
 }

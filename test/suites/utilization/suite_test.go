@@ -24,13 +24,12 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/labels"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 )
 
@@ -48,7 +47,7 @@ func TestUtilization(t *testing.T) {
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()
-	nodeClass = env.DefaultAKSNodeClass()
+	nodeClass = azkarptest.AKSNodeClass()
 	nodePool = env.DefaultNodePool(nodeClass)
 })
 
@@ -58,7 +57,7 @@ var _ = AfterEach(func() { env.AfterEach() })
 var _ = Describe("Utilization", func() {
 	DescribeTable("should provision one pod per node",
 		func(imageFamily string, arch string) {
-			nodeClass := env.DefaultAKSNodeClass()
+			nodeClass := azkarptest.AKSNodeClass()
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			nodePool := lo.Ternary(arch == karpv1.ArchitectureAmd64, env.DefaultNodePool(nodeClass), env.ArmNodepool(nodeClass))
 			ExpectProvisionPodPerNode(nodeClass, nodePool)
@@ -66,8 +65,7 @@ var _ = Describe("Utilization", func() {
 
 		// AzureLinux
 		Entry("AzureLinux, amd64", v1beta1.AzureLinuxImageFamily, karpv1.ArchitectureAmd64),
-		// Covered below due to conditional logic, arm64 is not available in CIG
-		// Entry("AzureLinux, arm64", env.AZLinuxNodeClass().Spec.ImageFamily, karpv1.ArchitectureArm64,
+		Entry("AzureLinux, arm64", v1beta1.AzureLinuxImageFamily, karpv1.ArchitectureArm64),
 
 		// Ubuntu
 		Entry("Ubuntu, amd64", v1beta1.UbuntuImageFamily, karpv1.ArchitectureAmd64),
@@ -78,23 +76,14 @@ var _ = Describe("Utilization", func() {
 		Entry("Ubuntu2404, arm64", v1beta1.Ubuntu2404ImageFamily, karpv1.ArchitectureArm64),
 	)
 
-	It("should provision one pod per node (AzureLinux, arm64)", func() {
-		if imagefamily.UseAzureLinux3(env.K8sVersion()) && env.InClusterController {
-			Skip("AzureLinux3 ARM64 VHD is not available in CIG")
-		}
-		nc := env.AZLinuxNodeClass()
-		ExpectProvisionPodPerNode(nc, env.ArmNodepool(nc))
-	})
 })
 
 func ExpectProvisionPodPerNode(nodeClass *v1beta1.AKSNodeClass, nodePool *karpv1.NodePool) {
 	GinkgoHelper()
 	test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-		NodeSelectorRequirement: v1.NodeSelectorRequirement{
-			Key:      v1beta1.LabelSKUCPU,
-			Operator: v1.NodeSelectorOpLt,
-			Values:   []string{"3"},
-		}})
+		Key:      v1beta1.LabelSKUCPU,
+		Operator: v1.NodeSelectorOpLt,
+		Values:   []string{"3"}})
 
 	deployment := test.Deployment(test.DeploymentOptions{
 		Replicas: 10,
@@ -108,6 +97,6 @@ func ExpectProvisionPodPerNode(nodeClass *v1beta1.AKSNodeClass, nodePool *karpv1
 	})
 
 	env.ExpectCreated(nodePool, nodeClass, deployment)
-	env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+	env.EventuallyExpectHealthyDeployment(deployment)
 	env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas)) // One pod per node enforced by instance size
 }

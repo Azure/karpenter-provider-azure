@@ -32,12 +32,12 @@ var _ = Describe("EncryptionAtHost", func() {
 		}
 		nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
 
-		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 		env.ExpectCreatedNodeCount("==", 1)
 
-		vm := env.GetVM(pod.Spec.NodeName)
+		vm := env.GetVM(pods[0].Spec.NodeName)
 		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
 		Expect(vm.Properties.SecurityProfile.EncryptionAtHost).ToNot(BeNil())
 		Expect(lo.FromPtr(vm.Properties.SecurityProfile.EncryptionAtHost)).To(BeTrue())

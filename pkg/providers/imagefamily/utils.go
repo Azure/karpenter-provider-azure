@@ -18,6 +18,8 @@ import (
 	"strings"
 
 	"github.com/blang/semver/v4"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 )
 
 // UseAzureLinux3 checks if the Kubernetes version is 1.32.0 or higher,
@@ -41,4 +43,34 @@ func UseUbuntu2404(kubernetesVersion string) bool {
 		return false
 	}
 	return version.GE(semver.Version{Major: 1, Minor: 34})
+}
+
+// UseUbuntu2204FIPS returns true when generic Ubuntu + FIPS should resolve to Ubuntu 22.04 for the given Kubernetes version / Trusted Launch setting.
+func UseUbuntu2204FIPS(kubernetesVersion string, trustedLaunch bool) bool {
+	if trustedLaunch {
+		return true
+	}
+
+	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	if err != nil {
+		return false
+	}
+	return version.GE(semver.Version{Major: 1, Minor: 35})
+}
+
+// SupportsWindows2025 reports whether the Kubernetes version supports the Windows2025 image family,
+// which AKS offers from 1.32.0 onwards.
+func SupportsWindows2025(kubernetesVersion string) bool {
+	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	if err != nil {
+		return false
+	}
+	return version.GE(semver.Version{Major: 1, Minor: 32})
+}
+
+// ResolvesToUbuntu2004 returns true if the inputs resolve to Ubuntu2004.
+func ResolvesToUbuntu2004(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVersion string) bool {
+	resolved := GetImageFamily(familyName, fipsMode, trustedLaunch, kubernetesVersion, nil)
+	_, isUbuntu2004 := resolved.(*Ubuntu2004)
+	return isUbuntu2004
 }

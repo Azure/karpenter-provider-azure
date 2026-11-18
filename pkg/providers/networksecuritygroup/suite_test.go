@@ -22,6 +22,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
@@ -63,8 +64,8 @@ var _ = Describe("NetworkSecurityGroup Provider", func() {
 		standardNSG := test.MakeNetworkSecurityGroup(resourceGroup, "aks-agentpool-12345678-nsg")
 		otherNSG := test.MakeNetworkSecurityGroup(resourceGroup, "some-nsg")
 
-		fakeNetworkSecurityGroupsAPI.NSGs.Store(standardNSG.ID, standardNSG)
-		fakeNetworkSecurityGroupsAPI.NSGs.Store(otherNSG.ID, otherNSG)
+		fakeNetworkSecurityGroupsAPI.NSGs.Store(lo.FromPtr(standardNSG.ID), standardNSG)
+		fakeNetworkSecurityGroupsAPI.NSGs.Store(lo.FromPtr(otherNSG.ID), otherNSG)
 
 		nsg, err := networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
 		Expect(err).ToNot(HaveOccurred())
@@ -75,7 +76,7 @@ var _ = Describe("NetworkSecurityGroup Provider", func() {
 	It("should error if it cannot find the managed network security group", func() {
 		otherNSG := test.MakeNetworkSecurityGroup(resourceGroup, "some-nsg")
 
-		fakeNetworkSecurityGroupsAPI.NSGs.Store(otherNSG.ID, otherNSG)
+		fakeNetworkSecurityGroupsAPI.NSGs.Store(lo.FromPtr(otherNSG.ID), otherNSG)
 
 		_, err := networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
 		Expect(err).To(MatchError("couldn't find managed NSG"))
@@ -85,8 +86,8 @@ var _ = Describe("NetworkSecurityGroup Provider", func() {
 		standardNSG1 := test.MakeNetworkSecurityGroup(resourceGroup, "aks-agentpool-12345678-nsg")
 		standardNSG2 := test.MakeNetworkSecurityGroup(resourceGroup, "aks-agentpool-23456789-nsg")
 
-		fakeNetworkSecurityGroupsAPI.NSGs.Store(standardNSG1.ID, standardNSG1)
-		fakeNetworkSecurityGroupsAPI.NSGs.Store(standardNSG2.ID, standardNSG2)
+		fakeNetworkSecurityGroupsAPI.NSGs.Store(lo.FromPtr(standardNSG1.ID), standardNSG1)
+		fakeNetworkSecurityGroupsAPI.NSGs.Store(lo.FromPtr(standardNSG2.ID), standardNSG2)
 
 		_, err := networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
 		Expect(err).To(MatchError("found multiple NSGs: aks-agentpool-12345678-nsg,aks-agentpool-23456789-nsg"))

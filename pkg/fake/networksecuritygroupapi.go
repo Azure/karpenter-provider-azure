@@ -20,16 +20,16 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	fakesync "github.com/Azure/karpenter-provider-azure/pkg/fake/sync"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/samber/lo"
 )
 
 type NetworkSecurityGroupBevhavior struct {
-	NSGs sync.Map
+	NSGs fakesync.Map[string, armnetwork.SecurityGroup]
 }
 
 // assert that the fake implements the interface
@@ -41,10 +41,7 @@ type NetworkSecurityGroupAPI struct {
 
 // Reset must be called between tests otherwise tests will pollute each other.
 func (api *NetworkSecurityGroupAPI) Reset() {
-	api.NSGs.Range(func(k, v any) bool {
-		api.NSGs.Delete(k)
-		return true
-	})
+	api.NSGs.Clear()
 }
 
 // Get implements networksecuritygroup.API.
@@ -60,7 +57,7 @@ func (api *NetworkSecurityGroupAPI) Get(
 		return armnetwork.SecurityGroupsClientGetResponse{}, fmt.Errorf("not found")
 	}
 	return armnetwork.SecurityGroupsClientGetResponse{
-		SecurityGroup: nsg.(armnetwork.SecurityGroup),
+		SecurityGroup: nsg,
 	}, nil
 }
 
@@ -74,9 +71,8 @@ func (api *NetworkSecurityGroupAPI) NewListPager(resourceGroupName string, optio
 			output := armnetwork.SecurityGroupListResult{
 				Value: []*armnetwork.SecurityGroup{},
 			}
-			api.NSGs.Range(func(key, value any) bool {
-				cast := value.(armnetwork.SecurityGroup)
-				output.Value = append(output.Value, &cast)
+			api.NSGs.Range(func(key string, value armnetwork.SecurityGroup) bool {
+				output.Value = append(output.Value, &value)
 
 				return true
 			})

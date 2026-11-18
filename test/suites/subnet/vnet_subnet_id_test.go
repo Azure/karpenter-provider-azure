@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/ginkgo/v2"
@@ -118,16 +119,8 @@ var _ = Describe("Subnets", func() {
 		env.EventuallyExpectCreatedNodeClaimCount("==", 1)
 		nodes := env.EventuallyExpectCreatedNodeCount("==", 1)
 
-		vm := env.GetVM(nodes[0].Name)
-		Expect(vm.Properties).ToNot(BeNil())
-		Expect(vm.Properties.NetworkProfile).ToNot(BeNil())
-		Expect(vm.Properties.NetworkProfile.NetworkInterfaces).To(HaveLen(1))
-		Expect(vm.Properties.NetworkProfile.NetworkInterfaces[0].ID).ToNot(BeNil())
-		nicID, err := arm.ParseResourceID(*vm.Properties.NetworkProfile.NetworkInterfaces[0].ID)
-		Expect(err).ToNot(HaveOccurred())
-
 		// The NIC should have the right subnet
-		nic := env.GetNetworkInterface(nicID.Name)
+		nic := env.GetNodeNetworkInterface(nodes[0].Name)
 		Expect(nic.Properties).ToNot(BeNil())
 		Expect(nic.Properties.IPConfigurations).To(HaveLen(1))
 		Expect(nic.Properties.IPConfigurations[0].Properties).ToNot(BeNil())
@@ -249,7 +242,7 @@ var _ = Describe("Subnets", func() {
 			Skip("Skipping test: cluster uses managed VNet, custom subnets in managed VNets are blocked")
 		}
 
-		newNodeClass := env.DefaultAKSNodeClass()
+		newNodeClass := azkarptest.AKSNodeClass()
 		newNodepool := env.DefaultNodePool(newNodeClass)
 		newNodepool.Spec.Weight = lo.ToPtr(int32(10))
 

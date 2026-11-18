@@ -21,14 +21,13 @@ import (
 	"fmt"
 	"sort"
 
-	"dario.cat/mergo"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/version"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -40,35 +39,21 @@ const (
 	DefaultSIGImageVersion = "202410.09.0"
 )
 
-func AKSNodeClass(overrides ...v1beta1.AKSNodeClass) *v1beta1.AKSNodeClass {
-	options := v1beta1.AKSNodeClass{}
-	for _, override := range overrides {
-		if err := mergo.Merge(&options, override, mergo.WithOverride); err != nil {
-			panic(fmt.Sprintf("Failed to merge settings: %s", err))
-		}
+func AKSNodeClass(options ...AKSNodeClassOption) *v1beta1.AKSNodeClass {
+	result := v1beta1.AKSNodeClass{}
+	for _, applyOption := range options {
+		applyOption(&result)
 	}
-	// In reality, these default values will be set via the defaulting done by the API server. The reason we provide them here is
-	// we sometimes reference a test.AKSNodeClass without applying it, and in that case we need to set the default values ourselves
-	if options.Spec.OSDiskSizeGB == nil {
-		options.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
-	}
-	if options.Spec.ImageFamily == nil {
-		options.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-	}
+
 	return &v1beta1.AKSNodeClass{
-		ObjectMeta: coretest.ObjectMeta(options.ObjectMeta),
-		Spec:       options.Spec,
-		Status:     options.Status,
+		ObjectMeta: coretest.ObjectMeta(result.ObjectMeta),
+		Spec:       result.Spec,
+		Status:     result.Status,
 	}
 }
 
 // TODO: Pass in test.Options if we want to use more options within this func
 func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environment, useSIG bool) {
-	if useSIG {
-		ApplySIGImages(nodeClass)
-	} else {
-		ApplyCIGImages(nodeClass)
-	}
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
 	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
@@ -77,9 +62,17 @@ func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environme
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
 
-	conditions := []opstatus.Condition{}
-	for _, condition := range nodeClass.GetConditions() {
+	if useSIG {
+		ApplySIGImages(nodeClass)
+	} else {
+		ApplyCIGImages(nodeClass)
+	}
+
+	nodeClassConditions := nodeClass.GetConditions()
+	conditions := make([]opstatus.Condition, 0, len(nodeClassConditions))
+	for _, condition := range nodeClassConditions {
 		// Using the magic number 1, as it appears the Generation is always equal to 1 on the NodeClass in testing. If that appears to not be the case,
 		// than we should add some function for allows bumps as needed to match.
 		condition.ObservedGeneration = 1
@@ -92,10 +85,35 @@ func ApplyCIGImages(nodeClass *v1beta1.AKSNodeClass) {
 	ApplyCIGImagesWithVersion(nodeClass, DefaultCIGImageVersion)
 }
 
-func ApplyCIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, cigImageVersion string) {
+// ApplyCIGImagesWithVersion applies the expected CIG images to the given AKSNodeClass using the specified image version.
+// nodeClass is the AKSNodeClass to which the expected CIG images will be applied.
+// cigImageVersion is the version of the CIG images to apply.
+func ApplyCIGImagesWithVersion(
+	nodeClass *v1beta1.AKSNodeClass,
+	cigImageVersion string,
+) {
+	var kubernetesVersion *version.Version
+	if nodeClass.Status.KubernetesVersion != nil {
+		kubernetesVersion = version.MustParseSemantic(*nodeClass.Status.KubernetesVersion)
+	}
+
+	galleryURL := "AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2"
+	gen1 := imagefamily.Ubuntu2204Gen1ImageDefinition
+	gen2 := imagefamily.Ubuntu2204Gen2ImageDefinition
+	arm := imagefamily.Ubuntu2204Gen2ArmImageDefinition
+
+	// From Kubernetes version 1.34, default to Ubuntu 2404
+	v134 := version.MustParse("1.34.0")
+	if kubernetesVersion != nil && kubernetesVersion.AtLeast(v134) {
+		// Logic for Ubuntu 2404 images can be added here
+		gen1 = imagefamily.Ubuntu2404Gen1ImageDefinition
+		gen2 = imagefamily.Ubuntu2404Gen2ImageDefinition
+		arm = imagefamily.Ubuntu2404Gen2ArmImageDefinition
+	}
+
 	nodeClass.Status.Images = []v1beta1.NodeImage{
 		{
-			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/%s", cigImageVersion),
+			ID: imagefamily.BuildImageIDCIG(galleryURL, gen2, cigImageVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
 				{
 					Key:      corev1.LabelArchStable,
@@ -110,7 +128,7 @@ func ApplyCIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, cigImageVersion 
 			},
 		},
 		{
-			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204containerd/versions/%s", cigImageVersion),
+			ID: imagefamily.BuildImageIDCIG(galleryURL, gen1, cigImageVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
 				{
 					Key:      corev1.LabelArchStable,
@@ -125,7 +143,7 @@ func ApplyCIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, cigImageVersion 
 			},
 		},
 		{
-			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2arm64containerd/versions/%s", cigImageVersion),
+			ID: imagefamily.BuildImageIDCIG(galleryURL, arm, cigImageVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
 				{
 					Key:      corev1.LabelArchStable,
@@ -142,35 +160,47 @@ func ApplyCIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, cigImageVersion 
 	}
 }
 
+// ApplySIGImages applies the expected SIG images to the given AKSNodeClass based on the provided Kubernetes version.
+// nodeClass is the AKSNodeClass to which the expected SIG images will be applied.
 func ApplySIGImages(nodeClass *v1beta1.AKSNodeClass) {
 	ApplySIGImagesWithVersion(nodeClass, DefaultSIGImageVersion)
 }
 
-func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion string) {
+func ApplySIGImagesWithVersion(
+	nodeClass *v1beta1.AKSNodeClass,
+	sigImageVersion string,
+) {
 	var kubernetesVersion string
 	if nodeClass.Status.KubernetesVersion != nil {
 		kubernetesVersion = *nodeClass.Status.KubernetesVersion
 	}
-	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, sigImageVersion, kubernetesVersion)
+
+	var family string
+	if nodeClass.Spec.ImageFamily != nil {
+		family = *nodeClass.Spec.ImageFamily
+	}
+
+	imageFamilyNodeImages := getExpectedTestSIGImages(family, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled(), sigImageVersion, kubernetesVersion)
 	nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
 }
 
-func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, version string, kubernetesVersion string) []imagefamily.NodeImage {
-	var images []imagefamilytypes.DefaultImageOutput
-	switch imageFamily {
-	case v1beta1.Ubuntu2204ImageFamily:
-		images = imagefamily.Ubuntu2204{}.DefaultImages(true, fipsMode)
-	case v1beta1.AzureLinuxImageFamily:
-		if imagefamily.UseAzureLinux3(kubernetesVersion) {
-			images = imagefamily.AzureLinux3{}.DefaultImages(true, fipsMode)
-		} else {
-			images = imagefamily.AzureLinux{}.DefaultImages(true, fipsMode)
-		}
-	}
-	nodeImages := []imagefamily.NodeImage{}
+func getExpectedTestSIGImages(
+	family string,
+	fipsMode *v1beta1.FIPSMode,
+	trustedLaunch bool,
+	kataEnabled bool,
+	version string,
+	kubernetesVersion string,
+) []imagefamily.NodeImage {
+	images := imagefamily.GetImageFamily(
+		&family, fipsMode, trustedLaunch, kubernetesVersion, nil,
+	).DefaultImages(
+		true, fipsMode, trustedLaunch, kataEnabled)
+	nodeImages := make([]imagefamily.NodeImage, 0, len(images))
 	for _, image := range images {
 		nodeImages = append(nodeImages, imagefamily.NodeImage{
 			ID:           fmt.Sprintf("/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
+			Version:      version,
 			Requirements: image.Requirements,
 		})
 	}
@@ -180,7 +210,7 @@ func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, ve
 func translateToStatusNodeImages(imageFamilyNodeImages []imagefamily.NodeImage) []v1beta1.NodeImage {
 	return lo.Map(imageFamilyNodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item karpv1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
-			return item.NodeSelectorRequirement
+			return corev1.NodeSelectorRequirement{Key: item.Key, Operator: item.Operator, Values: item.Values}
 		})
 
 		// sorted for consistency

@@ -25,8 +25,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 )
 
 type AgentPoolDeleteMachinesInput struct {
@@ -78,7 +78,7 @@ func AKSAgentPoolsAPIErrorFromAKSMachineNotFound(agentPoolName string, validMach
 }
 
 // assert that the fake implements the interface
-var _ azclient.AKSAgentPoolsAPI = &AKSAgentPoolsAPI{}
+var _ azapi.AKSAgentPoolsAPI = &AKSAgentPoolsAPI{}
 
 type AKSAgentPoolsAPI struct {
 	AgentPoolsBehavior
@@ -95,10 +95,7 @@ func NewAKSAgentPoolsAPI(aksDataStorage *AKSDataStorage) *AKSAgentPoolsAPI {
 func (c *AKSAgentPoolsAPI) Reset() {
 	c.AgentPoolDeleteMachinesBehavior.Reset()
 	c.AgentPoolGetBehavior.Reset()
-	c.aksDataStorage.AgentPools.Range(func(k, v any) bool {
-		c.aksDataStorage.AgentPools.Delete(k)
-		return true
-	})
+	c.aksDataStorage.AgentPools.Clear()
 }
 
 func (c *AKSAgentPoolsAPI) Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.AgentPoolsClientGetOptions) (armcontainerservice.AgentPoolsClientGetResponse, error) {
@@ -116,7 +113,7 @@ func (c *AKSAgentPoolsAPI) Get(ctx context.Context, resourceGroupName string, re
 			return armcontainerservice.AgentPoolsClientGetResponse{}, AKSAgentPoolsAPIErrorFromAKSAgentPoolNotFound
 		}
 		return armcontainerservice.AgentPoolsClientGetResponse{
-			AgentPool: agentPool.(armcontainerservice.AgentPool),
+			AgentPool: agentPool,
 		}, nil
 	})
 }
@@ -154,8 +151,7 @@ func (c *AKSAgentPoolsAPI) BeginDeleteMachines(
 
 		// Collect all existing machines in the agent pool for error message
 		if c.aksDataStorage != nil && c.aksDataStorage.AKSMachines != nil {
-			c.aksDataStorage.AKSMachines.Range(func(key, value interface{}) bool {
-				machineID := key.(string)
+			c.aksDataStorage.AKSMachines.Range(func(machineID string, value armcontainerservice.Machine) bool {
 				// Check if this machine belongs to the same agent pool
 				expectedPrefix := fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.ContainerService/managedClusters/%s/agentPools/%s/machines/",
 					input.ResourceGroupName, input.ResourceName, input.AgentPoolName)
