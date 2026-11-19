@@ -17,6 +17,7 @@ limitations under the License.
 package utils_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -24,6 +25,47 @@ import (
 	"github.com/mitchellh/hashstructure/v2"
 	. "github.com/onsi/gomega"
 )
+
+func TestVMResourceIDToProviderID(t *testing.T) {
+	cases := []struct {
+		name       string
+		resourceID string
+		expected   string
+	}{
+		{
+			name:       "lowercases only the resource group",
+			resourceID: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/MyRG/providers/Microsoft.Compute/virtualMachines/MyVM",
+			expected:   "azure:///subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myrg/providers/Microsoft.Compute/virtualMachines/MyVM",
+		},
+		{
+			name:       "resource group occurs in a preceding path segment",
+			resourceID: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/Groups/providers/Microsoft.Compute/virtualMachines/MyVM",
+			expected:   "azure:///subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/groups/providers/Microsoft.Compute/virtualMachines/MyVM",
+		},
+		{
+			name:       "resource group occurs in the subscription ID",
+			resourceID: "/subscriptions/ABCDEF00-0000-0000-0000-000000000000/resourceGroups/ABC/providers/Microsoft.Compute/virtualMachines/ABC",
+			expected:   "azure:///subscriptions/ABCDEF00-0000-0000-0000-000000000000/resourceGroups/abc/providers/Microsoft.Compute/virtualMachines/ABC",
+		},
+		{
+			name:       "already lowercase resource group",
+			resourceID: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myrg/providers/Microsoft.Compute/virtualMachines/MyVM",
+			expected:   "azure:///subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myrg/providers/Microsoft.Compute/virtualMachines/MyVM",
+		},
+		{
+			name:       "invalid resource ID retains the fallback",
+			resourceID: "invalid-resource-id",
+			expected:   "azure://invalid-resource-id",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(utils.VMResourceIDToProviderID(context.Background(), c.resourceID)).To(Equal(c.expected))
+		})
+	}
+}
 
 func TestIsAKSManagedVNET(t *testing.T) {
 	cases := []struct {

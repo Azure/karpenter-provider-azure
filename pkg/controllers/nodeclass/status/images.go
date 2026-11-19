@@ -131,7 +131,13 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	}
 
 	// Unpinning occurs when no requested image version is specified and the current image is pinned.
+	// Note: Unpinning restores the images to what is returned by List, not necessarily the latest version from GetLatestVersion.
 	unpinning := reqImgVer == "" && nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).Reason == nodeImageVersionPinnedReason
+
+	latestImageVersion, err := r.nodeImageProvider.GetLatestVersion(ctx, nodeClass)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("getting latest node image version, %w", err)
+	}
 
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
@@ -154,11 +160,6 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 			Requirements: reqs,
 		}
 	})
-
-	latestImageVersion := ""
-	if len(goalImages) > 0 {
-		latestImageVersion = parseVersion(goalImages[0].ID)
-	}
 
 	var pinningShouldUpdate bool
 	if reqImgVer != "" {

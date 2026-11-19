@@ -200,6 +200,7 @@ func getExpectedTestSIGImages(
 	for _, image := range images {
 		nodeImages = append(nodeImages, imagefamily.NodeImage{
 			ID:           fmt.Sprintf("/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
+			Version:      version,
 			Requirements: image.Requirements,
 		})
 	}

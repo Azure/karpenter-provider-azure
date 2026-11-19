@@ -30,6 +30,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
+	nodeclaimgarbagecollection "sigs.k8s.io/karpenter/pkg/controllers/nodeclaim/garbagecollection"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -46,6 +47,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
@@ -453,6 +455,7 @@ func runSharedAKSMachineAPITests() {
 			// Create a fresh nodeClaim with explicit requirements so we know exactly what it will have
 			firstNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:   "nodeclaim-name-exceeding-thirty-four-abcde",
 					Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				},
 				Spec: karpv1.NodeClaimSpec{
@@ -505,7 +508,8 @@ func runSharedAKSMachineAPITests() {
 			}
 
 			// Since no new machine was created, verify the machine in the fake store matches original config.
-			aksMachineName := firstNodeClaim.Name
+			aksMachineName, ok := instance.GetAKSMachineNameFromNodeClaim(createdFirstNodeClaim)
+			Expect(ok).To(BeTrue(), "created NodeClaim should identify its AKS machine")
 
 			// Get the actual machine from the fake store
 			machineID := fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, aksMachineName)
@@ -529,6 +533,7 @@ func runSharedAKSMachineAPITests() {
 
 		Context("found in get, with node public IP settings", func() {
 			var firstNodeClaim *karpv1.NodeClaim
+			var machineID string
 
 			createFirstAKSMachine := func(nodePublicIP *v1beta1.NodePublicIP) {
 				nodeClass.Spec.NodePublicIP = nodePublicIP
@@ -537,6 +542,7 @@ func runSharedAKSMachineAPITests() {
 
 				firstNodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:   "nodeclaim-name-exceeding-thirty-four-abcde",
 						Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 					},
 					Spec: karpv1.NodeClaimSpec{
@@ -563,6 +569,9 @@ func runSharedAKSMachineAPITests() {
 				createdFirstNodeClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, firstNodeClaim)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(createdFirstNodeClaim).ToNot(BeNil())
+				aksMachineName, ok := instance.GetAKSMachineNameFromNodeClaim(createdFirstNodeClaim)
+				Expect(ok).To(BeTrue(), "created NodeClaim should identify its AKS machine")
+				machineID = fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, aksMachineName)
 
 				azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
 				azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
@@ -584,6 +593,8 @@ func runSharedAKSMachineAPITests() {
 
 			It("should refuse to reuse an AKS machine without node public IP settings after the NodeClass enables it, and delete it", func() {
 				createFirstAKSMachine(nil)
+				_, ok := azureEnv.AKSDataStorage.AKSMachines.Load(machineID)
+				Expect(ok).To(BeTrue(), "AKS machine should exist before cleanup")
 				nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
 				ExpectApplied(ctx, env.Client, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -594,8 +605,7 @@ func runSharedAKSMachineAPITests() {
 				Expect(reusedNodeClaim).To(BeNil())
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(1))
-				machineID := fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, firstNodeClaim.Name)
-				_, ok := azureEnv.AKSDataStorage.AKSMachines.Load(machineID)
+				_, ok = azureEnv.AKSDataStorage.AKSMachines.Load(machineID)
 				Expect(ok).To(BeFalse())
 			})
 		})
@@ -758,6 +768,44 @@ func runSharedAKSMachineAPITests() {
 			Expect(createdConflictedNodeClaim.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v5"))
 			Expect(createdConflictedNodeClaim.CreationTimestamp).ToNot(BeZero())
 		})
+	})
+
+	It("should not garbage collect a registered standalone NodeClaim before its node is Ready", func() {
+		delete(nodeClaim.Labels, karpv1.NodePoolLabelKey)
+		nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+			{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{defaultTestSKU.GetName()}},
+			{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+		}
+		ExpectApplied(ctx, env.Client, nodeClass, nodeClaim)
+		nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+		created, err := cloudProvider.Create(ctx, nodeClaim)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(created.Status.ProviderID).ToNot(BeEmpty())
+		Expect(created.Labels).ToNot(HaveKey(karpv1.NodePoolLabelKey))
+
+		node := coretest.Node(coretest.NodeOptions{
+			ProviderID:  created.Status.ProviderID,
+			ReadyStatus: v1.ConditionFalse,
+		})
+		nodeClaim.Status = created.Status
+		nodeClaim.Status.NodeName = node.Name
+		nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+		nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
+		nodeClaim.StatusConditions().SetFalse(karpv1.ConditionTypeInitialized, "NodeNotReady", "node is not Ready")
+		ExpectApplied(ctx, env.Client, nodeClaim, node)
+
+		nodeClaims, err := cloudProvider.List(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(nodeClaims).To(HaveLen(1))
+		Expect(nodeClaims[0].Status.ProviderID).To(Equal(created.Status.ProviderID))
+		Expect(nodeClaims[0].Labels).ToNot(HaveKey(karpv1.NodePoolLabelKey))
+
+		gcController := nodeclaimgarbagecollection.NewController(fakeClock, env.Client, cloudProvider)
+		ExpectSingletonReconciled(ctx, gcController)
+		nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+		Expect(nodeClaim.DeletionTimestamp.IsZero()).To(BeTrue())
+		Expect(nodeClaim.StatusConditions().Get(karpv1.ConditionTypeRegistered).IsTrue()).To(BeTrue())
+		Expect(nodeClaim.StatusConditions().Get(karpv1.ConditionTypeInitialized).IsFalse()).To(BeTrue())
 	})
 }
 

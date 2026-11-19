@@ -34,6 +34,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
@@ -140,7 +141,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				v1beta1.LabelSKUStoragePremiumCapable:     "true",
 				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53",
 				v1beta1.LabelUltraSSD:                     "false",
-				v1beta1.AKSLabelCluster:                   env.NodeResourceGroup,
+				v1beta1.AKSLabelCluster:                   utils.NormalizeClusterResourceGroupNameForLabel(env.NodeResourceGroup),
 				v1beta1.AKSLabelMode:                      "system",
 				v1beta1.AKSLabelScaleSetPriority:          "regular",
 				v1beta1.AKSLabelPriority:                  "regular",
