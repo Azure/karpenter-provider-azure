@@ -68,6 +68,8 @@ func BuildAzureConfig() (*Config, error) {
 }
 
 func (cfg *Config) Build() error {
+	// Note: the configurations here are focused on Azure authentication. General configurations are available in the `options` package.
+
 	// May require more than this behind the scenes: https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/azidentity/README.md#defaultazurecredential
 	cfg.Cloud = strings.TrimSpace(os.Getenv("ARM_CLOUD"))
 	cfg.Location = strings.TrimSpace(os.Getenv("LOCATION"))
