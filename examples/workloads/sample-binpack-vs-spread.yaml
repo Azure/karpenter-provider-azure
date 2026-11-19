@@ -1,0 +1,94 @@
+# Comparison manifest: BINPACK vs SPREAD for the *same* app.
+# Use case: show tradeoffs between cost efficiency (binpack) and resilience (spread).
+#
+# This file contains TWO Deployments:
+# 1) sample-binpack: encourage packing pods onto fewer nodes (helps utilization / cost).
+# 2) sample-spread: encourage distribution across nodes and zones (helps availability).
+#
+# Notes:
+# - "binpacking" isn't a single Kubernetes feature; it's an emergent behavior you can influence.
+# - Strong spreading constraints can increase node count (more cost), especially during scale-out.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-binpack
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: sample-binpack
+  template:
+    metadata:
+      labels:
+        app: sample-binpack
+    spec:
+      # BINPACK-leaning approach:
+      # - Avoid topology spreading constraints
+      # - (Optionally) prefer a smaller subset of nodes via labels if you maintain them
+      #
+      # Tradeoff: fewer nodes used => larger blast radius if a node fails.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          # Optional soft preference: prefer nodes labeled "binpack=true" (if you set it).
+          - weight: 50
+            preference:
+              matchExpressions:
+              - key: example.com/binpack
+                operator: In
+                values: ["true"]
+
+      containers:
+      - name: app
+        image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+        # Moderate requests encourage denser packing when capacity exists.
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "128Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-spread
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: sample-spread
+  template:
+    metadata:
+      labels:
+        app: sample-spread
+    spec:
+      # SPREAD-leaning approach:
+      # - Topology spread across zones (best-effort or hard depending on your needs)
+      # - Pod anti-affinity across nodes (soft here; can be made hard)
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway  # change to DoNotSchedule for HARD zone spread
+        labelSelector:
+          matchLabels:
+            app: sample-spread
+
+      affinity:
+        podAntiAffinity:
+          # SOFT: try to avoid co-locating replicas on the same node.
+          # Tradeoff: soft anti-affinity gives scheduler flexibility; hard can cause Pending.
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: sample-spread
+              topologyKey: kubernetes.io/hostname
+
+      containers:
+      - name: app
+        image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "128Mi"

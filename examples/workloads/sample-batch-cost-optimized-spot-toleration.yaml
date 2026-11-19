@@ -1,0 +1,46 @@
+# Batch / ETL workload that can run on preemptible/spot nodes.
+# Goals:
+# - Use cheaper capacity (spot), tolerate eviction/disruption
+# - Avoid strict constraints that reduce scheduling opportunities
+#
+# Pattern:
+# - Spot node pool is often tainted (so only spot-tolerant pods land there)
+# - Use best-effort topology spread, or none, to maximize packing/cost efficiency
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sample-batch-cost-optimized-spot
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: sample-batch-cost-optimized-spot
+    spec:
+      restartPolicy: Never
+
+      tolerations:
+      # If your spot pool is tainted like: example.com/capacity=spot:NoSchedule
+      - key: "example.com/capacity"
+        operator: "Equal"
+        value: "spot"
+        effect: "NoSchedule"
+
+      # Soft preference to spot nodes IF they exist, but allow fallback if desired.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: example.com/capacity
+                operator: In
+                values: ["spot"]
+
+      containers:
+      - name: worker
+        image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+        resources:
+          requests:
+            cpu: "2"
+            memory: "1Gi"

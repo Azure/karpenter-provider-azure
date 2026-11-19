@@ -1,0 +1,54 @@
+# Healthcare-ish workload example (PHI-sensitive service).
+# Goals:
+# - Prefer multi-zone spread (availability)
+# - Strong anti-co-location at node level (reduce blast radius)
+# - Tolerate dedicated "compliance" nodes (tainted)
+#
+# NOTE: Kubernetes scheduling constraints don't provide compliance by themselves.
+# You still need encryption, RBAC, network policy, audit logging, etc.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-healthcare-phi-zone-hardened
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: sample-healthcare-phi-zone-hardened
+  template:
+    metadata:
+      labels:
+        app: sample-healthcare-phi-zone-hardened
+    spec:
+      # If you taint compliance nodes like: example.com/compliance=phi:NoSchedule
+      tolerations:
+      - key: "example.com/compliance"
+        operator: "Equal"
+        value: "phi"
+        effect: "NoSchedule"
+
+      affinity:
+        podAntiAffinity:
+          # HARD anti-affinity at hostname: don't put 2 replicas on same node.
+          # Tradeoff: can go Pending if cluster is small.
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: sample-healthcare-phi-zone-hardened
+            topologyKey: kubernetes.io/hostname
+
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule  # HARD: ensure zone spread for HA
+        labelSelector:
+          matchLabels:
+            app: sample-healthcare-phi-zone-hardened
+
+      containers:
+      - name: api
+        image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "256Mi"
