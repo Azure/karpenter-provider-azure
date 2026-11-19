@@ -28,6 +28,9 @@ import (
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -58,6 +61,131 @@ func TestKubeReservedResources(t *testing.T) {
 			g.Expect(reserved.Memory().Value()).To(Equal(test.wantMiB * bytesPerMiB))
 			g.Expect(reserved.Cpu().MilliValue()).To(Equal(int64(100)))
 		})
+	}
+}
+
+func TestConfidentialComputingType(t *testing.T) {
+	for _, test := range []struct {
+		name, size, capability, expected string
+	}{
+		{expected: "None"},
+		{name: "standard_dc4as_v5", expected: "Unknown"},
+		{size: "ec4as_v5", expected: "Unknown"},
+		{capability: "sNp", expected: "SNP"},
+		{name: "Standard_D4s_v3", capability: "TDX", expected: "TDX"},
+		{capability: "NotSNP", expected: "NOTSNP"},
+		{capability: "SNP,TDX", expected: "SNP,TDX"},
+		{name: "Standard_DC4as_v5", capability: "None", expected: "Unknown"},
+		{size: "DC4as_cc_v5", expected: "Unknown"},
+		{size: "EC4as_cc_v5", capability: "None", expected: "Unknown"},
+		{size: "DC4as_cc_v5", capability: "SNP", expected: "SNP"},
+	} {
+		t.Run(fmt.Sprintf("%s/%s/%s", test.name, test.size, test.capability), func(t *testing.T) {
+			g := NewWithT(t)
+			sku := &skewer.SKU{}
+			if test.name != "" {
+				sku.Name = lo.ToPtr(test.name)
+			}
+			if test.size != "" {
+				sku.Size = lo.ToPtr(test.size)
+			}
+			if test.capability != "" {
+				sku.Capabilities = &[]compute.ResourceSkuCapabilities{
+					{Name: lo.ToPtr("confidentialcomputingtype"), Value: lo.ToPtr(test.capability)},
+				}
+			}
+			g.Expect(confidentialComputingType(sku)).To(Equal(test.expected))
+		})
+	}
+}
+
+func TestConfidentialImageAvailabilityPreservesCachedObjects(t *testing.T) {
+	g := NewWithT(t)
+	base := &cloudprovider.InstanceType{
+		Name: "Standard_ACLSNP",
+		Requirements: scheduling.NewRequirements(
+			scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, "SNP"),
+			scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+		),
+	}
+	for _, capacityType := range []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot} {
+		base.Offerings = append(base.Offerings, &cloudprovider.Offering{
+			Available: true,
+			Requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, capacityType),
+				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "test-zone"),
+			),
+		})
+	}
+	quota := base.DeepCopy()
+	quota.Offerings[0].Available = false
+	cached := &cachedInstanceTypes{base: []*cloudprovider.InstanceType{base}, quota: []*cloudprovider.InstanceType{quota}}
+	baseSnapshot, quotaSnapshot := base.DeepCopy(), quota.DeepCopy()
+	nodeClass := &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Security: &v1beta1.Security{ConfidentialVM: lo.ToPtr(true)}}}
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+
+	unavailable := applyConfidentialImageAvailability(cached.quota, nodeClass)
+	g.Expect(unavailable).To(HaveLen(1))
+	g.Expect(unavailable[0]).ToNot(BeIdenticalTo(quota))
+	g.Expect(unavailable[0].Requirements).To(Equal(quota.Requirements))
+	g.Expect(unavailable[0].Offerings).To(HaveLen(len(quota.Offerings)))
+	g.Expect(unavailable[0].Offerings.Available()).To(BeEmpty())
+	for i, offering := range unavailable[0].Offerings {
+		g.Expect(offering).ToNot(BeIdenticalTo(quota.Offerings[i]))
+		g.Expect(offering.Requirements).To(Equal(quota.Offerings[i].Requirements))
+		g.Expect(unavailable[0].Offerings.HasCompatible(offering.Requirements)).To(BeTrue())
+	}
+	unavailableSnapshot := unavailable[0].DeepCopy()
+
+	nodeClass.Status.Images = []v1beta1.NodeImage{{
+		ID: "acl-snp-image",
+		Requirements: []corev1.NodeSelectorRequirement{{
+			Key: v1beta1.LabelSKUConfidentialComputingType, Operator: corev1.NodeSelectorOpIn, Values: []string{"SNP"},
+		}},
+	}}
+	available := applyConfidentialImageAvailability(cached.quota, nodeClass)
+	g.Expect(available).To(HaveLen(1))
+	g.Expect(available[0]).To(BeIdenticalTo(quota))
+	g.Expect(available[0].Offerings[0].Available).To(BeFalse(), "image recovery must not reenable quota-disabled offerings")
+	g.Expect(available[0].Offerings[1].Available).To(BeTrue())
+
+	nodeClass.Status.Images = nil
+	g.Expect(applyConfidentialImageAvailability(cached.quota, nodeClass)[0]).To(Equal(unavailableSnapshot))
+	g.Expect(unavailable[0]).To(Equal(unavailableSnapshot))
+	g.Expect(available[0]).To(Equal(quotaSnapshot))
+	g.Expect(cached.base).To(Equal([]*cloudprovider.InstanceType{baseSnapshot}))
+	g.Expect(cached.quota).To(Equal([]*cloudprovider.InstanceType{quotaSnapshot}))
+}
+
+func TestConfidentialVMSelectionPreservesInventory(t *testing.T) {
+	g := NewWithT(t)
+	nodeClass := &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Security: &v1beta1.Security{}}}
+	nodeClass.Status.Images = []v1beta1.NodeImage{{ID: "cvm", Requirements: []corev1.NodeSelectorRequirement{{
+		Key: v1beta1.LabelSKUConfidentialComputingType, Operator: corev1.NodeSelectorOpIn, Values: []string{"SNP"},
+	}}}}
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+	inventory := make([]*cloudprovider.InstanceType, 0, 2)
+	for _, kind := range []string{"None", "SNP"} {
+		inventory = append(inventory, &cloudprovider.InstanceType{
+			Name: kind, Requirements: scheduling.NewRequirements(scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, kind)),
+			Offerings: cloudprovider.Offerings{{Available: true}, {Available: false}},
+		})
+	}
+	previous := make([]*cloudprovider.InstanceType, 0, 12)
+	snapshots := make([]*cloudprovider.InstanceType, 0, 12)
+	for _, enabled := range []*bool{nil, lo.ToPtr(false), lo.ToPtr(true), lo.ToPtr(false), lo.ToPtr(true), nil} {
+		nodeClass.Spec.Security.ConfidentialVM = enabled
+		result := applyConfidentialImageAvailability(inventory, nodeClass)
+		g.Expect(result).To(HaveLen(2))
+		for i, it := range result {
+			g.Expect(it.Requirements).To(Equal(inventory[i].Requirements))
+			g.Expect(it.Offerings[0].Available).To(Equal((i == 1) == lo.FromPtr(enabled)))
+			g.Expect(it.Offerings[1].Available).To(BeFalse())
+			g.Expect(inventory[i].Offerings[0].Available).To(BeTrue())
+			previous = append(previous, it)
+			snapshots = append(snapshots, it.DeepCopy())
+		}
+		g.Expect(previous).To(Equal(snapshots))
 	}
 }
 

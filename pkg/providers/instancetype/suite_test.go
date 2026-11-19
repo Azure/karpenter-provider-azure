@@ -50,6 +50,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
@@ -3072,6 +3073,258 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("Provider List", func() {
+		Context("Confidential computing selection", func() {
+			getName := func(it *corecloudprovider.InstanceType) string { return it.Name }
+			BeforeEach(func() {
+				for _, fixture := range []struct {
+					name, size, confidentialType, architecture, generation, tlDisabled, virtualization string
+				}{
+					{"Standard_ACLOrdinary", "B2s", "", "x64", "V2", "False", skewer.NestedVirtualization},
+					{"Standard_ACLSNP", "DC4as_v5", "sNp", "X64", "v2", "False", skewer.NestedVirtualization},
+					{"Standard_ACLSNPDisabled", "DC4as_v5", "SNP", "x64", "V2", "True", skewer.NestedVirtualization},
+					{"Standard_ACLTDX", "D2s_v3", "TDX", "x64", "V2", "False", skewer.NestedVirtualization},
+					{"Standard_ACLSNPArm", "D2s_v3", "SNP", "Arm64", "V2", "False", skewer.NestedVirtualization},
+					{"Standard_ACLArm", "D2s_v3", "None", "Arm64", "V2", "False", skewer.NestedVirtualization},
+					{"Standard_ACLSNPGen1", "D2s_v3", "SNP", "x64", "V1", "False", skewer.NestedVirtualization},
+					{"Standard_ACLLegacy", "DC4as_v5", "", "x64", "V2", "False", skewer.NestedVirtualization},
+					{"standard_dc4legacy", "D2s_v3", "", "x64", "V2", "False", skewer.NestedVirtualization},
+					{"Standard_ACLNestedSNP", "DC4as_cc_v5", "", "x64", "V2", "False", ""},
+				} {
+					capabilities := []compute.ResourceSkuCapabilities{
+						{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("4")},
+						{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("16")},
+						{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr(fixture.architecture)},
+						{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr(fixture.generation)},
+						{Name: lo.ToPtr("TrustedLaunchDisabled"), Value: lo.ToPtr(fixture.tlDisabled)},
+						{Name: lo.ToPtr("SupportedVirtualizationTypes"), Value: lo.ToPtr(fixture.virtualization)},
+					}
+					if fixture.confidentialType != "" {
+						capabilities = append(capabilities, compute.ResourceSkuCapabilities{
+							Name: lo.ToPtr("confidentialcomputingtype"), Value: lo.ToPtr(fixture.confidentialType),
+						})
+					}
+					azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+						Name: lo.ToPtr(fixture.name), Size: lo.ToPtr(fixture.size),
+						Family: lo.ToPtr("standardACLTestFamily"), ResourceType: lo.ToPtr("virtualMachines"),
+						Locations: &[]string{fake.Region}, Capabilities: &capabilities,
+					})
+				}
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+				nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{
+					SecureBoot: lo.ToPtr(true), VTPM: lo.ToPtr(true),
+				}}
+				nodeClass.Status.Images = []v1beta1.NodeImage{{
+					ID: "acl-snp-image",
+					Requirements: []v1.NodeSelectorRequirement{
+						{Key: v1beta1.LabelSKUConfidentialComputingType, Operator: v1.NodeSelectorOpIn, Values: []string{"SNP"}},
+						{Key: v1.LabelArchStable, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.ArchitectureAmd64}},
+						{Key: v1beta1.LabelSKUHyperVGeneration, Operator: v1.NodeSelectorOpIn, Values: []string{v1beta1.HyperVGenerationV2}},
+					},
+				}}
+				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+			})
+
+			It("should reevaluate SNP image availability on cache hits without removing instance types or mutating prior results", func() {
+				nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(true)
+				opts := *testOptions
+				opts.ProvisionMode, opts.UseSIG = consts.ProvisionModeAKSMachineAPI, true
+				cvmImage := nodeClass.Status.Images[0]
+				legacyImage := *cvmImage.DeepCopy()
+				legacyImage.ID = "legacy-acl-tl-image"
+				legacyImage.Requirements = legacyImage.Requirements[1:]
+				tlImage := *cvmImage.DeepCopy()
+				tlImage.ID = "acl-tl-image"
+				tlImage.Requirements[0].Values = []string{"None"}
+				armImage := *cvmImage.DeepCopy()
+				armImage.Requirements[1].Values = []string{karpv1.ArchitectureArm64}
+				gen1Image := *cvmImage.DeepCopy()
+				gen1Image.Requirements[2].Values = []string{v1beta1.HyperVGenerationV1}
+				wrongSKUImage := *cvmImage.DeepCopy()
+				wrongSKUImage.Requirements = append(wrongSKUImage.Requirements, v1.NodeSelectorRequirement{
+					Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{"Standard_ACLOrdinary"},
+				})
+				ambiguousImage := *cvmImage.DeepCopy()
+				ambiguousImage.Requirements[0].Values = []string{"None", "SNP"}
+				emptyIDImage := *cvmImage.DeepCopy()
+				emptyIDImage.ID = ""
+				its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				base, found := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_ACLSNP" })
+				Expect(found).To(BeTrue())
+				Expect(base.Offerings.Available()).ToNot(BeEmpty())
+				priorResults := make([]*corecloudprovider.InstanceType, 1, 12)
+				priorSnapshots := make([]*corecloudprovider.InstanceType, 1, 12)
+				priorResults[0], priorSnapshots[0] = base, base.DeepCopy()
+				for _, test := range []struct {
+					name      string
+					images    []v1beta1.NodeImage
+					available bool
+				}{
+					{name: "initial empty status"},
+					{name: "partial TL-only feed", images: []v1beta1.NodeImage{tlImage}},
+					{name: "legacy TL status", images: []v1beta1.NodeImage{legacyImage}},
+					{name: "wrong architecture", images: []v1beta1.NodeImage{tlImage, armImage}},
+					{name: "wrong generation", images: []v1beta1.NodeImage{tlImage, gen1Image}},
+					{name: "other incompatible requirement", images: []v1beta1.NodeImage{tlImage, wrongSKUImage}},
+					{name: "ambiguous discriminator", images: []v1beta1.NodeImage{ambiguousImage}},
+					{name: "unresolved image ID", images: []v1beta1.NodeImage{emptyIDImage}},
+					{name: "CVM becomes available", images: []v1beta1.NodeImage{tlImage, cvmImage}, available: true},
+					{name: "CVM disappears", images: []v1beta1.NodeImage{tlImage}},
+					{name: "CVM returns", images: []v1beta1.NodeImage{cvmImage}, available: true},
+				} {
+					nodeClass.Status.Images = test.images
+					its, err = azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					snp, snpFound := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_ACLSNP" })
+					Expect(snpFound).To(BeTrue(), test.name)
+					Expect(snp.Offerings).ToNot(BeEmpty())
+					for i, offering := range snp.Offerings {
+						Expect(offering.Available).To(Equal(test.available && base.Offerings[i].Available), test.name)
+					}
+					ordinary, ordinaryFound := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_ACLOrdinary" })
+					Expect(ordinaryFound).To(BeTrue(), test.name)
+					Expect(ordinary.Offerings.Available()).To(BeEmpty(), test.name)
+					priorResults = append(priorResults, snp)
+					priorSnapshots = append(priorSnapshots, snp.DeepCopy())
+					Expect(priorResults).To(Equal(priorSnapshots), test.name)
+					Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1), test.name)
+				}
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNotFound", "images unavailable")
+				its, err = azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				snp, found := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == "Standard_ACLSNP" })
+				Expect(found).To(BeTrue())
+				Expect(snp.Offerings.Available()).To(BeEmpty())
+				Expect(its).To(ContainElement(WithTransform(getName, Equal("Standard_ACLOrdinary"))))
+				Expect(priorResults).To(Equal(priorSnapshots))
+				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+				nodeClass.Status.Images = []v1beta1.NodeImage{tlImage, cvmImage}
+				for _, enabled := range []*bool{nil, lo.ToPtr(false), lo.ToPtr(true), nil} {
+					nodeClass.Spec.Security.ConfidentialVM = enabled
+					its, err = azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					for _, name := range []string{"Standard_ACLSNP", "Standard_ACLOrdinary"} {
+						it, found := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == name })
+						Expect(found).To(BeTrue())
+						Expect(len(it.Offerings.Available()) > 0).To(Equal((name == "Standard_ACLSNP") == lo.FromPtr(enabled)))
+					}
+					Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
+					Expect(priorResults).To(Equal(priorSnapshots))
+				}
+			})
+
+			DescribeTable("should distinguish TL and SNP images without sharing incompatible cached selections", func(fips bool) {
+				if fips {
+					nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+				}
+				for _, mode := range []string{consts.ProvisionModeAKSScriptless, consts.ProvisionModeAKSMachineAPI,
+					consts.ProvisionModeBootstrappingClient, consts.ProvisionModeAKSMachineAPIHeaderBatch, consts.ProvisionModeAKSScriptless} {
+					for _, useSIG := range []bool{false, true, false} {
+						opts := *testOptions
+						opts.ProvisionMode, opts.UseSIG = mode, useSIG
+						its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+						Expect(err).ToNot(HaveOccurred())
+						managedSIG := opts.IsAKSMachineAPIMode() && useSIG
+						for name, expected := range map[string]bool{
+							"Standard_ACLOrdinary":    true,
+							"Standard_ACLSNP":         managedSIG,
+							"Standard_ACLNestedSNP":   false,
+							"Standard_ACLArm":         true,
+							"Standard_ACLSNPDisabled": false, "Standard_ACLTDX": false,
+							"Standard_ACLSNPArm": false, "Standard_ACLSNPGen1": false,
+							"Standard_ACLLegacy": false, "standard_dc4legacy": false,
+						} {
+							Expect(lo.ContainsBy(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == name })).To(Equal(expected),
+								"sku=%s mode=%s SIG=%t", name, mode, useSIG)
+						}
+						for _, it := range its {
+							if !strings.HasPrefix(it.Name, "Standard_ACL") {
+								continue
+							}
+							expectedType := "None"
+							if it.Name == "Standard_ACLSNP" {
+								expectedType = "SNP"
+							}
+							Expect(it.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType).Values()).To(ConsistOf(expectedType))
+							for _, imageType := range []string{"None", "SNP"} {
+								imageRequirements := scheduling.NewRequirements(scheduling.NewRequirement(
+									v1beta1.LabelSKUConfidentialComputingType, v1.NodeSelectorOpIn, imageType))
+								Expect(it.Requirements.Compatible(imageRequirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil).To(Equal(expectedType == imageType))
+							}
+							matches := 0
+							for _, image := range (imagefamily.AzureContainerLinux{}).DefaultImages(true, nodeClass.Spec.FIPSMode, true, false) {
+								if it.Requirements.Compatible(image.Requirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil {
+									matches++
+									Expect(image.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType).Values()).To(ConsistOf(expectedType))
+								}
+							}
+							Expect(matches).To(Equal(1), "sku=%s", it.Name)
+						}
+					}
+				}
+			}, Entry("OCI", false), Entry("FIPS OCI", true))
+
+			It("should reject CVM and nested-SNP SKUs when Kata is requested", func() {
+				nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+				for _, fipsMode := range []v1beta1.FIPSMode{v1beta1.FIPSModeDisabled, v1beta1.FIPSModeFIPS} {
+					nodeClass.Spec.FIPSMode = lo.ToPtr(fipsMode)
+					for _, mode := range []string{consts.ProvisionModeAKSScriptless, consts.ProvisionModeAKSMachineAPI,
+						consts.ProvisionModeBootstrappingClient, consts.ProvisionModeAKSMachineAPIHeaderBatch} {
+						for _, useSIG := range []bool{false, true} {
+							opts := *testOptions
+							opts.ProvisionMode, opts.UseSIG = mode, useSIG
+							its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+							Expect(err).ToNot(HaveOccurred())
+							for _, name := range []string{"Standard_ACLSNP", "Standard_ACLSNPDisabled", "Standard_ACLNestedSNP"} {
+								Expect(its).ToNot(ContainElement(WithTransform(getName, Equal(name))),
+									"mode=%s SIG=%t FIPS=%s", mode, useSIG, fipsMode)
+							}
+						}
+					}
+				}
+			})
+
+			It("should preserve secure boot disk headroom and isolate cached disk capacities for SNP", func() {
+				sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), skewer.CapabilityConfidentialComputingType, "SNP")
+				sku.Name = lo.ToPtr("Standard_ACLEphemeralSNP")
+				azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku(*sku))
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+				opts := *testOptions
+				opts.ProvisionMode, opts.UseSIG = consts.ProvisionModeAKSMachineAPI, true
+				for _, diskType := range []v1beta1.OSDiskType{"", v1beta1.OSDiskTypeManaged, ""} {
+					nodeClass.Spec.OSDiskType = lo.ToPtr(diskType)
+					nodeClass.Spec.OSDiskSizeGB = nil
+					its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					it, found := lo.Find(its, func(it *corecloudprovider.InstanceType) bool { return it.Name == sku.GetName() })
+					Expect(found).To(BeTrue())
+					capacity := it.Capacity[v1.ResourceEphemeralStorage]
+					Expect(capacity.Cmp(resource.MustParse(lo.Ternary(diskType == v1beta1.OSDiskTypeManaged, "1024G", "1599G")))).To(BeZero())
+					Expect(it.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType).Values()).To(ConsistOf("SNP"))
+				}
+			})
+
+			It("should reject confidential and nested-SNP SKUs for other image families", func() {
+				opts := *testOptions
+				opts.ProvisionMode, opts.UseSIG = consts.ProvisionModeAKSMachineAPI, true
+				for _, family := range []string{v1beta1.UbuntuImageFamily, v1beta1.Ubuntu2204ImageFamily, v1beta1.Ubuntu2404ImageFamily,
+					v1beta1.AzureLinuxImageFamily, v1beta1.Windows2022ImageFamily, v1beta1.Windows2025ImageFamily} {
+					nodeClass.Spec.ImageFamily = lo.ToPtr(family)
+					nodeClass.Spec.Security = nil
+					for _, kata := range []bool{false, true} {
+						nodeClass.Spec.WorkloadRuntime = lo.ToPtr(lo.Ternary(kata, v1beta1.WorkloadRuntimeKataVMIsolation, v1beta1.WorkloadRuntimeOCIContainer))
+						its, err := azureEnv.InstanceTypesProvider.List(options.ToContext(ctx, &opts), nodeClass)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(its).To(ContainElement(WithTransform(getName, Equal("Standard_ACLOrdinary"))))
+						for _, name := range []string{"Standard_ACLSNP", "Standard_ACLSNPDisabled", "Standard_ACLTDX", "Standard_ACLLegacy", "Standard_ACLNestedSNP"} {
+							Expect(its).ToNot(ContainElement(WithTransform(getName, Equal(name))))
+						}
+					}
+				}
+			})
+		})
+
 		Context("Filtering in InstanceType", func() {
 			var instanceTypes corecloudprovider.InstanceTypes
 			var err error

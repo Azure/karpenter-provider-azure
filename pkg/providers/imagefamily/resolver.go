@@ -407,9 +407,24 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 	if err != nil {
 		return "", err
 	}
+	requiresSNP := lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily &&
+		instanceType.Requirements.Has(v1beta1.LabelSKUConfidentialComputingType) &&
+		instanceType.Requirements.Get(v1beta1.LabelSKUConfidentialComputingType).Has("SNP")
+	// Status intentionally retains both security types for existing-node lifecycle
+	// operations. Never resolve a new launch across the requested security boundary.
+	if requiresSNP != nodeClass.IsConfidentialVMEnabled() {
+		return "", fmt.Errorf("instance type %s does not match security.confidentialVM", instanceType.Name)
+	}
 	for _, availableImage := range nodeImages {
+		imageRequirements := scheduling.NewNodeSelectorRequirements(availableImage.Requirements...)
+		// Persisted pre-upgrade TL images lack the discriminator and must not match SNP instances.
+		if requiresSNP && (!imageRequirements.Has(v1beta1.LabelSKUConfidentialComputingType) ||
+			imageRequirements.Get(v1beta1.LabelSKUConfidentialComputingType).Operator() != corev1.NodeSelectorOpIn ||
+			!imageRequirements.Get(v1beta1.LabelSKUConfidentialComputingType).Has("SNP")) {
+			continue
+		}
 		if err := instanceType.Requirements.Compatible(
-			scheduling.NewNodeSelectorRequirements(availableImage.Requirements...),
+			imageRequirements,
 			v1beta1.AllowUndefinedWellKnownAndRestrictedLabels,
 		); err == nil {
 			return availableImage.ID, nil

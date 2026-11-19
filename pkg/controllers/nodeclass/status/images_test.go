@@ -20,8 +20,10 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 
@@ -31,6 +33,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/version"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -491,6 +495,91 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			})
 		})
 	}
+
+	DescribeTable("should refresh legacy ACL requirements without upgrading images outside maintenance", func(fipsMode v1beta1.FIPSMode) {
+		ctx = test.Options(test.OptionsFields{
+			UseSIG:            lo.ToPtr(true),
+			SIGSubscriptionID: lo.ToPtr("10945678-1234-1234-1234-123456789012"),
+		}).ToContext(ctx)
+		// Seed CVM variants locally until they appear in the feed snapshot.
+		versions, err := azureEnv.NodeImageVersionsAPI.List(ctx, fake.Region)
+		Expect(err).ToNot(HaveOccurred())
+		azureEnv.NodeImageVersionsAPI.OverrideNodeImageVersions = append([]*armcontainerservice.NodeImageVersion{}, versions...)
+		for _, definition := range []string{imagefamily.AzureContainerLinuxGen2CVMImageDefinition, imagefamily.AzureContainerLinuxGen2FIPSCVMImageDefinition} {
+			azureEnv.NodeImageVersionsAPI.OverrideNodeImageVersions = append(azureEnv.NodeImageVersionsAPI.OverrideNodeImageVersions, &armcontainerservice.NodeImageVersion{
+				FullName: lo.ToPtr("AKSAzureLinux-" + definition + "-" + newSIGImageVersion),
+				OS:       lo.ToPtr("AKSAzureLinux"),
+				SKU:      lo.ToPtr(definition),
+				Version:  lo.ToPtr(newSIGImageVersion),
+			})
+		}
+		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+		nodeClass.Spec.FIPSMode = lo.ToPtr(fipsMode)
+		nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+		nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(true)
+		nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+		test.ApplySIGImagesWithVersion(nodeClass, newSIGImageVersion)
+		expectedImages := nodeClass.Status.Images
+		test.ApplySIGImagesWithVersion(nodeClass, oldSIGImageVersion)
+		// Pre-upgrade status contains only TL images, without the new SNP/None discriminator.
+		nodeClass.Status.Images = nodeClass.Status.Images[:2]
+		for i := range nodeClass.Status.Images {
+			expectedImages[i].ID = nodeClass.Status.Images[i].ID
+			nodeClass.Status.Images[i].Requirements = lo.Filter(nodeClass.Status.Images[i].Requirements, func(req corev1.NodeSelectorRequirement, _ int) bool {
+				return req.Key != v1beta1.LabelSKUConfidentialComputingType
+			})
+		}
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+		ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
+		imageReconciler := status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, "kube-system")
+		resolver := imagefamily.NewDefaultResolver(nil, nil, nil, nil)
+		instanceType := &cloudprovider.InstanceType{
+			Name: "test-snp",
+			Requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, "amd64"),
+				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, corev1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, "SNP"),
+			),
+		}
+		_, err = resolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+		Expect(err).To(MatchError(ContainSubstring("no compatible images found")))
+
+		_, err = imageReconciler.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(nodeClass.Status.Images).To(HaveExactElements(expectedImages))
+		Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeImagesReady)).To(BeTrue())
+		Expect(lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)).To(Equal(newSIGImageVersion))
+		for i, image := range nodeClass.Status.Images {
+			expectedType := "None"
+			if i == 2 {
+				expectedType = "SNP"
+			}
+			Expect(image.Requirements).To(ContainElement(corev1.NodeSelectorRequirement{
+				Key: v1beta1.LabelSKUConfidentialComputingType, Operator: corev1.NodeSelectorOpIn, Values: []string{expectedType},
+			}))
+		}
+		imageID, err := resolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(imageID).To(Equal(expectedImages[2].ID))
+		definition := imagefamily.AzureContainerLinuxGen2CVMImageDefinition
+		if fipsMode == v1beta1.FIPSModeFIPS {
+			definition = imagefamily.AzureContainerLinuxGen2FIPSCVMImageDefinition
+		}
+		Expect(imageID).To(HaveSuffix("/images/" + definition + "/versions/" + newSIGImageVersion))
+		instanceType.Requirements[v1beta1.LabelSKUConfidentialComputingType] = scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, corev1.NodeSelectorOpIn, "None")
+		nodeClass.Spec.Security.ConfidentialVM = lo.ToPtr(false)
+		imageID, err = resolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(imageID).To(Equal(expectedImages[0].ID))
+
+		_, err = imageReconciler.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(nodeClass.Status.Images).To(HaveExactElements(expectedImages))
+	},
+		Entry("non-FIPS", v1beta1.FIPSModeDisabled),
+		Entry("FIPS", v1beta1.FIPSModeFIPS),
+	)
 
 	Context("FIPS Validation With UseSIG", func() {
 		var imageReconciler *status.NodeImageReconciler

@@ -38,6 +38,8 @@ const (
 	AzureContainerLinuxGen2ArmImageDefinition     = "aclgen2arm64TL"
 	AzureContainerLinuxGen2FIPSImageDefinition    = "aclgen2fipsTL"
 	AzureContainerLinuxGen2ArmFIPSImageDefinition = "aclgen2arm64fipsTL"
+	AzureContainerLinuxGen2CVMImageDefinition     = "aclgen2CVM"
+	AzureContainerLinuxGen2FIPSCVMImageDefinition = "aclgen2fipsCVM"
 )
 
 type AzureContainerLinux struct {
@@ -50,23 +52,25 @@ func (a AzureContainerLinux) Name() string {
 
 func (a AzureContainerLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
 	// ACL requires Machine API, whose image conversion currently supports only SIG IDs.
-	// ACL has no non-Trusted Launch or Kata variants.
+	// ACL requires explicit security settings and does not support Kata.
 	if !useSIG || !trustedLaunch || kataEnabled {
 		return []types.DefaultImageOutput{}
 	}
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		return []types.DefaultImageOutput{
-			azureContainerLinuxImage(AzureContainerLinuxGen2FIPSImageDefinition, "aks-acl-gen2-fips-tl", karpv1.ArchitectureAmd64),
-			azureContainerLinuxImage(AzureContainerLinuxGen2ArmFIPSImageDefinition, "aks-acl-arm64-gen2-fips-tl", karpv1.ArchitectureArm64),
+			azureContainerLinuxImage(AzureContainerLinuxGen2FIPSImageDefinition, "aks-acl-gen2-fips-tl", karpv1.ArchitectureAmd64, "None"),
+			azureContainerLinuxImage(AzureContainerLinuxGen2ArmFIPSImageDefinition, "aks-acl-arm64-gen2-fips-tl", karpv1.ArchitectureArm64, "None"),
+			azureContainerLinuxImage(AzureContainerLinuxGen2FIPSCVMImageDefinition, "aks-acl-cvm-gen2-fips", karpv1.ArchitectureAmd64, "SNP"),
 		}
 	}
 	return []types.DefaultImageOutput{
-		azureContainerLinuxImage(AzureContainerLinuxGen2ImageDefinition, "aks-acl-gen2-tl", karpv1.ArchitectureAmd64),
-		azureContainerLinuxImage(AzureContainerLinuxGen2ArmImageDefinition, "aks-acl-arm64-gen2-tl", karpv1.ArchitectureArm64),
+		azureContainerLinuxImage(AzureContainerLinuxGen2ImageDefinition, "aks-acl-gen2-tl", karpv1.ArchitectureAmd64, "None"),
+		azureContainerLinuxImage(AzureContainerLinuxGen2ArmImageDefinition, "aks-acl-arm64-gen2-tl", karpv1.ArchitectureArm64, "None"),
+		azureContainerLinuxImage(AzureContainerLinuxGen2CVMImageDefinition, "aks-acl-cvm-gen2", karpv1.ArchitectureAmd64, "SNP"),
 	}
 }
 
-func azureContainerLinuxImage(imageDefinition, distro, architecture string) types.DefaultImageOutput {
+func azureContainerLinuxImage(imageDefinition, distro, architecture, confidentialComputingType string) types.DefaultImageOutput {
 	return types.DefaultImageOutput{
 		GalleryResourceGroup: AKSAzureLinuxResourceGroup,
 		GalleryName:          AKSAzureLinuxGalleryName,
@@ -74,6 +78,8 @@ func azureContainerLinuxImage(imageDefinition, distro, architecture string) type
 		Requirements: scheduling.NewRequirements(
 			scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, architecture),
 			scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+			// Keep both security types in image inventory; launch policy is applied separately.
+			scheduling.NewRequirement(v1beta1.LabelSKUConfidentialComputingType, v1.NodeSelectorOpIn, confidentialComputingType),
 		),
 		Distro: distro,
 	}
