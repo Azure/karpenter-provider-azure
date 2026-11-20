@@ -17,6 +17,8 @@ limitations under the License.
 package gpu_test
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
@@ -52,6 +55,165 @@ var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("GPU", func() {
+	DescribeTable("should scale managed static MIG from zero and provision another node for overflow",
+		Label("GPU", "ManagedMIG"),
+		func(strategy v1beta1.MigStrategy, gpuResource corev1.ResourceName) {
+			if os.Getenv("E2E_MANAGED_MIG") == "" {
+				Skip("managed MIG requires explicit opt-in: E2E_MANAGED_MIG=true; see test/README.md for quota and preview prerequisites")
+			}
+			Expect(os.Getenv("E2E_MANAGED_MIG")).To(Equal("true"), "E2E_MANAGED_MIG must be true or unset")
+			Expect(env.InClusterController).To(BeTrue(), "managed MIG E2E requires self-hosted Karpenter, not NAP")
+			Expect(env.IsAKSMachineAPIMode()).To(BeTrue(), "managed MIG E2E requires PROVISION_MODE=aksmachineapi or aksmachineapiheaderbatch")
+			controller := env.ExpectActiveKarpenterPod()
+			Expect(controller.Spec.Containers).To(HaveLen(1))
+			Expect(controller.Spec.Containers[0].Env).To(ContainElement(corev1.EnvVar{
+				Name: "PROVISION_MODE", Value: env.ProvisionMode,
+			}), "the running self-hosted controller must match the test's Machine API provision mode")
+
+			const sku = "Standard_NC24ads_A100_v4"
+			const slicesPerNode = 7 // One A100 80GB, partitioned into homogeneous MIG1g instances.
+			nodeClass := azkarptest.AKSNodeClass(azkarptest.WithImageFamily(v1beta1.Ubuntu2204ImageFamily))
+			nodeClass.Spec.GPU = &v1beta1.GPU{
+				Mode: lo.ToPtr(v1beta1.GPUModeDriver),
+				Nvidia: &v1beta1.NvidiaGPU{
+					ManagementMode:     lo.ToPtr(v1beta1.ManagementModeManaged),
+					MigStrategy:        lo.ToPtr(strategy),
+					GPUInstanceProfile: lo.ToPtr(v1beta1.GPUInstanceProfileMIG1g),
+				},
+			}
+			nodePool := env.DefaultNodePool(nodeClass)
+			test.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: v1beta1.LabelSKUFamily, Operator: corev1.NodeSelectorOpExists,
+				},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: corev1.LabelInstanceTypeStable, Operator: corev1.NodeSelectorOpIn, Values: []string{sku},
+				},
+			)
+			nodePool.Spec.Limits = karpv1.Limits{
+				corev1.ResourceCPU: resource.MustParse("48"),
+				gpuResource:        resource.MustParse("14"),
+			}
+			deployment := test.Deployment(test.DeploymentOptions{
+				Replicas: slicesPerNode,
+				PodOptions: test.PodOptions{
+					NodeSelector: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
+					Tolerations: []corev1.Toleration{{
+						Key: "nvidia.com/gpu", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule,
+					}},
+					Image: "nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda12.5.0@sha256:7c7540bdf1f942d4fb6db97069fd6c289471b54ac29e3c7fcdf914cf77af7d41",
+					// Keep every slice allocated after CUDA succeeds, so the eighth pod cannot reuse one.
+					Command: []string{"/bin/sh", "-ec", "nvidia-smi -L && /cuda-samples/sample && touch /tmp/cuda-passed && exec sleep infinity"},
+					ReadinessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{"test", "-f", "/tmp/cuda-passed"}}},
+					},
+					ResourceRequirements: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi"),
+							gpuResource: resource.MustParse("1"),
+						},
+						Limits: corev1.ResourceList{gpuResource: resource.MustParse("1")},
+					},
+				},
+			})
+			selector := labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels)
+
+			By("starting with no Karpenter nodes, NodeClaims, or machines")
+			nodes := &corev1.NodeList{}
+			Expect(env.Client.List(env, nodes, client.HasLabels{karpv1.NodePoolLabelKey})).To(Succeed())
+			Expect(nodes.Items).To(BeEmpty())
+			claims := &karpv1.NodeClaimList{}
+			Expect(env.Client.List(env, claims)).To(Succeed())
+			Expect(claims.Items).To(BeEmpty())
+			env.ExpectNoMachines()
+
+			By("creating unschedulable MIG workloads before making the NodePool available")
+			env.ExpectCreated(deployment)
+			Eventually(func(g Gomega) {
+				pods := env.ExpectPodsMatchingSelector(selector)
+				g.Expect(pods).To(HaveLen(slicesPerNode))
+				for _, pod := range pods {
+					g.Expect(pod.Spec.NodeName).To(BeEmpty())
+					g.Expect(pod.Status.Phase).To(Equal(corev1.PodPending))
+					g.Expect(pod.Status.Conditions).To(ContainElement(And(
+						HaveField("Type", corev1.PodScheduled), HaveField("Status", corev1.ConditionFalse),
+						HaveField("Reason", corev1.PodReasonUnschedulable),
+					)))
+				}
+			}).Should(Succeed())
+			// Do not install a device plugin: the Machine API managed GPU stack must provide it.
+			env.ExpectCreated(nodeClass, nodePool)
+			admitted := &v1beta1.AKSNodeClass{ObjectMeta: metav1.ObjectMeta{Name: nodeClass.Name}}
+			env.ExpectExists(admitted)
+			Expect(admitted.GetManagementMode()).To(Equal(v1beta1.ManagementModeManaged), "managed mode must survive API server admission")
+			Expect(admitted.GetMigStrategy()).To(Equal(strategy), "MIG strategy must survive API server admission")
+			Expect(admitted.GetGPUInstanceProfile()).To(Equal(v1beta1.GPUInstanceProfileMIG1g), "MIG profile must survive API server admission")
+
+			var firstNodeName string
+			for nodeCount := 1; nodeCount <= 2; nodeCount++ {
+				podCount := slicesPerNode + nodeCount - 1
+				if nodeCount == 2 {
+					By("adding an eighth pod while all seven slices on the first node remain allocated")
+					deployment.Spec.Replicas = lo.ToPtr(int32(podCount))
+					env.ExpectUpdated(deployment)
+				}
+				Eventually(func(g Gomega) {
+					pods := env.ExpectPodsMatchingSelector(selector)
+					g.Expect(pods).To(HaveLen(podCount))
+					for _, pod := range pods {
+						g.Expect(pod.Status.Phase).To(Equal(corev1.PodRunning))
+						g.Expect(pod.Status.ContainerStatuses).To(HaveLen(1))
+						g.Expect(pod.Status.ContainerStatuses[0].Ready).To(BeTrue(), "CUDA workload must succeed in %s", pod.Name)
+						g.Expect(pod.Status.ContainerStatuses[0].RestartCount).To(BeZero())
+					}
+				}).WithTimeout(20 * time.Minute).Should(Succeed())
+
+				createdNodes := env.ExpectCreatedNodeCount("==", nodeCount)
+				if nodeCount == 1 {
+					firstNodeName = createdNodes[0].Name
+				}
+				podsPerNode := map[string]int{}
+				for _, pod := range env.ExpectPodsMatchingSelector(selector) {
+					podsPerNode[pod.Spec.NodeName]++
+					logs := env.EventuallyGetPodLogs(pod)
+					Expect(logs).To(ContainSubstring("MIG 1g.10gb"), "pod %s must see an A100 80GB MIG1g device", pod.Name)
+					Expect(logs).To(ContainSubstring("Test PASSED"), "pod %s must execute a CUDA kernel successfully", pod.Name)
+				}
+				Expect(podsPerNode).To(HaveLen(nodeCount))
+				Expect(podsPerNode[firstNodeName]).To(Equal(slicesPerNode), "all seven original slices must remain occupied during overflow")
+				for _, node := range createdNodes {
+					Expect(node.Labels).To(HaveKeyWithValue(karpv1.NodePoolLabelKey, nodePool.Name))
+					Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelInstanceTypeStable, sku))
+					Expect(node.Labels).To(HaveKeyWithValue("kubernetes.azure.com/dcgm-exporter", "enabled"))
+					Expect(podsPerNode[node.Name]).To(BeNumerically(">", 0))
+					Expect(podsPerNode[node.Name]).To(BeNumerically("<=", slicesPerNode))
+					for _, resources := range []corev1.ResourceList{node.Status.Capacity, node.Status.Allocatable} {
+						advertised := map[corev1.ResourceName]int64{}
+						for name, quantity := range resources {
+							if (name == "nvidia.com/gpu" || strings.HasPrefix(string(name), "nvidia.com/mig-")) && !quantity.IsZero() {
+								advertised[name] = quantity.Value()
+							}
+						}
+						Expect(advertised).To(Equal(map[corev1.ResourceName]int64{gpuResource: slicesPerNode}),
+							"node %s must advertise exactly seven slices under the correct resource name", node.Name)
+					}
+				}
+				nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", nodeCount)
+				env.EventuallyExpectNodeClaimsReady(nodeClaims...)
+				env.EventuallyExpectCreatedMachineCount("==", nodeCount)
+				for _, claim := range nodeClaims {
+					Expect(podsPerNode).To(HaveKey(claim.Status.NodeName))
+					machineID := claim.Annotations[v1beta1.AnnotationAKSMachineResourceID]
+					Expect(machineID).ToNot(BeEmpty(), "NodeClaim must have been launched via the Machine API")
+					machine := env.ExpectMachineByID(machineID)
+					Expect(strings.EqualFold(lo.FromPtr(machine.ID), machineID)).To(BeTrue(), "Machine resource ID must match NodeClaim annotation")
+				}
+			}
+		},
+		Entry("Single MIG1g", v1beta1.MigStrategySingle, corev1.ResourceName("nvidia.com/gpu")),
+		Entry("Mixed MIG1g", v1beta1.MigStrategyMixed, corev1.ResourceName("nvidia.com/mig-1g.10gb")),
+	)
+
 	DescribeTable("should provision one GPU node and one GPU Pod",
 		Label("GPU"),
 		func(nodeClass *v1beta1.AKSNodeClass) {
