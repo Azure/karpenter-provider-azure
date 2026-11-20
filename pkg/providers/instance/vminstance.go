@@ -1019,8 +1019,11 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				return nil
 			}
 
-			_, err = result.Poller.PollUntilDone(ctx, defaultPollerOptions())
+			_, err = pollProvisioningUntilDone(ctx, result.Poller)
 			if err != nil {
+				if IsLROPollingError(err) {
+					return fmt.Errorf("observing VM %q provisioning: %w", resourceName, err)
+				}
 				VMCreateFailureMetric.With(map[string]string{
 					metrics.ImageLabel:        launchTemplate.ImageID,
 					metrics.SizeLabel:         instanceType.Name,

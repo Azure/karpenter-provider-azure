@@ -19,7 +19,9 @@ package cloudprovider
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -32,6 +34,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
@@ -292,6 +295,118 @@ func vmNodeOverlayCapacityTestOptions() nodeOverlayCapacityTestOptions {
 	}
 }
 
+func runLROPollingErrorTests() {
+	Context("LRO polling errors", func() {
+		DescribeTable("should preserve accepted capacity when LRO polling fails",
+			func(pollErr error, standalone bool) {
+				sku := fake.MakeSKU("Standard_D2_v3")
+				azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+					CurrentValue: lo.ToPtr[int32](98),
+					Limit:        lo.ToPtr[int64](100),
+				})
+				Expect(azureEnv.QuotaProvider.Update(ctx)).To(Succeed())
+				requirements := []karpv1.NodeSelectorRequirementWithMinValues{
+					{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}},
+					{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+				}
+				nodeClaim.Spec.Requirements = requirements
+				nodePool.Spec.Template.Spec.Requirements = requirements
+				if testOptions.IsAKSMachineAPIMode() {
+					azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.PollError.Set(pollErr)
+				} else {
+					azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.PollError.Set(pollErr)
+				}
+
+				if standalone {
+					// Remove the NodePool label to force a standalone NodeClaim.
+					delete(nodeClaim.Labels, karpv1.NodePoolLabelKey)
+
+					ExpectApplied(ctx, env.Client, nodeClass, nodeClaim)
+					created, err := cloudProvider.Create(ctx, nodeClaim)
+					Expect(created).To(BeNil())
+					Expect(instance.IsLROPollingError(err)).To(BeTrue())
+					Expect(errors.Is(err, pollErr)).To(BeTrue())
+					ExpectExists(ctx, env.Client, nodeClaim)
+				} else {
+					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+					pod := coretest.UnschedulablePod()
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+
+					// Confirm the claim and node is not marked for deletion.
+					claims := &karpv1.NodeClaimList{}
+					Expect(env.Client.List(ctx, claims)).To(Succeed())
+					Expect(claims.Items).To(HaveLen(1))
+					Expect(claims.Items[0].DeletionTimestamp.IsZero()).To(BeTrue())
+					nodes := &v1.NodeList{}
+					Expect(env.Client.List(ctx, nodes)).To(Succeed())
+					Expect(nodes.Items).To(HaveLen(1))
+					Expect(nodes.Items[0].DeletionTimestamp.IsZero()).To(BeTrue())
+				}
+				Expect(azureEnv.QuotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse(), "LRO polling failure must not release quota")
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineDeleteBehavior.CalledWithInput.Len()).To(Equal(0))
+				if testOptions.IsAKSMachineAPIMode() {
+					Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				} else {
+					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				}
+
+				if standalone {
+					azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.PollError.Set(nil)
+					azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.PollError.Set(nil)
+					created, err := cloudProvider.Create(ctx, nodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(created).ToNot(BeNil())
+					if testOptions.IsAKSMachineAPIMode() {
+						Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					} else {
+						Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					}
+				}
+			},
+			Entry("throttled standalone NodeClaim", &azcore.ResponseError{StatusCode: http.StatusTooManyRequests}, true),
+			Entry("throttled NodePool-managed NodeClaim", &azcore.ResponseError{StatusCode: http.StatusTooManyRequests}, false),
+			Entry("canceled standalone NodeClaim", context.Canceled, true),
+			Entry("canceled NodePool-managed NodeClaim", context.Canceled, false),
+			Entry("deadline standalone NodeClaim", context.DeadlineExceeded, true),
+			Entry("deadline NodePool-managed NodeClaim", context.DeadlineExceeded, false),
+		)
+		DescribeTable("should still clean up confirmed provisioning failures",
+			func(standalone bool) {
+				terminalErr := &azcore.ResponseError{ErrorCode: "TooManyRequests"}
+				if testOptions.IsAKSMachineAPIMode() {
+					azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Error.Set(terminalErr)
+				} else {
+					azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.Error.Set(terminalErr)
+				}
+				// Remove the NodePool label to force a standalone NodeClaim.
+				if standalone {
+					delete(nodeClaim.Labels, karpv1.NodePoolLabelKey)
+				}
+				ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+				_, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				if standalone {
+					Expect(err).To(HaveOccurred())
+					Expect(instance.IsLROPollingError(err)).To(BeFalse())
+				} else {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(apierrors.IsNotFound(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClaim), &karpv1.NodeClaim{}))).To(BeTrue())
+				}
+				if testOptions.IsAKSMachineAPIMode() {
+					Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(1))
+				} else {
+					// The fake leaves no VM; the second GET is cleanup verifying that it is gone.
+					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(2))
+				}
+			},
+			Entry("standalone NodeClaim", true),
+			Entry("NodePool-managed NodeClaim", false),
+		)
+	})
+}
+
 func runCapacityBufferTests(expectCreateCalls func(expectedCalls int)) {
 	Context("CapacityBuffer", func() {
 		It("should launch capacity for a PodTemplate-backed buffer", func() {
@@ -436,6 +551,27 @@ var _ = Describe("CloudProvider", func() {
 		})
 	})
 
+	Context("ProvisionMode = BootstrappingClient, ManageExistingAKSMachines = false", func() {
+		BeforeEach(func() {
+			testOptions = test.Options(test.OptionsFields{
+				ProvisionMode: lo.ToPtr(consts.ProvisionModeBootstrappingClient),
+			})
+			ctx = coreoptions.ToContext(ctx, coretest.Options())
+			ctx = options.ToContext(ctx, testOptions)
+			azureEnv = test.NewEnvironment(ctx, env)
+			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore, coreoptions.FromContext(ctx).LegacyNodeRepair)
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
+		})
+		AfterEach(func() {
+			cloudProvider.WaitForInstancePromises()
+			cluster.Reset()
+			azureEnv.Reset(ctx)
+		})
+		runLROPollingErrorTests()
+	})
+
 	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
 	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.
 	// If ProvisionMode = AKSScriptless is no longer supported, their code/tests will be replaced with ProvisionMode = AKSMachineAPI.
@@ -467,6 +603,8 @@ var _ = Describe("CloudProvider", func() {
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(expectedCalls))
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 		})
+
+		runLROPollingErrorTests()
 
 		It("should reject managed GPU before creating a VM on an unsupported provision mode", func() {
 			nodeClass.Spec.GPU = &v1beta1.GPU{

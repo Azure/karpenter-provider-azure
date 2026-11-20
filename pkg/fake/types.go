@@ -106,12 +106,14 @@ func (m *MockedFunction[I, O]) FailedCalls() int {
 type MockedLRO[I any, O any] struct {
 	MockedFunction[I, O]
 	BeginError AtomicError // Error to return a certain number of times defined by custom error options (for Begin)
+	PollError  AtomicError // LRO polling error before the operation reaches a terminal state
 }
 
 // Reset must be called between tests otherwise tests will pollute each other.
 func (m *MockedLRO[I, O]) Reset() {
 	m.MockedFunction.Reset()
 	m.BeginError.Reset()
+	m.PollError.Reset()
 }
 
 func (m *MockedLRO[I, O]) Invoke(input *I, defaultTransformer func(*I) (*O, error)) (*runtime.Poller[O], error) {
@@ -121,9 +123,10 @@ func (m *MockedLRO[I, O]) Invoke(input *I, defaultTransformer func(*I) (*O, erro
 		m.failedCalls.Add(1)
 		return nil, err
 	}
+	pollErr := m.PollError.Get()
 	if err := m.Error.Get(); err != nil {
 		m.failedCalls.Add(1)
-		return newMockPoller[O](nil, err)
+		return newMockPoller[O](nil, err, pollErr)
 	}
 
 	if ct := m.getCustomTransformer(); ct != nil {
@@ -135,7 +138,7 @@ func (m *MockedLRO[I, O]) Invoke(input *I, defaultTransformer func(*I) (*O, erro
 
 	if !m.Output.IsNil() {
 		m.successfulCalls.Add(1)
-		return newMockPoller(m.Output.Clone(), nil)
+		return newMockPoller(m.Output.Clone(), nil, pollErr)
 	}
 	out, err := defaultTransformer(input)
 	if err != nil {
@@ -143,7 +146,7 @@ func (m *MockedLRO[I, O]) Invoke(input *I, defaultTransformer func(*I) (*O, erro
 	} else {
 		m.successfulCalls.Add(1)
 	}
-	return newMockPoller(out, err)
+	return newMockPoller(out, err, pollErr)
 }
 
 func (m *MockedLRO[I, O]) Calls() int {
@@ -160,17 +163,21 @@ func (m *MockedLRO[I, O]) FailedCalls() int {
 
 // MockHandler returns a pre-defined result or error.
 type MockHandler[T any] struct {
-	result *T
-	err    error
+	result  *T
+	err     error
+	pollErr error
 }
 
-// Done returns true if the LRO has reached a terminal state. TrivialHandler is always done.
+// Done returns true unless observation failed before reaching a terminal state.
 func (h MockHandler[T]) Done() bool {
-	return true
+	return h.pollErr == nil
 }
 
 // Poll fetches the latest state of the LRO.
 func (h MockHandler[T]) Poll(context.Context) (*http.Response, error) {
+	if h.pollErr != nil {
+		return nil, h.pollErr
+	}
 	if h.err != nil {
 		return nil, h.err
 	}
@@ -188,12 +195,13 @@ func (h MockHandler[T]) Result(_ context.Context, result *T) error {
 }
 
 // newMockPoller returns a poller with a mock handler that returns the given result and error.
-func newMockPoller[T any](result *T, err error) (*runtime.Poller[T], error) {
+func newMockPoller[T any](result *T, err, pollErr error) (*runtime.Poller[T], error) {
 	// http.Response and Pipeline are not used
 	return runtime.NewPoller(nil, runtime.Pipeline{}, &runtime.NewPollerOptions[T]{
 		Handler: MockHandler[T]{
-			result: result,
-			err:    err,
+			result:  result,
+			err:     err,
+			pollErr: pollErr,
 		},
 		// Response: &result at the poller level is not needed, result from handler is always used
 	})

@@ -78,7 +78,7 @@ func createVirtualMachineExtension(
 		return nil, err
 	}
 
-	res, err := poller.PollUntilDone(ctx, defaultPollerOptions())
+	res, err := pollProvisioningUntilDone(ctx, poller)
 	if err != nil {
 		return nil, err
 	}
