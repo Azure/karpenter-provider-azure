@@ -2,7 +2,7 @@
 
 **Author:** @GuetaHen (drafted with Copilot)
 
-**Last updated:** Nov 19, 2026
+**Last updated:** Nov 20, 2026
 
 **Status:** Proposed
 
@@ -77,6 +77,9 @@ The customer owns the network of each listed region:
 * global VNet peering between the cluster VNet and every listed VNet, and
   between every two listed VNets, with NSG rules that allow the node and pod
   ranges of all regions;
+* a CNI that carries pod traffic between nodes by encapsulation between node
+  addresses, for example VXLAN or Geneve. The NICs keep IP forwarding off (see
+  Decision 7), so Azure drops pod traffic that is routed natively;
 * a path to the API server from every region;
 * container registry replicas near the nodes, where pull latency or egress cost
   matters.
@@ -154,11 +157,19 @@ drifts only when its own region or subnet is no longer listed.
 
 #### Conclusion: Option B
 
-Adding a region does not replace nodes. When a region is removed, core drift
-usually reports `InstanceTypeNotFound` first, because the NodeClass no longer
-offers that region. The provider reports `MultiRegionPlacementDrift` for
-NodeClaims that core has not checked yet and after a subnet change. Core
-replaces drifted nodes within the disruption budgets of their NodePool.
+Adding a region to an existing `spec.regions` list does not replace nodes. When
+a region is removed, core drift usually reports `InstanceTypeNotFound` first,
+because the NodeClass no longer offers that region. The provider reports
+`MultiRegionPlacementDrift` for NodeClaims that core has not checked yet and
+after a subnet change. Core replaces drifted nodes within the disruption
+budgets of their NodePool.
+
+Adding `spec.regions` to an AKSNodeClass that already has nodes replaces all of
+its nodes once. Their NodeClaims have no recorded placement, so the provider
+cannot verify their region and subnet. An explicit `spec.vnetSubnetID` must
+also be removed, which changes the hash. Removing `spec.regions` also replaces
+every node that has a recorded placement. To keep existing nodes, add a new
+AKSNodeClass and NodePool for the other regions.
 
 ### Decision 3: How to keep the state of each region?
 
@@ -204,8 +215,9 @@ machine, and accepts a subnet and identities in that region.
 
 #### Option A: Bring-your-own CNI only
 
-`networkPlugin` `none` with an empty `networkPluginMode`. The CNI carries pod
-traffic between regions, for example by encapsulation between node IPs.
+`networkPlugin` `none` with an empty `networkPluginMode`. The CNI must carry
+pod traffic between regions by encapsulation between node IPs (see Network
+contract).
 
 #### Option B: Azure CNI Overlay
 
@@ -243,9 +255,14 @@ lower-weight overflow NodePool whose AKSNodeClass lists other regions.
 
 #### Conclusion: Option B
 
-No new API. The overflow NodePool gets only what the home NodePool cannot
-place. One controller must own both NodePools: a second autoscaler can launch a
-node for the same pod.
+No new API. Weights are a preference, not a strict failover. The scheduler
+first fills existing nodes and the NodeClaims it already planned in the same
+batch, from any NodePool. Only then does it open a new NodeClaim, from the
+highest-weight NodePool that can place the pod. So a pod that the home NodePool
+could place can still land on an overflow node. A taint on the overflow
+NodePool keeps off pods that do not tolerate it. Weights do not move running
+pods back to the cluster region. One controller must own both NodePools: a
+second autoscaler can launch a node for the same pod.
 
 ### Decision 7: Load balancers, NSG and IP forwarding
 
@@ -253,7 +270,10 @@ The load balancers and NSG of the cluster are regional resources that a NIC in
 another region cannot use. The nodes of an AKSNodeClass with `spec.regions`,
 including those in the cluster region, join no backend pool, get no NIC NSG and
 carry `node.kubernetes.io/exclude-from-external-load-balancers=true`. The NSG
-of the subnet applies. NICs keep IP forwarding off, as all Karpenter NICs do.
+of the subnet applies. NICs keep IP forwarding off, as all Karpenter NICs do,
+so the CNI must encapsulate pod traffic (see Network contract). A CNI that
+routes pod addresses natively needs IP forwarding and user-defined routes in
+every VNet. This design sets up neither, so such a CNI is not supported.
 
 ### Decision 8: Identities
 
@@ -261,6 +281,11 @@ Some identities can be assigned only to VMs in some regions.
 `--multi-region-node-identities` gives the VMs of a listed region their own node
 and kubelet identities instead of the global ones. The cluster region cannot
 have an entry.
+
+One lookup gives the kubelet identity of a region: its entry, or else the
+global identity. Bootstrap, the kubelet identity label of the node and drift
+all use this lookup. So identity drift replaces a node with a regional identity
+only after the entry of its region changes.
 
 ## FAQ
 
@@ -288,13 +313,16 @@ catalog has NodeClaims (reason `MultiRegionCatalogUnavailable`).
 No. The field is optional and excluded from the hash, and the option is off by
 default. With the option off, no per-region provider, cache or ARM client is
 built. A test compares the VM, NIC and bootstrap requests of an AKSNodeClass
-without `spec.regions` with the option on and off.
+without `spec.regions` with the option on and off. An AKSNodeClass that adopts
+`spec.regions` replaces its existing nodes once (see Decision 2).
 
 ## Testing
 
 * Unit and acceptance tests with synthetic Azure APIs in two regions:
   placement, retries, per-region failures and quota, drift, identities,
   home-first NodePools with overflow, and the refusals before any Azure write.
+  They include a mixed batch of remote-only and region-flexible pods, and a
+  regional kubelet identity that stays the same and then changes.
 * An opt-in `MultiRegion` e2e suite for a cluster with a bring-your-own CNI and
   networks in other regions. It checks the peerings, launches a node in each
   region, checks each VM and NIC in ARM and probes pod traffic between regions.
