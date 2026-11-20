@@ -744,7 +744,7 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 
 	log.FromContext(ctx).Info("instance type filtering results", "skuCount", len(skus), "filtered", filtered)
 	if len(instanceTypes) == 0 {
-		return fmt.Errorf("no instance types found")
+		return fmt.Errorf("no instance types found, filtered: %v", filtered)
 	}
 
 	logUnknownSKUFamilies(ctx, instanceTypes)

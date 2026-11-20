@@ -71,11 +71,16 @@ func (p *DefaultProvider) Allocate(ctx context.Context, instanceTypes []*coreclo
 	if best.InstanceType == nil || len(best.Offerings) == 0 {
 		return nil
 	}
-	log.FromContext(ctx).Info("selected instance type", logging.InstanceType, best.InstanceType.Name)
-	return &Selection{
+	selection := &Selection{
 		InstanceType: best.InstanceType,
 		Offering:     best.Offerings[0],
 	}
+	log.FromContext(ctx).Info("selected offering",
+		logging.InstanceType, best.InstanceType.Name,
+		"zone", selection.Zone(),
+		"placementScope", selection.PlacementScope())
+
+	return selection
 }
 
 func (p *DefaultProvider) FilterInstanceOfferings(ctx context.Context, instanceOfferings []InstanceOffering, requirements scheduling.Requirements) []InstanceOffering {
