@@ -8,6 +8,7 @@ These designs are written but not implemented.
 
 <!-- Please add newer designs at the top of this list -->
 
+- [Multi-region provisioning](./0017-multi-region-provisioning.md)
 - [Ultra SSD support](./0013-ultra-ssd-support.md)
 
 ## Completed
