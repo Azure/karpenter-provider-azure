@@ -212,6 +212,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		pricingProvider,
 		unavailableOfferingsCache,
 		quotaProvider,
+		operator.Clock,
 	)
 
 	// Ensure we're able to hydrate instance types before starting any controllers

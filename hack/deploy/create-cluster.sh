@@ -22,7 +22,7 @@ AKS_JSON=$(az aks create \
   --enable-managed-identity \
   --enable-oidc-issuer --enable-workload-identity \
   --output json)
-az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overwrite-existing
+az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --admin --overwrite-existing --output none
 
 echo "Creating federated credential linked to the Karpenter service account ..."
 az identity federated-credential create --name KARPENTER_FID --identity-name karpentermsi --resource-group "${RG}" \

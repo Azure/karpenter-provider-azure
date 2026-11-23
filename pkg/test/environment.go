@@ -183,17 +183,19 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 
 	// Providers
+	clock := clock.RealClock{}
 	pricingProvider := pricing.NewProvider(ctx, azureEnv, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(region, env.KubernetesInterface, kubernetesVersionCache, aksManagedClustersAPI)
-	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache, clock.RealClock{})
-	quotaProvider := quota.NewProvider(usageAPI, quotaCategoryVMFamilyMappingAPI, region, clock.RealClock{})
+	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache, clock)
+	quotaProvider := quota.NewProvider(usageAPI, quotaCategoryVMFamilyMappingAPI, region, clock)
 	instanceTypesProvider := instancetype.NewDefaultProvider(
 		region,
 		instanceTypeCache,
 		skusAPI,
 		pricingProvider,
 		unavailableOfferingsCache,
-		quotaProvider)
+		quotaProvider,
+		clock)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
 	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
 		networkSecurityGroupAPI,
