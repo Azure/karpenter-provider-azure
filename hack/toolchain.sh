@@ -231,6 +231,7 @@ tools() {
     go-install crane version v0.20.2 github.com/google/go-containerregistry/cmd/crane@v0.20.2
     go-install swagger version v0.33.1 github.com/go-swagger/go-swagger/cmd/swagger@v0.33.1
     go-install aks-node-viewer github.com/Azure/aks-node-viewer/cmd/aks-node-viewer@latest
+    go-install kubelogin github.com/Azure/kubelogin@v0.2.22
     go-install pprof github.com/google/pprof@latest
 
     if ! echo "$PATH" | grep -q "${GOPATH:-undefined}/bin\|$HOME/go/bin"; then
