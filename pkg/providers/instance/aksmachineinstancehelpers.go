@@ -74,14 +74,18 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	// GPUProfile
 	gpuProfile := configureGPUProfile(instanceType, nodeClass)
 
-	// OrchestratorVersion (i.e., Kubernetes version)
-	orchestratorVersion, err := nodeClass.GetKubernetesVersion()
+	// Kubernetes version, as stored in the NodeClass status (e.g., "1.31.101-akslts" on AKS LTS clusters)
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Kubernetes version from NodeClass %q: %w", nodeClass.Name, err)
 	}
 
+	// OrchestratorVersion (i.e., Kubernetes version in the format that AKS machine API accepts)
+	orchestratorVersion := configureOrchestratorVersion(kubernetesVersion)
+
 	// OSSKU, EnableFIPS
-	osSku, enableFIPS, err := configureOSSKUAndFIPs(nodeClass, orchestratorVersion)
+	// Note: use the NodeClass Kubernetes version, the same value that node image selection uses.
+	osSku, enableFIPS, err := configureOSSKUAndFIPs(nodeClass, kubernetesVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -342,6 +346,19 @@ func configurePriority(capacityType string) *armcontainerservice.ScaleSetPriorit
 		// Karpenter defaults to Regular
 		return lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
 	}
+}
+
+// aksLTSKubernetesVersionSuffix is the suffix in the version that the API server of an AKS LTS cluster reports.
+// E.g., discovery reports "v1.31.101-akslts" for a cluster at version "1.31.101".
+const aksLTSKubernetesVersionSuffix = "-akslts"
+
+// configureOrchestratorVersion returns the Kubernetes version in the format that AKS machine API accepts.
+// AKS machine API accepts only the numeric version (e.g., "1.31.101"). The NodeClass status keeps the version
+// from discovery, which has the AKS LTS suffix on AKS LTS clusters (e.g., "1.31.101-akslts").
+// Remove only that known suffix. Keep all other values as is, so AKS machine API validation stays the authority.
+// Other users of the NodeClass Kubernetes version (e.g., drift against the kubelet version) keep the suffix.
+func configureOrchestratorVersion(kubernetesVersion string) string {
+	return strings.TrimSuffix(kubernetesVersion, aksLTSKubernetesVersionSuffix)
 }
 
 func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion string) (*armcontainerservice.OSSKU, *bool, error) {
