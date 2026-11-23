@@ -98,16 +98,21 @@ should-skip() {
         return
     fi
 
-    # If we're running in CI (or any other hands-off environment,
-    # we abort because we should always have the right versions preinstalled.
+    # If the command is completely missing, we need to install it (even in CI)
+    if [[ "$CIC" -eq 1 ]]; then
+        echo "[INF] $1 is missing; will install" >&2
+        return 1
+    fi
+
+    # The command is present; if we're running in CI (or any other hands-off environment)
+    # we abort for an incorrect version because we should always have the right versions preinstalled.
     if [[ "${CI:-}" == true ]]; then
-        echo "[ERR] $1 is missing or has an incorrect version; aborting!" >&2
+        echo "[ERR] $1 has an incorrect version; aborting!" >&2
         exit 1
     fi
 
     # When running locally, we proceed with updating
     case "${CIC}" in
-        1) echo "[INF] Need to install $1 because it is missing" ;;
         2) echo "[INF] Need to reinstall $1 because its version could not be checked" >&2 ;;
         3) echo "[INF] Need to install $1 because the installed version is not '$3'" ;;
     esac
