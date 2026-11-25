@@ -87,9 +87,9 @@ func TestInstanceTypeMemoryReservations(t *testing.T) {
 		{name: "D48 AKS machines", provisionMode: consts.ProvisionModeAKSMachineAPI, vcpus: 48, memoryGiB: 192, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 4},
 		{name: "D64 batched AKS machines", provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, vcpus: 64, memoryGiB: 256, wantCapacityBytes: 254_262_063_923, wantCPUMilli: 740, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 5},
 		{name: "D96 scriptless", provisionMode: consts.ProvisionModeAKSScriptless, vcpus: 96, memoryGiB: 384, wantCapacityBytes: 381_393_095_884, wantCPUMilli: 1060, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 8},
-		{name: "hardened scriptless", provisionMode: consts.ProvisionModeAKSScriptless, vcpus: 48, memoryGiB: 192, enableNodeHardening: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 12682, wantSystemMiB: 900, wantEvictionMiB: 512, wantMaxPods: 3},
-		{name: "hardened AKS machines", provisionMode: consts.ProvisionModeAKSMachineAPI, vcpus: 48, memoryGiB: 192, enableNodeHardening: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 12682, wantSystemMiB: 900, wantEvictionMiB: 512, wantMaxPods: 3},
-		{name: "hardened batched AKS machines", provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, vcpus: 48, memoryGiB: 192, enableNodeHardening: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 12682, wantSystemMiB: 900, wantEvictionMiB: 512, wantMaxPods: 3},
+		{name: "hardened scriptless", provisionMode: consts.ProvisionModeAKSScriptless, vcpus: 48, memoryGiB: 192, enableNodeHardening: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 3600, wantSystemMiB: 400, wantEvictionMiB: 512, wantMaxPods: 4},
+		{name: "hardened AKS machines", provisionMode: consts.ProvisionModeAKSMachineAPI, vcpus: 48, memoryGiB: 192, enableNodeHardening: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 3600, wantSystemMiB: 400, wantEvictionMiB: 512, wantMaxPods: 4},
+		{name: "hardened batched AKS machines", provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, vcpus: 48, memoryGiB: 192, enableNodeHardening: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 3600, wantSystemMiB: 400, wantEvictionMiB: 512, wantMaxPods: 4},
 		{name: "bootstrap client does not apply hardening", provisionMode: consts.ProvisionModeBootstrappingClient, vcpus: 48, memoryGiB: 192, enableNodeHardening: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 4},
 	}
 	for _, test := range tests {
@@ -128,6 +128,47 @@ func TestInstanceTypeMemoryReservations(t *testing.T) {
 	}
 }
 
+func TestInstanceTypeLocalDNSReservations(t *testing.T) {
+	tests := []struct {
+		name            string
+		vcpus           int64
+		memoryMiB       int64
+		localDNSEnabled bool
+		wantMemoryMiB   int64
+	}{
+		{name: "LocalDNS disabled", vcpus: 4, memoryMiB: 16 * 1024, wantMemoryMiB: 400},
+		{name: "LocalDNS enabled at SKU floor", vcpus: 4, memoryMiB: 244, localDNSEnabled: true, wantMemoryMiB: 500},
+		{name: "LocalDNS enabled below CPU floor", vcpus: 2, memoryMiB: 16 * 1024, localDNSEnabled: true, wantMemoryMiB: 400},
+		{name: "LocalDNS enabled below memory floor", vcpus: 4, memoryMiB: 243, localDNSEnabled: true, wantMemoryMiB: 400},
+	}
+	for _, provisionMode := range []string{consts.ProvisionModeAKSScriptless, consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch} {
+		for _, test := range tests {
+			t.Run(provisionMode+"/"+test.name, func(t *testing.T) {
+				g := NewWithT(t)
+				sku := skewer.SKU(compute.ResourceSku{
+					Name: lo.ToPtr(fmt.Sprintf("Standard_D%ds_v3", test.vcpus)),
+					Size: lo.ToPtr(fmt.Sprintf("D%ds_v3", test.vcpus)),
+					Capabilities: &[]compute.ResourceSkuCapabilities{
+						{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr(fmt.Sprint(test.vcpus))},
+						{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr(fmt.Sprint(float64(test.memoryMiB) / 1024))},
+					},
+				})
+				ctx := options.ToContext(context.Background(), &options.Options{
+					ProvisionMode:       provisionMode,
+					EnableNodeHardening: true,
+				})
+				instanceType := newInstanceType(ctx, &sku, lo.Must(sku.GetVMSize()), "westus3", nil, &instanceTypeParameters{
+					ImageFamily:     v1beta1.Ubuntu2204ImageFamily,
+					OSDiskSizeGB:    lo.ToPtr[int32](128),
+					MaxPods:         30,
+					LocalDNSEnabled: test.localDNSEnabled,
+				}, "x64")
+				g.Expect(instanceType.Overhead.SystemReserved.Memory().Value()).To(Equal(test.wantMemoryMiB * bytesPerMiB))
+			})
+		}
+	}
+}
+
 // These cases mirror the hardened kube-reserved memory calculation in the AKS RP.
 func TestKubeReservedResourcesHardeningParity(t *testing.T) {
 	tests := []struct {
@@ -138,11 +179,15 @@ func TestKubeReservedResourcesHardeningParity(t *testing.T) {
 		wantCPUMilli  int64
 		wantMemoryMiB int64
 	}{
-		{name: "7 GiB with 30 pods", vcpus: 4, memoryMiB: 7 * 1024, maxPods: 30, wantCPUMilli: 140, wantMemoryMiB: 1300},
-		{name: "8 GiB with 110 pods is capped", vcpus: 2, memoryMiB: 8 * 1024, maxPods: 110, wantCPUMilli: 100, wantMemoryMiB: 2048},
-		{name: "32 GiB with 110 pods", vcpus: 8, memoryMiB: 32 * 1024, maxPods: 110, wantCPUMilli: 180, wantMemoryMiB: 4505},
-		{name: "64 GiB with 110 pods", vcpus: 8, memoryMiB: 64 * 1024, maxPods: 110, wantCPUMilli: 180, wantMemoryMiB: 5160},
-		{name: "128 GiB with 250 pods", vcpus: 16, memoryMiB: 128 * 1024, maxPods: 250, wantCPUMilli: 260, wantMemoryMiB: 11371},
+		{name: "7 GiB with 30 pods", vcpus: 4, memoryMiB: 7 * 1024, maxPods: 30, wantCPUMilli: 140, wantMemoryMiB: 700},
+		{name: "8 GiB with 110 pods", vcpus: 2, memoryMiB: 8 * 1024, maxPods: 110, wantCPUMilli: 100, wantMemoryMiB: 1800},
+		{name: "32 GiB with 110 pods", vcpus: 8, memoryMiB: 32 * 1024, maxPods: 110, wantCPUMilli: 180, wantMemoryMiB: 1800},
+		{name: "64 GiB with 110 pods", vcpus: 8, memoryMiB: 64 * 1024, maxPods: 110, wantCPUMilli: 180, wantMemoryMiB: 1800},
+		{name: "128 GiB with 250 pods", vcpus: 16, memoryMiB: 128 * 1024, maxPods: 250, wantCPUMilli: 260, wantMemoryMiB: 3600},
+		{name: "4 GiB with 250 pods is not capped", vcpus: 2, memoryMiB: 4 * 1024, maxPods: 250, wantCPUMilli: 100, wantMemoryMiB: 3600},
+		{name: "below rounding boundary", vcpus: 2, memoryMiB: 8 * 1024, maxPods: 99, wantCPUMilli: 100, wantMemoryMiB: 1600},
+		{name: "at rounding boundary", vcpus: 2, memoryMiB: 8 * 1024, maxPods: 100, wantCPUMilli: 100, wantMemoryMiB: 1600},
+		{name: "above rounding boundary", vcpus: 2, memoryMiB: 8 * 1024, maxPods: 101, wantCPUMilli: 100, wantMemoryMiB: 1700},
 	}
 
 	for _, test := range tests {
@@ -194,23 +239,23 @@ func TestTypedSchedulingOverrides(t *testing.T) {
 // These cases mirror the hardened system-reserved calculation in the AKS RP.
 func TestSystemReservedResourcesHardeningParity(t *testing.T) {
 	tests := []struct {
-		name          string
-		memoryMiB     int64
-		networkPlugin string
-		wantMemoryMiB int64
+		name            string
+		localDNSEnabled bool
+		gpuCount        int64
+		wantMemoryMiB   int64
 	}{
-		{name: "7 GiB without Azure CNI", memoryMiB: 7 * 1024, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 200},
-		{name: "7 GiB with Azure CNI", memoryMiB: 7 * 1024, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 300},
-		{name: "32 GiB without Azure CNI", memoryMiB: 32 * 1024, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 300},
-		{name: "32 GiB with Azure CNI", memoryMiB: 32 * 1024, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 400},
-		{name: "64 GiB without Azure CNI", memoryMiB: 64 * 1024, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 400},
-		{name: "128 GiB with Azure CNI", memoryMiB: 128 * 1024, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 700},
+		{name: "without LocalDNS", wantMemoryMiB: 400},
+		{name: "with LocalDNS", localDNSEnabled: true, wantMemoryMiB: 500},
+		{name: "one managed GPU", gpuCount: 1, wantMemoryMiB: 976},
+		{name: "eight managed GPUs", gpuCount: 8, wantMemoryMiB: 1232},
+		{name: "one managed GPU with LocalDNS", localDNSEnabled: true, gpuCount: 1, wantMemoryMiB: 1076},
+		{name: "eight managed GPUs with LocalDNS", localDNSEnabled: true, gpuCount: 8, wantMemoryMiB: 1332},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
-			resources := SystemReservedResources(test.memoryMiB, test.networkPlugin, true)
+			resources := SystemReservedResources(test.localDNSEnabled, true, test.gpuCount)
 			cpu := resources[corev1.ResourceCPU]
 			memory := resources[corev1.ResourceMemory]
 			ephemeralStorage := resources[corev1.ResourceEphemeralStorage]
@@ -224,9 +269,15 @@ func TestSystemReservedResourcesHardeningParity(t *testing.T) {
 	}
 }
 
+func TestManagedGPUSystemReservedMemoryMiB(t *testing.T) {
+	g := NewWithT(t)
+	g.Expect(managedGPUSystemReservedMemoryMiB(1)).To(Equal(int64(576)))
+	g.Expect(managedGPUSystemReservedMemoryMiB(8)).To(Equal(int64(832)))
+}
+
 func TestSystemReservedResourcesDisabledPreservesLegacyValues(t *testing.T) {
 	g := NewWithT(t)
-	resources := SystemReservedResources(64*1024, consts.NetworkPluginAzure, false)
+	resources := SystemReservedResources(true, false, 1)
 	cpu, hasCPU := resources[corev1.ResourceCPU]
 	memory, hasMemory := resources[corev1.ResourceMemory]
 	g.Expect(resources).To(HaveLen(2))
@@ -333,7 +384,7 @@ func TestEvictionThresholdEphemeralStorage(t *testing.T) {
 
 	capacity := resource.MustParse("128G")
 	eviction := EvictionThreshold(32*1024, capacity, true, nil)[corev1.ResourceEphemeralStorage]
-	system := SystemReservedResources(32*1024, consts.NetworkPluginAzure, true)[corev1.ResourceEphemeralStorage]
+	system := SystemReservedResources(false, true, 0)[corev1.ResourceEphemeralStorage]
 	g.Expect(eviction.Value()).To(Equal(int64(12_800_000_190)))
 	g.Expect(system.String()).To(Equal("1Gi"))
 }

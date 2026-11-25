@@ -84,6 +84,7 @@ type instanceTypeParameters struct {
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSRequired         bool
+	LocalDNSEnabled          bool
 	KubeReserved             map[string]string
 	EvictionHard             map[string]string
 	// These two carry only the static shape of the Capacity Reservation Group: which VM
@@ -197,6 +198,7 @@ func (p *DefaultProvider) List(
 		// effective value rather than the raw spec field.
 		FIPSMode:                   lo.Ternary(nodeClass.IsFIPSEnabled(), v1beta1.FIPSModeFIPS, v1beta1.FIPSModeDisabled),
 		LocalDNSRequired:           nodeClass.IsLocalDNSRequired(),
+		LocalDNSEnabled:            nodeClass.IsLocalDNSEnabled(),
 		CapacityReservationGroupID: nodeClass.GetCapacityReservationGroupID(),
 		CapacityReservations:       p.capacityReservationPlacements(ctx, nodeClass),
 		KataEnabled:                nodeClass.IsKataEnabled(),
