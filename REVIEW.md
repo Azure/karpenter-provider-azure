@@ -1,13 +1,92 @@
 # Pull Request Review Guidelines
 
-When reviewing pull requests, focus on correctness, security, and backward compatibility. Karpenter
-provisions real infrastructure for existing clusters, so regressions here surface as failed node
-provisioning, stranded Azure resources, or unschedulable workloads rather than as cosmetic bugs.
+<!-- Note: This guideline is designed for a generic agent reviewing the PR, not specifically for the GitHub Copilot reviewer. Some instructions may not be applicable to some reviewer agents. E.g., GitHub Copilot doesn't seem to care about PR description/quality. -->
 
-**Review Approach**: Focus on high-level architecture, security vulnerabilities, and logic bugs.
-Apply deep reasoning — do not just pattern match, but understand the change's intent, its
-dependencies, and its failure modes. Linting and formatting are already enforced by `make verify`
-and CI; do not spend review budget on them.
+You own this codebase and are accountable for its business outcomes in the short or long term. There are a lot of users relying on this around the world, many on critical workloads. Still, you want to allow innovation and efficient improvements through the changes you are going to review.
+
+For each rule below (or elsewhere), also consider its applicability. E.g., rules targeting code changes may not apply to a small documentation change.
+
+## Existing Rules
+
+- Re-read [AGENTS.md](AGENTS.md). Pay attention to each area, its instructions and requirements. Verify whether the PR has followed them, especially but not limited to the **bold** parts. **The most important considerations live here.**
+  - Be mindful of what's applicable and what's not. Do not over-apply rules when their purpose is lost.
+- Re-read [CONTRIBUTING.md](CONTRIBUTING.md). Verify whether the PR violates them. Pay attention to recommendations (do not call out if violated) and strict requirements (call out if violated). For more specifics:
+  - Suspected but unproven violations will each receive a `Medium`-severity comment, including but not limited to "Direct AI writing with more than 150 words" in the PR description.
+  - PRs with a severely malformed description structure or that violate multiple requirements will receive a `High`-severity comment describing the issue and warning that the PR is at risk of being ignored.
+    - However, extra sections are allowed and not considered malformed.
+
+## PR Quality
+
+Also read the PR description/design doc and see whether it makes sense. Only call out necessary things, not "nice-to-have" items. Do not nitpick. For example:
+
+- Are the tests really enough?
+- Do the described behavior changes match reality?
+- Is it unnecessarily lengthy, or does it state what's obvious in the code?
+- Is the change large/significant enough, or does the author seem to underestimate its implications? Should this be in a design doc rather than the PR description?
+
+Apart from correctness, think about things from the human code owner's perspective when they come and check this PR after you do. Again, do not nitpick. Only leave comments on these matters when you have relatively high confidence.
+
+- Is the review effort needed low enough? Is there an easy opportunity for the PR author to contribute that would save the reviewer a lot of effort?
+- Is the existing presentation (e.g., description or design review) easy to understand, and does it avoid lacking detail or including too many sloppy/distracting details?
+- Can you be confident that this PR is safe? Did the author present enough evidence, especially on testing/validation, if needed?
+- If the PR involves multiple intended changes that are not tightly coupled, can the development be iterative, and can this PR be split into multiple PRs that may or may not depend on one another? Or is it better to keep this unified PR?
+
+Watch for some common anti-patterns:
+
+- In the "Testing" section of the PR description, listing tests already gated by CI, such as `make verify`, `make presubmit`, `git diff`, or `go test`, is not useful. The PR author must remove them to prevent distraction.
+- A PR description with a structure similar to the template but a different heading style (e.g., it may use a Markdown heading instead of bold text as a header), combined with an overly lengthy description, indicates that the description is AI-written and usually more than 150 words. Scrutinize it carefully against the other PR description guidelines.
+
+## Review Strategy
+
+- Use the PR description/docs as context. They may already address some of the issues you are going to ask about, in which case you may not need to ask about them after reading.
+- Research more context if needed, especially if the PR has dependencies on other services/libraries/codebases.
+  - Historical context (discussions, code changes, incidents, etc.) is usually useful and gives you necessary context to adjust your expectations and the effort needed.
+  - Understand how the pieces interact before judging a diff.
+  - Reason about implicit assumptions, especially about Azure state and about which provisioning mode or deployment model is running.
+- Try to review the PR layer-by-layer and keep what you learned in mind. E.g., intention → design / architecture / failure modes → implementation → testing → merging / releasing. Do not just pattern-match.
+- Always trace the behavioral consequences of the change deeply, even if changes are not expected, and call out the issues explicitly.
+- For any issue, investigate its origin, which may not be the current PR but rather existing code/behavior. If so, clarify how the current PR interacts with the issue (e.g., merely touches it, makes it worse, or assumes that it does not exist even though it must be fixed first). This affects the severity of the issue.
+
+## Commenting
+
+For each applicable comment (**only if applicable**):
+
+- Every comment must have an intended or expected good consequence, whether implicit or explicit. If there is no clear benefit to commenting, don't do it.
+- State the confidence level.
+  - Be honest if you think the change looks risky but you cannot prove a defect, or suggest what would confirm it.
+  - Likewise, state any implicit assumptions/dependencies that are made, violated, or impossible for you to verify.
+  - Higher-level things like design trade-offs should generally have lower confidence (and human reviewers will take a look later). Still, do your best to state your opinions in that way.
+  - It is the PR author's responsibility to help you prove its safety when you cannot do so yourself.
+- Prefer a small number of high-confidence findings over broad coverage.
+- Prefer inline comments where the issue originates, or at least close to it.
+- Categorize comments using the categories below, only when applicable. Context matters when categorizing them (e.g., the PR's intention determines what is considered a side effect):
+  - `Correctness`; Incl. backward compatibility by nature
+  - `Security`
+  - `Performance`
+  - `Clarity`
+  - `Maintainability`
+  - `Test coverage`
+  - `Trade-off`; E.g., if the PR is correct, but you disagree with the intended trade-off
+- Clarify the domain to which the comment applies, e.g., `Scheduling`, `Provisioning`, `NodeClass Validation`, or `NodeClaim Lifecycle`.
+- Categorize severity. For example (but not limited to the following):
+  - `High`:
+    - Anything that breaks the contract or documented behavior, with a decent number of users potentially relying on it. E.g., breaking provisioning, stranding Azure resources, breaking an existing cluster on upgrade, or introducing a security vulnerability.
+  - `Medium`:
+    - Issues that break only on rare, likely user-unintentional edge cases.
+    - Minor performance / QoL degradation for issues that affect specific configurations
+    - Decent technical debt introduced
+  - `Low`:
+    - Correctness nits worth noting
+    - Advisory on the existing issue/work that relates to the area of the PR, but the PR doesn't make it worse
+- Only comment when you have a substantive finding. Skip trivial or obviously safe changes, and do not restate what `make verify` and CI already enforce.
+- Also do not comment if the issue is already called out (well enough) as intentional in PR description, design doc, etc.
+- For a known, concrete problem or behavior, demonstrate, walk through, or visualize it clearly and concisely. Make sure the reader understands it easily. Use visualization techniques such as tables, bullet points, comparisons and contrasts, symbols such as `→`, or descriptions of a graph or chain of consequences. Use them only when worthwhile, though (e.g., minimal problems do not require elaborate explanations).
+  - Always use ASD-STE100 Simplified Technical English. Avoid walls of text.
+  - Suggest the specific solution whenever applicable.
+
+## Specifics
+
+In addition to the general guidelines, consider the items below whenever applicable. Note that these could be outdated, and do not blindly follow them to the point that you ignore other paths encouraged by the other guidelines. Consider [AGENTS.md](AGENTS.md) more up to date if they conflict.
 
 ### Breaking Change Detection
 
@@ -128,27 +207,6 @@ Analyze PRs for these compatibility scenarios.
     external contributors cannot access. This repository is public; keep contributions
     self-contained and reviewable from public sources.
 
-**9. Test Coverage**
-
-- **What to check**: Whether the tests would actually catch a regression of this change, and
-  whether they are consistent with the existing tests for the files being edited.
-- **Breaking signals**:
-  - Behavior changes in `pkg/` with no unit or acceptance test that exercises the new path.
-  - Tests that assert the implementation rather than the intended behavior.
-  - Only the success path covered, when the change is about failure, retry, or cleanup.
-  - A new test file or suite created alongside an existing one that already covers the changed
-    file, instead of extending it.
-  - Tests that diverge from the conventions of their neighbors — different setup or fakes, a
-    different table or `DescribeTable` structure, or a different assertion style than the
-    surrounding cases.
-  - A changed file whose existing tests cover several provisioning modes or deployment models,
-    where the new case only covers one of them without saying why.
-  - A new `test/suites/` directory not added to `.github/workflows/e2e-matrix.yaml`.
-  - Helm chart snapshot updates presented as evidence of runtime behavior — they only verify
-    template rendering.
-  - Changes that need real Azure behavior to be meaningful, with no E2E coverage and no
-    explanation.
-
 ### Analysis Approach
 
 **Dependency Tracing**:
@@ -162,113 +220,3 @@ Analyze PRs for these compatibility scenarios.
 5. Check whether Helm chart values, RBAC, or operator options need a matching change.
 6. Open the existing tests for each changed file and compare the new tests against them for
    coverage and for consistency of structure and style.
-
-**Historical Context**:
-
-- Look for the established pattern for this kind of change elsewhere in the repository and prefer
-  consistency with it.
-- Note areas that have required repeated fixes and review changes there more closely.
-
-**Test Coverage Assessment**:
-
-- Note whether the changed code has unit, acceptance, or E2E coverage.
-- Flag changes to untested paths as higher risk.
-- Say so when new behavior lacks a corresponding test.
-- Compare new tests against the existing tests for the same file and flag inconsistency in
-  structure, fakes, or assertion style, or a new suite that duplicates one that already exists.
-
-### Review Output
-
-Provide targeted inline comments on the specific lines where you find an issue.
-
-For each finding, include:
-
-- **Severity**: `High` for anything that can break node provisioning, strand Azure resources, break
-  an existing cluster on upgrade, or introduce a security vulnerability. `Medium` for issues that
-  affect specific configurations, edge cases, or performance. `Low` for correctness nits worth
-  noting.
-- **Category**: one of `Correctness`, `Compatibility`, `Azure API`, `Lifecycle`, `Scheduling`,
-  `Security`, `Performance`, or `Test Coverage`.
-- The concrete scenario in which the code misbehaves — not just the rule it violates.
-- A specific fix or verification step, such as the counterpart file to update or the case to cover.
-
-**Only comment when you have a substantive finding.** Skip trivial or obviously safe changes, and
-do not restate what `make verify` and CI already enforce.
-
-### Review Philosophy
-
-Think like an experienced reviewer of this codebase:
-
-- Understand how the pieces interact before judging a diff.
-- Reason about implicit assumptions, especially about Azure state and about which provisioning
-  mode or deployment model is running.
-- Consider the upgrade path for clusters already running an older version.
-- Prefer a small number of high-confidence findings over broad coverage.
-- Say plainly when a change looks risky but you cannot prove a defect, and state what would confirm
-  it.
-
----
-
-(The section below is migrated from copilot-instructions.md. Both has always been read at the same time. TODO: Need cleanup and integration with the above.)
-
-Read the repository-root file `AGENTS.md`. for the architecture, provisioning modes, code layout, validation
-commands, and the full pull request review guidelines. This file is the short form; `AGENTS.md` is
-the source of truth.
-
-## Priorities
-
-Review for correctness, security, and backward compatibility, in that order. Focus on
-architecture, logic bugs, and failure modes. Reason about the change's intent and its dependencies
-rather than pattern matching.
-
-## Always Consider
-
-- **Provisioning modes** — the provider has separate VM-based and AKS Machine API-based
-  implementations in `pkg/providers/instance/`. Determine which modes a change affects and whether
-  the counterpart implementation needs the same change. Files with `ATTENTION!!!` comments mark
-  exactly where a one-sided change silently breaks a mode. The two AKS Machine API modes
-  (`aksmachineapi` and `aksmachineapiheaderbatch`) are the same provisioning path and differ only
-  in how creates are dispatched, so a Machine API behavior change normally applies to both; batch
-  concerns are grouping, per-machine header fields, batch limits, and partial failure.
-- **Deployment models** — the same code runs as the AKS-managed addon (NAP) and as a self-hosted
-  deployment. Do not assume configuration, defaults, or AKS-managed behavior that only holds for
-  one of them.
-- **Backward compatibility** — existing clusters upgrade in place. `AKSNodeClass` fields, node
-  labels, Helm values, and defaults must keep working for objects that already exist.
-- **API versions** — `v1beta1` is the current `AKSNodeClass` version. `v1alpha2` is deprecated and
-  planned for removal, so new fields and behavior belong in `v1beta1`; do not ask for `v1alpha2`
-  changes purely for parity. Spec changes usually affect defaulting, CEL validation, the nodeclass
-  hash, drift, and the generated CRDs.
-- **Generated files** — `zz_generated.deepcopy.go`, CRD YAML, and `charts/karpenter-crd/templates`
-  are produced by `make verify`. Flag hand-edited generated output.
-- **Azure API semantics** — retries, throttling, pagination, long-running operation polling,
-  cancellation, nil SDK pointers, concurrency control, and eventual consistency. Never assume a
-  resource is readable right after it is created.
-- **Cleanup and idempotency** — every created Azure resource needs a cleanup path, including on
-  partial failure. Reconcile paths are retried and must be safe to run repeatedly. "Not found"
-  during deletion or garbage collection is success, not an error.
-- **Security** — no credentials, tokens, or customer identifiers in logs, events, conditions, or
-  resource tags. No unvalidated user input flowing into Azure resource names, shell commands, or
-  Kubernetes objects. Actions pinned to a full commit SHA, and new external endpoints added to the
-  `harden-runner` `allowed-endpoints` list.
-- **Public repository hygiene** — flag references in code, comments, docs, commit messages, or PR
-  descriptions to systems that external contributors cannot access. Contributions must be
-  reviewable from public sources alone.
-- **Test coverage and consistency** — ask whether the tests would fail if this behavior regressed.
-  Failure, retry, and cleanup paths need coverage too, not just the success path. Also check the
-  new tests against the existing tests for each edited file: they should extend the established
-  `_test.go` file or package suite rather than start a parallel one, and should match its setup,
-  fakes, table structure, naming, and assertion style, covering the same provisioning modes and
-  deployment models the neighboring cases cover. A new `test/suites/` directory must be added to
-  `.github/workflows/e2e-matrix.yaml`. Helm chart snapshots verify template rendering only, not
-  runtime behavior.
-
-## Output
-
-Comment inline on the specific line, and state the concrete scenario in which the code misbehaves
-plus a specific fix or verification step. Label each finding with a severity (`High`, `Medium`,
-`Low`) and a category (`Correctness`, `Compatibility`, `Azure API`, `Lifecycle`, `Scheduling`,
-`Security`, `Performance`, `Test Coverage`).
-
-Only comment when you have a substantive finding. Do not restate lint, formatting, or anything
-`make verify` and CI already enforce.

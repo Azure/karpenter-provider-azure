@@ -164,6 +164,8 @@ There are several layers of tests. **In many cases, you are recommended to add n
 Scattered around the codebase. Should be covered by `make test` and PR check-in.
 Avoid using Ginkgo for new tests of this kind. Prefer the [standard Go testing framework](https://pkg.go.dev/testing).
 
+If you are making the PR description after adding/modifying unit tests, do not call out the details. Just "New/existing unit tests" would do.
+
 ### Acceptance Tests / "Unit End-to-End Tests"
 
 These are unit tests targeting the integration between modules within the codebase, usually starting by simulating pending pod pressure. They often use fakes from `pkg/fake` to simulate dependencies. These tests are usually named `suite_*_test.go`.
@@ -225,6 +227,10 @@ When reviewing a pull request, also read [REVIEW.md](REVIEW.md) for the review-s
 - Wrap errors with enough context to identify the resource and operation.
 - Use `sigs.k8s.io/controller-runtime/pkg/log` for logging, consistent with the rest of `pkg/`.
 - Prefer the smallest change consistent with the existing code over an unrelated refactor.
+- Try to follow existing patterns as much as you can, especially when another module/struct exists in the same dimension.
+- Make sure variable names clearly convey their intention, whether they are designed to be extensible or specific. Also judge that intention if needed.
+- Avoid one-use small, multi-layer helpers. Prefer deep but well-organized functions.
+- You may use your judgement to bypass linters if they do more harm than good.
 
 ### Dependency API Integrations
 
