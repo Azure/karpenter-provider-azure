@@ -130,6 +130,101 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
 		})
 
+		It("should preserve resolved non-MIG GPU capacity without GPU count metadata", func() {
+			instanceType := possibleInstanceTypes[0]
+			instanceType.Name = "Standard_NC48ads_A100_v4"
+			instanceType.Capacity["nvidia.com/gpu"] = resource.MustParse("14")
+			capacity := instanceType.Capacity.DeepCopy()
+			allocatable := instanceType.Allocatable().DeepCopy()
+			aksMachine.Properties.Hardware.VMSize = lo.ToPtr(instanceType.Name)
+
+			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClaim.Status.Capacity).To(Equal(capacity))
+			Expect(nodeClaim.Status.Allocatable).To(Equal(allocatable))
+			Expect(instanceType.Capacity).To(Equal(capacity))
+			Expect(instanceType.Allocatable()).To(Equal(allocatable))
+		})
+
+		DescribeTable("should compare normalized persisted MIG configuration before reuse", func(actualStrategy armcontainerservice.MigStrategy, actualProfile armcontainerservice.GPUInstanceProfile, desiredStrategy v1beta1.MigStrategy, desiredProfile v1beta1.GPUInstanceProfile, matches bool) {
+			aksMachine.Properties.Hardware.GpuProfile = &armcontainerservice.GPUProfile{Nvidia: &armcontainerservice.NvidiaGPUProfile{MigStrategy: lo.EmptyableToPtr(actualStrategy)}}
+			aksMachine.Properties.Hardware.GpuInstanceProfile = lo.EmptyableToPtr(actualProfile)
+			nodeClass := &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{
+				MigStrategy: lo.EmptyableToPtr(desiredStrategy), GPUInstanceProfile: lo.EmptyableToPtr(desiredProfile),
+			}}}}
+			err := validateExistingAKSMachineForReuse("test-machine", nodeClass, aksMachine)
+			if matches {
+				Expect(err).ToNot(HaveOccurred())
+			} else {
+				Expect(err).To(MatchError(ContainSubstring("MIG strategy")))
+			}
+		},
+			Entry("matching Single", armcontainerservice.MigStrategySingle, armcontainerservice.GPUInstanceProfileMIG7G, v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG7g, true),
+			Entry("profile changed", armcontainerservice.MigStrategySingle, armcontainerservice.GPUInstanceProfileMIG7G, v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG1g, false),
+			Entry("strategy changed", armcontainerservice.MigStrategySingle, armcontainerservice.GPUInstanceProfileMIG7G, v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG7g, false),
+			Entry("MIG disabled", armcontainerservice.MigStrategySingle, armcontainerservice.GPUInstanceProfileMIG7G, v1beta1.MigStrategyNone, v1beta1.GPUInstanceProfile(""), false),
+			Entry("MIG enabled", armcontainerservice.MigStrategy(""), armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG1g, false),
+			Entry("omitted actual means None", armcontainerservice.MigStrategy(""), armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyNone, v1beta1.GPUInstanceProfile(""), true),
+			Entry("omitted desired means None", armcontainerservice.MigStrategyNone, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategy(""), v1beta1.GPUInstanceProfile(""), true),
+		)
+
+		It("should accept the empty scalar returned with a Mixed profile list", func() {
+			hardware := aksMachine.Properties.Hardware
+			hardware.VMSize = lo.ToPtr("Standard_NC24ads_A100_v4")
+			hardware.GpuInstanceProfile = lo.ToPtr(armcontainerservice.GPUInstanceProfile(""))
+			hardware.GpuProfile = &armcontainerservice.GPUProfile{Nvidia: &armcontainerservice.NvidiaGPUProfile{
+				MigStrategy: lo.ToPtr(armcontainerservice.MigStrategyMixed),
+				MigProfiles: []*armcontainerservice.GPUInstanceProfile{lo.ToPtr(armcontainerservice.GPUInstanceProfileMIG7G)},
+			}}
+			strategy, profile, err := MIGConfigurationFromAKSMachine(aksMachine)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(strategy).To(Equal(v1beta1.MigStrategyMixed))
+			Expect(profile).To(Equal(v1beta1.GPUInstanceProfileMIG7g))
+		})
+
+		DescribeTable("should validate list-backed MIG layouts before reuse", func(strategy armcontainerservice.MigStrategy, profiles []armcontainerservice.GPUInstanceProfile, scalar armcontainerservice.GPUInstanceProfile, desiredStrategy v1beta1.MigStrategy, desiredProfile v1beta1.GPUInstanceProfile, matches bool) {
+			for _, sku := range []string{"Standard_NC24ads_A100_v4", "Standard_NC48ads_A100_v4", "Standard_ND96isr_H100_v5"} {
+				hardware := aksMachine.Properties.Hardware
+				hardware.VMSize = lo.ToPtr(sku)
+				hardware.GpuInstanceProfile = lo.EmptyableToPtr(scalar)
+				hardware.GpuProfile = &armcontainerservice.GPUProfile{Nvidia: &armcontainerservice.NvidiaGPUProfile{
+					MigStrategy: lo.EmptyableToPtr(strategy),
+					MigProfiles: lo.Map(profiles, func(p armcontainerservice.GPUInstanceProfile, _ int) *armcontainerservice.GPUInstanceProfile {
+						return lo.EmptyableToPtr(p)
+					}),
+				}}
+				nodeClass := &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{
+					MigStrategy: lo.ToPtr(desiredStrategy), GPUInstanceProfile: lo.EmptyableToPtr(desiredProfile),
+				}}}}
+				err := validateExistingAKSMachineForReuse("test-machine", nodeClass, aksMachine)
+				if matches {
+					Expect(err).ToNot(HaveOccurred())
+				} else {
+					Expect(err).To(MatchError(ContainSubstring("MIG")))
+				}
+			}
+		},
+			Entry("canonical Single", armcontainerservice.MigStrategySingle, []armcontainerservice.GPUInstanceProfile{"MIG1g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG1g, true),
+			Entry("complete Mixed", armcontainerservice.MigStrategyMixed, []armcontainerservice.GPUInstanceProfile{"MIG1g", "MIG1g", "MIG1g", "MIG1g", "MIG1g", "MIG1g", "MIG1g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG1g, true),
+			Entry("Mixed MIG2g", armcontainerservice.MigStrategyMixed, []armcontainerservice.GPUInstanceProfile{"MIG2g", "MIG2g", "MIG2g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG2g, true),
+			Entry("Mixed MIG3g", armcontainerservice.MigStrategyMixed, []armcontainerservice.GPUInstanceProfile{"MIG3g", "MIG3g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG3g, true),
+			Entry("Mixed MIG4g", armcontainerservice.MigStrategyMixed, []armcontainerservice.GPUInstanceProfile{"MIG4g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG4g, true),
+			Entry("Mixed MIG7g", armcontainerservice.MigStrategyMixed, []armcontainerservice.GPUInstanceProfile{"MIG7g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG7g, true),
+			Entry("changed profile", armcontainerservice.MigStrategyMixed, []armcontainerservice.GPUInstanceProfile{"MIG7g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG1g, false),
+			Entry("changed strategy", armcontainerservice.MigStrategyMixed, []armcontainerservice.GPUInstanceProfile{"MIG7g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG7g, false),
+			Entry("partial Mixed", armcontainerservice.MigStrategyMixed, []armcontainerservice.GPUInstanceProfile{"MIG1g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG1g, false),
+			Entry("oversized Mixed", armcontainerservice.MigStrategyMixed, []armcontainerservice.GPUInstanceProfile{"MIG3g", "MIG3g", "MIG3g", "MIG3g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG3g, false),
+			Entry("heterogeneous Mixed", armcontainerservice.MigStrategyMixed, []armcontainerservice.GPUInstanceProfile{"MIG3g", "MIG4g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG3g, false),
+			Entry("nil entry", armcontainerservice.MigStrategyMixed, []armcontainerservice.GPUInstanceProfile{"MIG3g", ""}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG3g, false),
+			Entry("nil first entry", armcontainerservice.MigStrategySingle, []armcontainerservice.GPUInstanceProfile{""}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG3g, false),
+			Entry("resource name is not an enum", armcontainerservice.MigStrategySingle, []armcontainerservice.GPUInstanceProfile{"1g.10gb"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG1g, false),
+			Entry("Single requires singleton", armcontainerservice.MigStrategySingle, []armcontainerservice.GPUInstanceProfile{"MIG3g", "MIG3g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG3g, false),
+			Entry("scalar and list conflict", armcontainerservice.MigStrategySingle, []armcontainerservice.GPUInstanceProfile{"MIG7g"}, armcontainerservice.GPUInstanceProfileMIG7G, v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG7g, false),
+			Entry("Mixed scalar is forbidden", armcontainerservice.MigStrategyMixed, nil, armcontainerservice.GPUInstanceProfileMIG7G, v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG7g, false),
+			Entry("Mixed list missing", armcontainerservice.MigStrategyMixed, nil, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfile(""), false),
+			Entry("list without strategy", armcontainerservice.MigStrategy(""), []armcontainerservice.GPUInstanceProfile{"MIG7g"}, armcontainerservice.GPUInstanceProfile(""), v1beta1.MigStrategyNone, v1beta1.GPUInstanceProfile(""), false),
+		)
+
 		DescribeTable("should propagate AKS machine VM state to the NodeClaim", func(vmState armcontainerservice.VMState) {
 			aksMachine.Properties.Status.VMState = lo.ToPtr(vmState)
 

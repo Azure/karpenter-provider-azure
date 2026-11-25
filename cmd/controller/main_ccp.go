@@ -82,6 +82,7 @@ func main() {
 			clusterState,
 			op.InstanceTypeStore,
 			op.PredictionStore,
+			corecontrollers.WithRegistrationHook(cloudprovider.NewMIGRegistrationHook(op.GetClient())),
 		)...).
 		WithControllers(ctx, controllers.NewControllers(
 			ctx,

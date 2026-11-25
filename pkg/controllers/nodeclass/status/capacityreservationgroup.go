@@ -36,6 +36,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 )
 
 const (
@@ -74,7 +75,7 @@ const (
 // readiness needs. Reusing it keeps a single definition of which SKUs a NodeClass can
 // actually use, rather than a second copy that can drift.
 type instanceTypeLister interface {
-	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+	List(context.Context, *v1beta1.AKSNodeClass, ...instancetype.ListOption) ([]*cloudprovider.InstanceType, error)
 }
 
 type capacityReservationGroupOfferingsInvalidator interface {

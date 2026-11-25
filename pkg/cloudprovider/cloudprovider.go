@@ -240,6 +240,10 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	if err != nil {
 		return nil, fmt.Errorf("failed to build NodeClaim from AKS machine template, %w", err)
 	}
+	if nodeClass.GetManagementMode() == v1beta1.ManagementModeManaged &&
+		(nodeClass.GetMigStrategy() == v1beta1.MigStrategySingle || nodeClass.GetMigStrategy() == v1beta1.MigStrategyMixed) {
+		newNodeClaim.Annotations[v1beta1.AnnotationMIGRebootRequired] = "true"
+	}
 
 	// Propagate single-value wellKnownLabels from the nodeClaim requirements to the labels.
 	// This is required for scheduling in core to work correctly. If this is not done, on subsequent scheduling passes before the Node is
@@ -855,7 +859,7 @@ func (c *CloudProvider) resolveNodeClaimFromAKSMachine(ctx context.Context, aksM
 	var instanceTypes []*cloudprovider.InstanceType
 	nodePool, err := instance.FindNodePoolFromAKSMachine(ctx, aksMachine, c.kubeClient)
 	if err == nil {
-		gotInstanceTypes, err := c.GetInstanceTypes(ctx, nodePool)
+		gotInstanceTypes, err := c.getInstanceTypesForAKSMachine(ctx, nodePool, aksMachine)
 		if err == nil {
 			instanceTypes = gotInstanceTypes
 			if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
@@ -882,4 +886,17 @@ func (c *CloudProvider) resolveNodeClaimFromAKSMachine(ctx context.Context, aksM
 	}
 
 	return nodeClaim, nil
+}
+
+// Inventory uses the persisted MIG layout; NodeClass edits apply to future launches.
+func (c *CloudProvider) getInstanceTypesForAKSMachine(ctx context.Context, nodePool *karpv1.NodePool, machine *armcontainerservice.Machine) ([]*cloudprovider.InstanceType, error) {
+	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
+	if err != nil {
+		return nil, fmt.Errorf("resolving node class, %w", err)
+	}
+	strategy, profile, err := instance.MIGConfigurationFromAKSMachine(machine)
+	if err != nil {
+		return nil, fmt.Errorf("resolving persisted MIG configuration, %w", err)
+	}
+	return c.instanceTypeProvider.List(ctx, nodeClass, instancetype.WithMIGConfiguration(strategy, profile))
 }

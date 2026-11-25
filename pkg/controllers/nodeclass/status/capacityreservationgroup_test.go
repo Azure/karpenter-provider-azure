@@ -34,6 +34,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
@@ -60,7 +61,7 @@ type stubInstanceTypeLister struct {
 	err           error
 }
 
-func (s *stubInstanceTypeLister) List(_ context.Context, nodeClass *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
+func (s *stubInstanceTypeLister) List(_ context.Context, nodeClass *v1beta1.AKSNodeClass, _ ...instancetype.ListOption) ([]*cloudprovider.InstanceType, error) {
 	s.called = true
 	s.received = nodeClass.DeepCopy()
 	return s.instanceTypes, s.err
