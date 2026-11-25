@@ -72,7 +72,7 @@ var _ = Describe("GPU", func() {
 
 			const sku = "Standard_NC24ads_A100_v4"
 			const slicesPerNode = 7 // One A100 80GB, partitioned into homogeneous MIG1g instances.
-			nodeClass := azkarptest.AKSNodeClass(azkarptest.WithImageFamily(v1beta1.Ubuntu2204ImageFamily))
+			nodeClass := azkarptest.AKSNodeClass(azkarptest.WithImageFamily(v1beta1.UbuntuImageFamily))
 			nodeClass.Spec.GPU = &v1beta1.GPU{
 				Mode: lo.ToPtr(v1beta1.GPUModeDriver),
 				Nvidia: &v1beta1.NvidiaGPU{

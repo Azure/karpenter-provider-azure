@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -129,6 +130,59 @@ func runMIGLifecycleTests() {
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
 				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(BeZero())
 			})
+
+			DescribeTable("should preserve persisted MIG capacity in Get and List after a NodeClass edit", func(originalStrategy, desiredStrategy v1beta1.MigStrategy, originalProfile, desiredProfile v1beta1.GPUInstanceProfile) {
+				nodeClass.Spec.GPU.Nvidia.MigStrategy = lo.ToPtr(originalStrategy)
+				nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = lo.EmptyableToPtr(originalProfile)
+				Expect(cloudProvider.kubeClient.Update(ctx, nodeClass)).To(Succeed())
+				created, err := createAndWait()
+				Expect(err).ToNot(HaveOccurred())
+				originalCapacity := created.Status.Capacity.DeepCopy()
+				originalAllocatable := created.Status.Allocatable.DeepCopy()
+
+				nodeClass.Spec.GPU.Nvidia.MigStrategy = lo.ToPtr(desiredStrategy)
+				nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = lo.EmptyableToPtr(desiredProfile)
+				Expect(cloudProvider.kubeClient.Update(ctx, nodeClass)).To(Succeed())
+				desiredTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+				Expect(err).ToNot(HaveOccurred())
+				desiredType, found := lo.Find(desiredTypes, func(it *corecloudprovider.InstanceType) bool {
+					return it.Name == "Standard_NC24ads_A100_v4"
+				})
+				Expect(found).To(BeTrue())
+				desiredCapacity := desiredType.Capacity.DeepCopy()
+				desiredAllocatable := desiredType.Allocatable().DeepCopy()
+				Expect(desiredCapacity).ToNot(Equal(originalCapacity))
+				ctx = coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
+					FeatureGates: coretest.FeatureGates{NodeOverlay: lo.ToPtr(true)},
+				}))
+				customResource := v1.ResourceName("example.com/dongle")
+				overlayCapacity := resource.MustParse("100")
+				reconcileCapacityOverlay(customResource, overlayCapacity)
+				originalCapacity[customResource] = overlayCapacity
+				originalAllocatable[customResource] = overlayCapacity
+
+				for range 2 { // Repeated inventory reads must not corrupt either cached layout.
+					got, err := cloudProvider.Get(ctx, created.Status.ProviderID)
+					Expect(err).ToNot(HaveOccurred())
+					listed, err := cloudProvider.List(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(listed).To(HaveLen(1))
+					for _, actual := range []*karpv1.NodeClaim{got, listed[0]} {
+						Expect(actual.Status.Capacity).To(Equal(originalCapacity))
+						Expect(actual.Status.Allocatable).To(Equal(originalAllocatable))
+					}
+				}
+				Expect(desiredType.Capacity).To(Equal(desiredCapacity))
+				Expect(desiredType.Allocatable()).To(Equal(desiredAllocatable))
+				persistedClass := ExpectExists(ctx, cloudProvider.kubeClient, nodeClass)
+				Expect(persistedClass.Spec).To(Equal(nodeClass.Spec))
+			},
+				Entry("Single profile changed", v1beta1.MigStrategySingle, v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG7g, v1beta1.GPUInstanceProfileMIG1g),
+				Entry("Single changed to Mixed", v1beta1.MigStrategySingle, v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfileMIG7g, v1beta1.GPUInstanceProfileMIG1g),
+				Entry("Mixed changed to Single", v1beta1.MigStrategyMixed, v1beta1.MigStrategySingle, v1beta1.GPUInstanceProfileMIG1g, v1beta1.GPUInstanceProfileMIG7g),
+				Entry("MIG disabled", v1beta1.MigStrategyMixed, v1beta1.MigStrategyNone, v1beta1.GPUInstanceProfileMIG1g, v1beta1.GPUInstanceProfile("")),
+				Entry("MIG enabled", v1beta1.MigStrategyNone, v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfile(""), v1beta1.GPUInstanceProfileMIG1g),
+			)
 		})
 	}
 }
