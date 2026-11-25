@@ -126,8 +126,7 @@ Check for:
 
 ### 3. AKSNodeClass API and CRD Compatibility
 
-`v1beta1` is current. `v1alpha2` is deprecated and planned for removal, but it is still served and must
-maintain parity. CRDs are generated, and the NodeClass hash controls drift.
+`v1beta1` is current. `v1alpha2` is deprecated and planned for removal, but it is still served in older clusters and must maintain parity. CRDs are generated, and the NodeClass hash controls drift.
 
 Check for:
 
