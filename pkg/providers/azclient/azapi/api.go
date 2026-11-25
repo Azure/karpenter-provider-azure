@@ -64,6 +64,13 @@ type NetworkInterfacesAPI interface {
 	UpdateTags(ctx context.Context, resourceGroupName string, networkInterfaceName string, tags armnetwork.TagsObject, options *armnetwork.InterfacesClientUpdateTagsOptions) (armnetwork.InterfacesClientUpdateTagsResponse, error)
 }
 
+type PublicIPAddressesAPI interface {
+	Get(ctx context.Context, resourceGroupName, publicIPAddressName string, options *armnetwork.PublicIPAddressesClientGetOptions) (armnetwork.PublicIPAddressesClientGetResponse, error)
+	BeginCreateOrUpdate(ctx context.Context, resourceGroupName, publicIPAddressName string, parameters armnetwork.PublicIPAddress, options *armnetwork.PublicIPAddressesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armnetwork.PublicIPAddressesClientCreateOrUpdateResponse], error)
+	BeginDelete(ctx context.Context, resourceGroupName, publicIPAddressName string, options *armnetwork.PublicIPAddressesClientBeginDeleteOptions) (*runtime.Poller[armnetwork.PublicIPAddressesClientDeleteResponse], error)
+	NewListPager(resourceGroupName string, options *armnetwork.PublicIPAddressesClientListOptions) *runtime.Pager[armnetwork.PublicIPAddressesClientListResponse]
+}
+
 type SubnetsAPI interface {
 	Get(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error)
 }

@@ -69,8 +69,9 @@ type Provider struct {
 }
 
 type BackendAddressPools struct {
-	IPv4PoolIDs []string
-	IPv6PoolIDs []string // TODO: This is always empty currently
+	IPv4PoolIDs     []string
+	IPv6PoolIDs     []string // TODO: This is always empty currently
+	outboundPoolIDs []string
 
 	// generation is the generation of the LB list that was used to build this pool collection.
 	generation uint64
@@ -80,9 +81,26 @@ type BackendAddressPools struct {
 // Outbound pools are retained.
 func (p *BackendAddressPools) WithoutKubernetesInboundPools() *BackendAddressPools {
 	return &BackendAddressPools{
-		IPv4PoolIDs: lo.Reject(p.IPv4PoolIDs, isKubernetesInboundBackendPoolID),
-		IPv6PoolIDs: lo.Reject(p.IPv6PoolIDs, isKubernetesInboundBackendPoolID),
-		generation:  p.generation,
+		IPv4PoolIDs:     lo.Reject(p.IPv4PoolIDs, isKubernetesInboundBackendPoolID),
+		IPv6PoolIDs:     lo.Reject(p.IPv6PoolIDs, isKubernetesInboundBackendPoolID),
+		outboundPoolIDs: p.outboundPoolIDs,
+		generation:      p.generation,
+	}
+}
+
+func (p *BackendAddressPools) WithoutOutboundPools() *BackendAddressPools {
+	isOutbound := func(poolID string, _ int) bool {
+		if lo.ContainsBy(p.outboundPoolIDs, func(outboundID string) bool { return strings.EqualFold(poolID, outboundID) }) {
+			return true
+		}
+		resourceID, err := arm.ParseResourceID(poolID)
+		return err == nil && (strings.EqualFold(resourceID.Name, SLBOutboundBackendPoolName) || strings.EqualFold(resourceID.Name, SLBOutboundBackendPoolNameIPv6))
+	}
+	return &BackendAddressPools{
+		IPv4PoolIDs:     lo.Reject(p.IPv4PoolIDs, isOutbound),
+		IPv6PoolIDs:     lo.Reject(p.IPv6PoolIDs, isOutbound),
+		outboundPoolIDs: p.outboundPoolIDs,
+		generation:      p.generation,
 	}
 }
 
@@ -177,10 +195,29 @@ func (p *Provider) newPoolsLocked(ctx context.Context, loadBalancers []*armnetwo
 	// but that's also the only OutboundType which creates the LoadBalancer, so as long as we're not allowing
 	// OutboundType changes, we can just infer that if the LBs exist we should assign them.
 	return &BackendAddressPools{
-		IPv4PoolIDs: ipv4PoolIDs,
+		IPv4PoolIDs:     ipv4PoolIDs,
+		outboundPoolIDs: outboundBackendPoolIDs(loadBalancers),
 		// TODO: IPv6 deferred for now. When they're used they must be put onto a non-primary NIC.
 		generation: p.generation,
 	}
+}
+
+func outboundBackendPoolIDs(loadBalancers []*armnetwork.LoadBalancer) []string {
+	var ids []string
+	for _, balancer := range loadBalancers {
+		if balancer == nil || balancer.Properties == nil {
+			continue
+		}
+		for _, rule := range balancer.Properties.OutboundRules {
+			if rule == nil || rule.Properties == nil || rule.Properties.BackendAddressPool == nil {
+				continue
+			}
+			if id := lo.FromPtr(rule.Properties.BackendAddressPool.ID); id != "" {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
 }
 
 func (p *Provider) loadFromAzure(ctx context.Context) ([]*armnetwork.LoadBalancer, error) {

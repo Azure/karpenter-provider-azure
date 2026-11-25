@@ -18,6 +18,7 @@ package loadbalancer_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -149,6 +150,36 @@ func TestBackendAddressPools_WithoutKubernetesInboundPools(t *testing.T) {
 	// Ensure the original pools are unchanged
 	g.Expect(pools.IPv4PoolIDs).To(HaveLen(5))
 	g.Expect(pools.IPv6PoolIDs).To(HaveLen(1))
+}
+
+func TestBackendAddressPools_WithoutOutboundPools(testContext *testing.T) {
+	expect := NewWithT(testContext)
+	fixture := newTestFixture(testContext)
+	standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
+	customID := fake.MakeBackendAddressPoolID(resourceGroup, loadbalancer.SLBName, "custom-egress")
+	standardLB.Properties.BackendAddressPools = append(standardLB.Properties.BackendAddressPools, &armnetwork.BackendAddressPool{
+		ID: &customID, Name: lo.ToPtr("custom-egress"), Properties: &armnetwork.BackendAddressPoolPropertiesFormat{},
+	})
+	standardLB.Properties.OutboundRules = []*armnetwork.OutboundRule{{Properties: &armnetwork.OutboundRulePropertiesFormat{
+		BackendAddressPool: &armnetwork.SubResource{ID: lo.ToPtr(strings.ToUpper(customID))},
+	}}}
+	internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
+	fixture.api.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
+	fixture.api.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
+	pools, err := fixture.provider.LoadBalancerBackendPools(fixture.ctx)
+	expect.Expect(err).NotTo(HaveOccurred())
+	filtered := pools.WithoutOutboundPools()
+	expect.Expect(filtered.IPv4PoolIDs).To(ConsistOf(
+		fake.MakeBackendAddressPoolID(resourceGroup, loadbalancer.SLBName, loadbalancer.SLBInboundBackendPoolName),
+		fake.MakeBackendAddressPoolID(resourceGroup, loadbalancer.InternalSLBName, loadbalancer.SLBInboundBackendPoolName),
+	))
+	expect.Expect(pools.IPv4PoolIDs).To(HaveLen(4))
+	expect.Expect(filtered.WithoutKubernetesInboundPools().IPv4PoolIDs).To(BeEmpty())
+	fixture.api.LoadBalancers.Clear()
+	refreshed, err := fixture.provider.RefreshBackendPools(fixture.ctx, filtered)
+	expect.Expect(err).NotTo(HaveOccurred())
+	expect.Expect(refreshed.IPv4PoolIDs).To(BeEmpty())
+	expect.Expect(fixture.api.NewListPagerBehavior.Calls()).To(Equal(2))
 }
 
 func TestRefreshBackendPools_RefreshesWhenGenerationMatchesCurrentCache(t *testing.T) {

@@ -42,7 +42,7 @@ func (o *Options) SupportsWorkloadRuntime() bool {
 
 // SupportsNodePublicIP reports whether the configured provision mode can give nodes an
 // instance-level public IP address. The AKS machine API carries it on the machine's network
-// profile. The VM-based modes create NICs locally and don't attach a public IP.
+// profile. The VM-based modes create and attach an owned public IP to the node NIC.
 func (o *Options) SupportsNodePublicIP() bool {
-	return o.IsAKSMachineAPIMode()
+	return o.IsAKSMachineAPIMode() || o.ProvisionMode == consts.ProvisionModeAKSScriptless || o.ProvisionMode == consts.ProvisionModeBootstrappingClient
 }
