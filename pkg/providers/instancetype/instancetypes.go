@@ -58,6 +58,18 @@ const (
 	skuRetirementHorizonMonths = 6
 )
 
+const (
+	filterReasonRestricted         = "restricted"
+	filterReasonRetired            = "retired"
+	filterReasonInvalidVMSize      = "invalidVMSize"
+	filterReasonLocationRestricted = "locationRestricted"
+	filterReasonInsufficientCPU    = "insufficientCPU"
+	filterReasonInsufficientMemory = "insufficientMemory"
+	filterReasonUnsupportedGPU     = "unsupportedGPU"
+	filterReasonConstrainedCPUs    = "constrainedCPUs"
+	filterReasonConfidential       = "confidential"
+)
+
 // instanceTypeParameters contains the resolved parameters that affect
 // instance-type construction. The instance-type cache key is derived by hashing this
 // struct; adding a new field here automatically incorporates it into the key.
@@ -707,28 +719,50 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 
 	skus := cache.List(ctx, skewer.ResourceTypeFilter("virtualMachines"))
 	log.FromContext(ctx).V(1).Info("discovered SKUs", "skuCount", len(skus))
+	// Count each SKU only under its first matching filter.
+	filtered := map[string]int{
+		filterReasonRestricted:         0,
+		filterReasonRetired:            0,
+		filterReasonInvalidVMSize:      0,
+		filterReasonLocationRestricted: 0,
+		filterReasonInsufficientCPU:    0,
+		filterReasonInsufficientMemory: 0,
+		filterReasonUnsupportedGPU:     0,
+		filterReasonConstrainedCPUs:    0,
+		filterReasonConfidential:       0,
+	}
 	now := p.clock.Now().UTC()
 	// Retain SKUs retiring on or after UTC today plus six calendar months.
 	retirementCutoff := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, skuRetirementHorizonMonths, 0)
 	for i := range skus {
 		if IsRestrictedSKU(skus[i].GetName()) {
+			filtered[filterReasonRestricted]++
 			continue
 		}
 		if isRetired(ctx, &skus[i], retirementCutoff) {
+			filtered[filterReasonRetired]++
 			continue
 		}
 		vmsize, err := skus[i].GetVMSize()
 		if err != nil {
 			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *skus[i].Size)
+			filtered[filterReasonInvalidVMSize]++
 			continue
 		}
-		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
-			instanceTypes[skus[i].GetName()] = &skus[i]
+		if skus[i].HasLocationRestriction(p.region) {
+			filtered[filterReasonLocationRestricted]++
+			continue
 		}
+		if reason := p.unsupportedReason(&skus[i], vmsize); reason != "" {
+			filtered[reason]++
+			continue
+		}
+		instanceTypes[skus[i].GetName()] = &skus[i]
 	}
 
+	log.FromContext(ctx).Info("instance type filtering results", "skuCount", len(skus), "filtered", filtered)
 	if len(instanceTypes) == 0 {
-		return fmt.Errorf("no instance types found")
+		return fmt.Errorf("no instance types found, filtered: %v", filtered)
 	}
 
 	logUnknownSKUFamilies(ctx, instanceTypes)
@@ -768,14 +802,24 @@ func logUnknownSKUFamilies(ctx context.Context, instanceTypes map[string]*skewer
 	}
 }
 
-// isSupported indicates SKU is supported by AKS, based on SKU properties
-func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType) bool {
-	return p.hasMinimumCPU(sku) &&
-		p.hasMinimumMemory(sku) &&
-		!p.isUnsupportedByAKS(sku) &&
-		!p.isUnsupportedGPU(sku) &&
-		!p.hasConstrainedCPUs(vmsize) &&
-		!p.isConfidential(sku)
+// unsupportedReason returns the first reason a SKU is unsupported by AKS, or an empty string if supported.
+func (p *DefaultProvider) unsupportedReason(sku *skewer.SKU, vmsize *skewer.VMSizeType) string {
+	switch {
+	case !p.hasMinimumCPU(sku):
+		return filterReasonInsufficientCPU
+	case !p.hasMinimumMemory(sku):
+		return filterReasonInsufficientMemory
+	case p.isUnsupportedByAKS(sku):
+		return filterReasonRestricted
+	case p.isUnsupportedGPU(sku):
+		return filterReasonUnsupportedGPU
+	case p.hasConstrainedCPUs(vmsize):
+		return filterReasonConstrainedCPUs
+	case p.isConfidential(sku):
+		return filterReasonConfidential
+	default:
+		return ""
+	}
 }
 
 // at least 2 cpus

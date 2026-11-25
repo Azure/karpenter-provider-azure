@@ -162,7 +162,7 @@ func (p *DefaultProvider) fetchAndCache(ctx context.Context, key string, input *
 
 	choices := sortedPlacementChoices(response, input)
 	if len(choices) == 0 {
-		return RecommendationDetails{}, fmt.Errorf("SKU Mix Placement response contained no placement choices")
+		return RecommendationDetails{}, fmt.Errorf("SKU Mix Placement response ID: %s contained no placement choices", lo.FromPtr(response.ID))
 	}
 	if response.PlacementChoices[0] != choices[0] {
 		logger.Error(
@@ -280,7 +280,7 @@ func recommendationsFromChoices(responseID string, choices []*armrecommender.SKU
 	result := make([]Recommendation, 0)
 	for _, choice := range choices {
 		if choice.Score == nil || choice.SKUSplit == nil {
-			return nil, fmt.Errorf("SKU Mix Placement response for ID: %s contained an invalid placement choice", responseID)
+			return nil, fmt.Errorf("SKU Mix Placement response ID: %s contained an invalid placement choice", responseID)
 		}
 		for _, split := range choice.SKUSplit {
 			recommendation, err := recommendationFromSplit(responseID, choice, split)
@@ -298,18 +298,18 @@ func recommendationsFromChoices(responseID string, choices []*armrecommender.SKU
 		}
 	}
 	if len(result) == 0 {
-		return nil, fmt.Errorf("SKU Mix Placement response contained no recommended VM sizes")
+		return nil, fmt.Errorf("SKU Mix Placement response ID: %s contained no recommended VM sizes", responseID)
 	}
 	return result, nil
 }
 
 func recommendationFromSplit(responseID string, choice *armrecommender.SKUMixPlacementDeploymentChoice, split *armrecommender.SKUMixPlacementItem) (Recommendation, error) {
 	if split == nil || split.Name == nil || split.Capacity == nil || split.Priority == nil {
-		return Recommendation{}, fmt.Errorf("SKU Mix Placement response for ID: %s contained an invalid SKU split", responseID)
+		return Recommendation{}, fmt.Errorf("SKU Mix Placement response ID: %s contained an invalid SKU split", responseID)
 	}
 	capacityType, ok := capacityTypeForPriority(*split.Priority)
 	if !ok {
-		return Recommendation{}, fmt.Errorf("SKU Mix Placement response contained unsupported priority %q", *split.Priority)
+		return Recommendation{}, fmt.Errorf("SKU Mix Placement response ID: %s contained unsupported priority %q", responseID, *split.Priority)
 	}
 	return Recommendation{
 		VMSize:       *split.Name,
