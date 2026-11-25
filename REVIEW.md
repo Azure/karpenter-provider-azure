@@ -94,6 +94,8 @@ the issue easier to understand. If needed, you may use symbols to visualize/anim
 
 Use the checks below when relevant. They may become stale; verify them against the code. [AGENTS.md](AGENTS.md) takes precedence if the files conflict.
 
+PR authors: you may add more and update these. However, they can be stale and costly to maintain. Failure to keep them updated will degrade the review performance and cause confusion. Maintain a high bar when deciding whether to add a rule here.
+
 ### 1. Provisioning Mode Compatibility
 
 The provider has separate VM-based and AKS Machine API-based implementations under
