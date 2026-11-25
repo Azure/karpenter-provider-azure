@@ -29,6 +29,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
+	nodeclaimgarbagecollection "sigs.k8s.io/karpenter/pkg/controllers/nodeclaim/garbagecollection"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -693,6 +694,44 @@ func runSharedAKSMachineAPITests() {
 			Expect(createdConflictedNodeClaim.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v5"))
 			Expect(createdConflictedNodeClaim.CreationTimestamp).ToNot(BeZero())
 		})
+	})
+
+	It("should not garbage collect a registered standalone NodeClaim before its node is Ready", func() {
+		delete(nodeClaim.Labels, karpv1.NodePoolLabelKey)
+		nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+			{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{defaultTestSKU.GetName()}},
+			{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+		}
+		ExpectApplied(ctx, env.Client, nodeClass, nodeClaim)
+		nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+		created, err := cloudProvider.Create(ctx, nodeClaim)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(created.Status.ProviderID).ToNot(BeEmpty())
+		Expect(created.Labels).ToNot(HaveKey(karpv1.NodePoolLabelKey))
+
+		node := coretest.Node(coretest.NodeOptions{
+			ProviderID:  created.Status.ProviderID,
+			ReadyStatus: v1.ConditionFalse,
+		})
+		nodeClaim.Status = created.Status
+		nodeClaim.Status.NodeName = node.Name
+		nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+		nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
+		nodeClaim.StatusConditions().SetFalse(karpv1.ConditionTypeInitialized, "NodeNotReady", "node is not Ready")
+		ExpectApplied(ctx, env.Client, nodeClaim, node)
+
+		nodeClaims, err := cloudProvider.List(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(nodeClaims).To(HaveLen(1))
+		Expect(nodeClaims[0].Status.ProviderID).To(Equal(created.Status.ProviderID))
+		Expect(nodeClaims[0].Labels).ToNot(HaveKey(karpv1.NodePoolLabelKey))
+
+		gcController := nodeclaimgarbagecollection.NewController(fakeClock, env.Client, cloudProvider)
+		ExpectSingletonReconciled(ctx, gcController)
+		nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+		Expect(nodeClaim.DeletionTimestamp.IsZero()).To(BeTrue())
+		Expect(nodeClaim.StatusConditions().Get(karpv1.ConditionTypeRegistered).IsTrue()).To(BeTrue())
+		Expect(nodeClaim.StatusConditions().Get(karpv1.ConditionTypeInitialized).IsFalse()).To(BeTrue())
 	})
 }
 

@@ -46,7 +46,7 @@ The cache provides `GetWithFallback(ctx, machineName, useCache)` which:
 
 - **Pre-Create Checks** (`pkg/providers/instance/aksmachineinstance.go`): Uses cache
   - Checks if machine already exists before creating (handles restart scenarios).
-  - Safe to use cache because we fall back on a direct API call on cache misses. This check also just needs to verify the existance of a machine.
+  - Safe to use cache because we fall back on a direct API call on cache misses. This check also just needs to verify the existence of a machine.
 
 - **Post-Create Validation** (`pkg/providers/instance/aksmachineinstance.go`): No cache
   - Gets machine immediately after creation to retrieve VMResourceID and check for early provisioning errors
@@ -69,7 +69,7 @@ The cache provides `ListWithFallback(ctx, useCache)` which:
 
 1. **Cache Hit (Fresh)**: Returns all cached machines
 2. **Cache Stale**: Falls back to direct AKS Machine API LIST
-3. **Filtering**: Automatically filters to Karpenter-managed machines (via nodepool tag)
+3. **Filtering**: Automatically filters to Karpenter-managed machines (via `karpenter.azure.com_aksmachine_nodeclaim` tag which is added on all Machine's at initial creation)
 
 Currently, all calls to List set useCache=false, but the option to use the cache exists for consistency with Get and in case we decide to use it in the future.
 
@@ -121,4 +121,3 @@ This allows instance creation to wait for provisioning completion without repeat
 
 - **Reduced GET Throttling**: Cache significantly reduces AKS Machine API GET calls for high-frequency operations like drift detection, polling, and pre-create checks
 - **Correctness via Fallback**: Cache misses and stale cache entries automatically fall back to direct API calls, ensuring correctness without significant performance impact
-
