@@ -65,7 +65,7 @@ func TestSKUMixRankStage_EnabledModeProjectsAndLocallyRanksRecommendedOfferings(
 func TestSKUMixRankStage_SplitsAndJoinsRecommendationGroupsPreservingSizeAndPriority(t *testing.T) {
 	g := NewWithT(t)
 	client, provider := newTestCapacityProvider()
-	client.PostBehavior.SetCustomTransformer(func(input *fake.SKUMixPlacementScoresPostInput) error {
+	client.PostBehavior.SetCustomTransformer(func(input *fake.SKUMixPlacementScoresPostInput, _ func(*fake.SKUMixPlacementScoresPostInput) (armrecommender.SKUMixPlacementScoresClientPostResponse, error)) (armrecommender.SKUMixPlacementScoresClientPostResponse, error) {
 		priority := *input.Request.CapacityProfile.Priority
 		var splits []*armrecommender.SKUMixPlacementItem
 		switch {
@@ -94,8 +94,7 @@ func TestSKUMixRankStage_SplitsAndJoinsRecommendationGroupsPreservingSizeAndPrio
 				skuMixSplit("Standard_B", "", priority),
 			}
 		}
-		client.PostBehavior.Output.Set(skuMixResponse(splits...))
-		return nil
+		return *skuMixResponse(splits...), nil
 	})
 	input := []stages.InstanceOffering{
 		newInstanceOffering("Standard_A",

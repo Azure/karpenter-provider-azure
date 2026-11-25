@@ -49,6 +49,7 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
@@ -962,14 +963,14 @@ var _ = Describe("VMInstanceProvider", func() {
 			// until all Ds_v3 sizes are unavailable. Remaining pods fall back to D_v5.
 			var usedCores atomic.Int32
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.SetCustomTransformer(
-				func(input *fake.VirtualMachineCreateOrUpdateInput) error {
+				func(input *fake.VirtualMachineCreateOrUpdateInput, next func(*fake.VirtualMachineCreateOrUpdateInput) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error)) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error) {
 					vmSize := string(*input.VM.Properties.HardwareProfile.VMSize)
 					sku := fake.MakeSKU(vmSize)
 					if sku.GetFamilyName() == "standardDSv3Family" {
 						vcpus := int32(lo.Must(sku.VCPU()))
 						current := usedCores.Load()
 						if current+vcpus > int32(coreQuota) {
-							return &azcore.ResponseError{
+							return nil, &azcore.ResponseError{
 								ErrorCode: "OperationNotAllowed",
 								RawResponse: &http.Response{
 									Body: fake.CreateSDKErrorBody("OperationNotAllowed",
@@ -982,7 +983,7 @@ var _ = Describe("VMInstanceProvider", func() {
 						}
 						usedCores.Add(vcpus)
 					}
-					return nil
+					return next(input)
 				},
 			)
 
@@ -1171,14 +1172,14 @@ var _ = Describe("VMInstanceProvider", func() {
 			// the scheduler falls back to NodePool B.
 			var usedCores atomic.Int32
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.SetCustomTransformer(
-				func(input *fake.VirtualMachineCreateOrUpdateInput) error {
+				func(input *fake.VirtualMachineCreateOrUpdateInput, next func(*fake.VirtualMachineCreateOrUpdateInput) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error)) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error) {
 					vmSize := string(*input.VM.Properties.HardwareProfile.VMSize)
 					sku := fake.MakeSKU(vmSize)
 					if sku.GetFamilyName() == "standardDSv3Family" {
 						vcpus := int32(lo.Must(sku.VCPU()))
 						current := usedCores.Load()
 						if current+vcpus > int32(coreQuota) {
-							return &azcore.ResponseError{
+							return nil, &azcore.ResponseError{
 								ErrorCode: "OperationNotAllowed",
 								RawResponse: &http.Response{
 									Body: fake.CreateSDKErrorBody("OperationNotAllowed",
@@ -1191,7 +1192,7 @@ var _ = Describe("VMInstanceProvider", func() {
 						}
 						usedCores.Add(vcpus)
 					}
-					return nil
+					return next(input)
 				},
 			)
 
@@ -1338,10 +1339,10 @@ var _ = Describe("VMInstanceProvider", func() {
 			deletedPoolID := fake.MakeBackendAddressPoolID(nodeResourceGroup, "kubernetes-internal", "kubernetes")
 			nicCreateCalls := 0
 			azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.SetCustomTransformer(
-				func(input *fake.NetworkInterfaceCreateOrUpdateInput) error {
+				func(input *fake.NetworkInterfaceCreateOrUpdateInput, next func(*fake.NetworkInterfaceCreateOrUpdateInput) (*runtime.Poller[armnetwork.InterfacesClientCreateOrUpdateResponse], error)) (*runtime.Poller[armnetwork.InterfacesClientCreateOrUpdateResponse], error) {
 					nicCreateCalls++
 					if nicCreateCalls == 1 {
-						return fmt.Errorf(
+						return nil, fmt.Errorf(
 							"Resource %s referenced by resource /subscriptions/test/resourceGroups/%s/providers/Microsoft.Network/networkInterfaces/%s was not found. "+
 								"Please make sure that the referenced resource exists, and that both resources are in the same region.: %w",
 							deletedPoolID,
@@ -1350,7 +1351,7 @@ var _ = Describe("VMInstanceProvider", func() {
 							&azcore.ResponseError{ErrorCode: "InvalidResourceReference", StatusCode: 400},
 						)
 					}
-					return nil
+					return next(input)
 				},
 			)
 

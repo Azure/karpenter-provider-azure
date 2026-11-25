@@ -33,19 +33,19 @@ type MockedFunction[I any, O any] struct {
 	successfulCalls     atomic.Int32 // Internal construct to keep track of the number of times this function has successfully been called
 	failedCalls         atomic.Int32 // Internal construct to keep track of the number of times this function has failed (with error)
 	customTransformerMu sync.RWMutex
-	customTransformer   func(*I) error // Optional hook called before the default transformer; can modify input or return an error to short-circuit
+	customTransformer   func(*I, func(*I) (O, error)) (O, error) // Optional hook; can modify input and call next, or return its own result or error to short-circuit
 }
 
-// SetCustomTransformer sets an optional hook that is called before the default
-// transformer in Invoke. The hook may modify the input in place or return an
-// error to short-circuit the call.
-func (m *MockedFunction[I, O]) SetCustomTransformer(fn func(*I) error) {
+// SetCustomTransformer sets a wrapper that returns a per-call result or delegates to next.
+// next returns configured Output when present, otherwise it calls the default transformer.
+// Configured Error takes precedence over the wrapper. Wrappers may run concurrently.
+func (m *MockedFunction[I, O]) SetCustomTransformer(fn func(*I, func(*I) (O, error)) (O, error)) {
 	m.customTransformerMu.Lock()
 	defer m.customTransformerMu.Unlock()
 	m.customTransformer = fn
 }
 
-func (m *MockedFunction[I, O]) getCustomTransformer() func(*I) error {
+func (m *MockedFunction[I, O]) getCustomTransformer() func(*I, func(*I) (O, error)) (O, error) {
 	m.customTransformerMu.RLock()
 	defer m.customTransformerMu.RUnlock()
 	return m.customTransformer
@@ -71,18 +71,19 @@ func (m *MockedFunction[I, O]) Invoke(input *I, defaultTransformer func(*I) (O, 
 		return *new(O), err
 	}
 
+	next := func(input *I) (O, error) {
+		if !m.Output.IsNil() {
+			return *m.Output.Clone(), nil
+		}
+		return defaultTransformer(input)
+	}
+	invoke := next
 	if ct := m.getCustomTransformer(); ct != nil {
-		if err := ct(input); err != nil {
-			m.failedCalls.Add(1)
-			return *new(O), err
+		invoke = func(input *I) (O, error) {
+			return ct(input, next)
 		}
 	}
-
-	if !m.Output.IsNil() {
-		m.successfulCalls.Add(1)
-		return *m.Output.Clone(), nil
-	}
-	out, err := defaultTransformer(input)
+	out, err := invoke(input)
 	if err != nil {
 		m.failedCalls.Add(1)
 	} else {
@@ -106,12 +107,31 @@ func (m *MockedFunction[I, O]) FailedCalls() int {
 type MockedLRO[I any, O any] struct {
 	MockedFunction[I, O]
 	BeginError AtomicError // Error to return a certain number of times defined by custom error options (for Begin)
+
+	customTransformerMu sync.RWMutex
+	customTransformer   func(*I, func(*I) (*runtime.Poller[O], error)) (*runtime.Poller[O], error)
+}
+
+// SetCustomTransformer sets a concurrent wrapper around poller creation. Return an error
+// directly to fail the begin call, or delegate to next to retain default polling behavior.
+// BeginError and Error take precedence; next uses Output before the default transformer.
+func (m *MockedLRO[I, O]) SetCustomTransformer(fn func(*I, func(*I) (*runtime.Poller[O], error)) (*runtime.Poller[O], error)) {
+	m.customTransformerMu.Lock()
+	defer m.customTransformerMu.Unlock()
+	m.customTransformer = fn
+}
+
+func (m *MockedLRO[I, O]) getCustomTransformer() func(*I, func(*I) (*runtime.Poller[O], error)) (*runtime.Poller[O], error) {
+	m.customTransformerMu.RLock()
+	defer m.customTransformerMu.RUnlock()
+	return m.customTransformer
 }
 
 // Reset must be called between tests otherwise tests will pollute each other.
 func (m *MockedLRO[I, O]) Reset() {
 	m.MockedFunction.Reset()
 	m.BeginError.Reset()
+	m.SetCustomTransformer(nil)
 }
 
 func (m *MockedLRO[I, O]) Invoke(input *I, defaultTransformer func(*I) (*O, error)) (*runtime.Poller[O], error) {
@@ -126,24 +146,28 @@ func (m *MockedLRO[I, O]) Invoke(input *I, defaultTransformer func(*I) (*O, erro
 		return newMockPoller[O](nil, err)
 	}
 
+	var pollErr error
+	next := func(input *I) (*runtime.Poller[O], error) {
+		if !m.Output.IsNil() {
+			return newMockPoller(m.Output.Clone(), nil)
+		}
+		out, err := defaultTransformer(input)
+		pollErr = err
+		return newMockPoller(out, err)
+	}
+	invoke := next
 	if ct := m.getCustomTransformer(); ct != nil {
-		if err := ct(input); err != nil {
-			m.failedCalls.Add(1)
-			return nil, err
+		invoke = func(input *I) (*runtime.Poller[O], error) {
+			return ct(input, next)
 		}
 	}
-
-	if !m.Output.IsNil() {
-		m.successfulCalls.Add(1)
-		return newMockPoller(m.Output.Clone(), nil)
-	}
-	out, err := defaultTransformer(input)
-	if err != nil {
+	poller, err := invoke(input)
+	if err != nil || pollErr != nil {
 		m.failedCalls.Add(1)
 	} else {
 		m.successfulCalls.Add(1)
 	}
-	return newMockPoller(out, err)
+	return poller, err
 }
 
 func (m *MockedLRO[I, O]) Calls() int {
