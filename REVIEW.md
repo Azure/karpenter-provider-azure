@@ -65,6 +65,26 @@ For each finding:
   confirm it. The PR author must help establish safety when the reviewer cannot.
 - Describe a concrete failing scenario and suggest a specific fix or verification step when possible.
 
+An example in-line comment could look like:
+
+```
+Category: **Correctness** | Domain: **Drift**
+
+Existing nodes can be disrupted involuntarily once this changes roll out.
+The chain of failure looks like:
+
+Changes rolling out
+→ AKSNodeClass.PinnedKebernutesVersion is defaulted to `2.22`
+→ `KebernutesVersionDrift` reconciles and detects version difference between the node and NodeClass
+→ `KebernutesVersionDrift` considered this a drift
+→ Core controller issues deletion operation
+→ **User workload/node is involuntarily disrupted**
+
+**This involuntarily disruption is considered breaking**, and is not being addressed as intentional in any materials.
+
+Consider fixing this by making a backward compatibility condition in `drift.go/KebernutesVersionDrift` or call this out as a breaking change.
+```
+
 Do not comment on trivial issues, obviously safe changes, intentional behavior already explained by the PR, or anything enforced by `make verify` and CI.
 
 Explain concrete problems with a short walkthrough, comparison, table, or causal chain when that makes
