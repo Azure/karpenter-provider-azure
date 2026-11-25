@@ -176,6 +176,10 @@ func (p *DefaultProvider) fetchAndCache(ctx context.Context, key string, input *
 	if err != nil {
 		return RecommendationDetails{}, err
 	}
+	recommendations, err = supplementRecommendations(ctx, lo.FromPtr(response.ID), input, recommendations, response.CapacityLimits)
+	if err != nil {
+		return RecommendationDetails{}, err
+	}
 	result := RecommendationDetails{
 		Recommendations: recommendations,
 		CapacityLimits:  response.CapacityLimits,
@@ -301,6 +305,108 @@ func recommendationsFromChoices(responseID string, choices []*armrecommender.SKU
 		return nil, fmt.Errorf("SKU Mix Placement response ID: %s contained no recommended VM sizes", responseID)
 	}
 	return result, nil
+}
+
+// supplementRecommendations adds requested offerings with positive capacity limits that are absent
+// from all placement choices.
+// Ideally, this function never does anything as we expect the SKU Split API to do this automatically.
+// TODO: Remove this once we're confident the SKU split API is behaving correctly.
+func supplementRecommendations(
+	ctx context.Context,
+	responseID string,
+	input *RankingInput,
+	recommendations []Recommendation,
+	capacityLimits []*armrecommender.SKUMixPlacementCapacityLimit,
+) ([]Recommendation, error) {
+	ranks := make(map[string]int, len(input.VMSizes))
+	for rank, vmSize := range input.VMSizes {
+		ranks[vmSize] = rank
+	}
+	requestedZones := sets.New(input.Zones...)
+	if len(input.Zones) == 0 {
+		requestedZones.Insert("")
+	}
+	seen := sets.New(lo.Map(recommendations, func(recommendation Recommendation, _ int) recommendationKey {
+		return recommendation.key()
+	})...)
+
+	var additions []Recommendation
+	for _, limit := range capacityLimits {
+		recommendation, err := recommendationFromCapacityLimit(limit)
+		if err != nil {
+			return nil, fmt.Errorf("SKU Mix Placement response ID: %s: %w", responseID, err)
+		}
+		recommendation.ID = responseID
+		if lo.FromPtr(limit.Limit) == 0 || recommendation.CapacityType != input.CapacityType || !requestedZones.Has(recommendation.Zone) {
+			continue
+		}
+		if _, ok := ranks[recommendation.VMSize]; !ok {
+			continue
+		}
+		if seen.Has(recommendation.key()) {
+			continue
+		}
+		seen.Insert(recommendation.key())
+		additions = append(additions, recommendation)
+	}
+	if len(additions) == 0 {
+		return recommendations, nil
+	}
+
+	result := insertRecommendationsBySKUPriority(recommendations, additions, ranks)
+	log.FromContext(ctx).Error(
+		fmt.Errorf("SKU Mix Placement choices omitted high priority offerings with positive capacityLimits"),
+		"supplemented SKU Mix Placement recommendations from capacityLimits",
+		"responseID", responseID,
+		"addedRecommendations", additions,
+	)
+	return result, nil
+}
+
+func recommendationFromCapacityLimit(limit *armrecommender.SKUMixPlacementCapacityLimit) (Recommendation, error) {
+	if limit == nil || limit.Name == nil || limit.Limit == nil || limit.Priority == nil {
+		return Recommendation{}, fmt.Errorf("invalid capacity limit")
+	}
+	vmSize := lo.FromPtr(limit.Name)
+	priority := lo.FromPtr(limit.Priority)
+	zone := lo.FromPtr(limit.Zone)
+
+	if lo.FromPtr(limit.Limit) < 0 {
+		return Recommendation{}, fmt.Errorf("negative capacity limit for %s", vmSize)
+	}
+	capacityType, ok := capacityTypeForPriority(priority)
+	if !ok {
+		return Recommendation{}, fmt.Errorf("unsupported capacity limit priority %q", priority)
+	}
+	return Recommendation{
+		VMSize:       vmSize,
+		Zone:         zone,
+		CapacityType: capacityType,
+	}, nil
+}
+
+// insertRecommendationsBySKUPriority processes additions in input SKU priority order, inserting each
+// before the first lower-priority SKU or appending it if none exists. This lets missing higher-priority
+// offerings take precedence without changing the relative order of existing recommendations.
+func insertRecommendationsBySKUPriority(recommendations, additions []Recommendation, ranks map[string]int) []Recommendation {
+	sort.SliceStable(additions, func(i, j int) bool {
+		return ranks[additions[i].VMSize] < ranks[additions[j].VMSize]
+	})
+	result := make([]Recommendation, len(recommendations), len(recommendations)+len(additions))
+	copy(result, recommendations)
+	for _, addition := range additions {
+		index := len(result)
+		for i, recommendation := range result {
+			if rank, ok := ranks[recommendation.VMSize]; ok && rank > ranks[addition.VMSize] {
+				index = i
+				break
+			}
+		}
+		result = append(result, Recommendation{})
+		copy(result[index+1:], result[index:])
+		result[index] = addition
+	}
+	return result
 }
 
 func recommendationFromSplitItem(responseID string, choice *armrecommender.SKUMixPlacementDeploymentChoice, split *armrecommender.SKUMixPlacementItem) (Recommendation, error) {
