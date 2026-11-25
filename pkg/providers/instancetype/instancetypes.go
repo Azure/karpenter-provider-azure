@@ -115,9 +115,19 @@ type cachedInstanceTypes struct {
 	quota       []*cloudprovider.InstanceType
 }
 
+type ListOption func(*instanceTypeParameters)
+
+// WithMIGConfiguration uses an existing Machine's layout instead of the current NodeClass settings.
+func WithMIGConfiguration(strategy v1beta1.MigStrategy, profile v1beta1.GPUInstanceProfile) ListOption {
+	return func(params *instanceTypeParameters) {
+		params.MigStrategy = strategy
+		params.GPUInstanceProfile = profile
+	}
+}
+
 type Provider interface {
 	LivenessProbe(*http.Request) error
-	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+	List(context.Context, *v1beta1.AKSNodeClass, ...ListOption) ([]*cloudprovider.InstanceType, error)
 
 	// Return Azure Skewer Representation of the instance type
 	Get(context.Context, string) (*skewer.SKU, error)
@@ -176,6 +186,7 @@ func NewDefaultProvider(
 func (p *DefaultProvider) List(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
+	listOptions ...ListOption,
 ) ([]*cloudprovider.InstanceType, error) {
 	p.muInstanceTypesInfo.RLock()
 	defer p.muInstanceTypesInfo.RUnlock()
@@ -210,6 +221,9 @@ func (p *DefaultProvider) List(
 		// allocatable resources. Include them so NodeClasses cannot share incompatible cached results.
 		instanceTypeParams.KubeReserved = KubeReservedOverrides(nodeClass.Spec.Kubelet.KubeReserved)
 		instanceTypeParams.EvictionHard = evictionHardOverrides(nodeClass.Spec.Kubelet.EvictionHard)
+	}
+	for _, option := range listOptions {
+		option(instanceTypeParams)
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%016x", paramsHash)

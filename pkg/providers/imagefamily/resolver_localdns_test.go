@@ -35,6 +35,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 )
@@ -46,7 +47,7 @@ type stubInstanceTypeProvider struct{}
 
 func (stubInstanceTypeProvider) LivenessProbe(*http.Request) error { return nil }
 
-func (stubInstanceTypeProvider) List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
+func (stubInstanceTypeProvider) List(context.Context, *v1beta1.AKSNodeClass, ...instancetype.ListOption) ([]*cloudprovider.InstanceType, error) {
 	return nil, nil
 }
 

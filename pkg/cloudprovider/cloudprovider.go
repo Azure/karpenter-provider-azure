@@ -888,10 +888,7 @@ func (c *CloudProvider) resolveNodeClaimFromAKSMachine(ctx context.Context, aksM
 	return nodeClaim, nil
 }
 
-// getInstanceTypesForAKSMachine reconstructs inventory using the Machine's immutable
-// MIG layout. The NodeClass may have changed since launch, including enabling or
-// disabling MIG. Resolve before applying overlays so unrelated resources and
-// explicit capacity overrides retain their usual behavior.
+// Inventory uses the persisted MIG layout; NodeClass edits apply to future launches.
 func (c *CloudProvider) getInstanceTypesForAKSMachine(ctx context.Context, nodePool *karpv1.NodePool, machine *armcontainerservice.Machine) ([]*cloudprovider.InstanceType, error) {
 	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
 	if err != nil {
@@ -901,15 +898,5 @@ func (c *CloudProvider) getInstanceTypesForAKSMachine(ctx context.Context, nodeP
 	if err != nil {
 		return nil, fmt.Errorf("resolving persisted MIG configuration, %w", err)
 	}
-	// Never change the informer-owned NodeClass or mutate cached instance types.
-	nodeClass = nodeClass.DeepCopy()
-	if nodeClass.Spec.GPU == nil {
-		nodeClass.Spec.GPU = &v1beta1.GPU{}
-	}
-	if nodeClass.Spec.GPU.Nvidia == nil {
-		nodeClass.Spec.GPU.Nvidia = &v1beta1.NvidiaGPU{}
-	}
-	nodeClass.Spec.GPU.Nvidia.MigStrategy = lo.ToPtr(strategy)
-	nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = lo.EmptyableToPtr(profile)
-	return c.instanceTypeProvider.List(ctx, nodeClass)
+	return c.instanceTypeProvider.List(ctx, nodeClass, instancetype.WithMIGConfiguration(strategy, profile))
 }
