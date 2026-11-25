@@ -21,6 +21,11 @@ var (
 	AnnotationInPlaceUpdateHash = Group + "/in-place-update-hash"
 	AnnotationAKSMachineVMState = Group + "/aks-machine-vm-state"
 
+	// AnnotationMIGRebootRequired pins the bootstrap reboot requirement at launch.
+	AnnotationMIGRebootRequired = Group + "/mig-reboot-required"
+	// AnnotationMIGInitialBootID survives controller restarts while registration waits for the MIG reboot.
+	AnnotationMIGInitialBootID = Group + "/mig-initial-boot-id"
+
 	// AnnotationCapacityReservationGroupID records the group the NodeClass specified when
 	// this NodeClaim launched.
 	AnnotationCapacityReservationGroupID = Group + "/capacity-reservation-group-id"

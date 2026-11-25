@@ -18,6 +18,8 @@ package cloudprovider
 
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
+	"time"
+
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
@@ -32,10 +34,12 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
 	nodeclaimgarbagecollection "sigs.k8s.io/karpenter/pkg/controllers/nodeclaim/garbagecollection"
+	"sigs.k8s.io/karpenter/pkg/controllers/nodeclaim/lifecycle"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/state/nodepoolhealth"
 	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
@@ -127,6 +131,7 @@ func runMIGLifecycleTests() {
 				reused, err := createAndWait()
 				Expect(err).ToNot(HaveOccurred())
 				Expect(reused.Status).To(Equal(created.Status))
+				Expect(reused.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationMIGRebootRequired, "true"))
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
 				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(BeZero())
 			})
@@ -183,9 +188,229 @@ func runMIGLifecycleTests() {
 				Entry("MIG disabled", v1beta1.MigStrategyMixed, v1beta1.MigStrategyNone, v1beta1.GPUInstanceProfileMIG1g, v1beta1.GPUInstanceProfile("")),
 				Entry("MIG enabled", v1beta1.MigStrategyNone, v1beta1.MigStrategyMixed, v1beta1.GPUInstanceProfile(""), v1beta1.GPUInstanceProfileMIG1g),
 			)
+
+			DescribeTable("should mark only managed MIG launches as requiring a reboot", func(strategy v1beta1.MigStrategy, marked bool) {
+				nodeClass.Spec.GPU.Nvidia.MigStrategy = lo.ToPtr(strategy)
+				if strategy == v1beta1.MigStrategyNone {
+					nodeClass.Spec.GPU.Nvidia.GPUInstanceProfile = nil
+				}
+				Expect(cloudProvider.kubeClient.Update(ctx, nodeClass)).To(Succeed())
+				created, err := createAndWait()
+				Expect(err).ToNot(HaveOccurred())
+				if marked {
+					Expect(created.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationMIGRebootRequired, "true"))
+				} else {
+					Expect(created.Annotations).ToNot(HaveKey(v1beta1.AnnotationMIGRebootRequired))
+				}
+				Expect(created.Annotations).ToNot(HaveKey(v1beta1.AnnotationMIGInitialBootID))
+			},
+				Entry("Single", v1beta1.MigStrategySingle, true),
+				Entry("Mixed", v1beta1.MigStrategyMixed, true),
+				Entry("None", v1beta1.MigStrategyNone, false),
+			)
+
+			It("should not mark CPU-only launches as requiring a MIG reboot", func() {
+				nodeClass.Spec.GPU = nil
+				Expect(cloudProvider.kubeClient.Update(ctx, nodeClass)).To(Succeed())
+				nodeClaim.Spec.Requirements[0].Values = []string{"Standard_D2_v3"}
+				created, err := createAndWait()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(created.Annotations).ToNot(HaveKey(v1beta1.AnnotationMIGRebootRequired))
+				Expect(created.Annotations).ToNot(HaveKey(v1beta1.AnnotationMIGInitialBootID))
+			})
 		})
 	}
 }
+
+var _ = Describe("Managed MIG registration", func() {
+	var node *v1.Node
+	var controller *lifecycle.Controller
+	var registrationCluster *state.Cluster
+	var provider *CloudProvider
+	otherTaint := v1.Taint{Key: "example.com/dedicated", Value: "gpu", Effect: v1.TaintEffectNoSchedule}
+	startupTaint := v1.Taint{Key: "example.com/startup", Effect: v1.TaintEffectNoSchedule}
+
+	newController := func() *lifecycle.Controller {
+		return lifecycle.NewController(env.Clock, env.Client, provider, recorder, registrationCluster, nodepoolhealth.NewState(),
+			[]corecloudprovider.NodeLifecycleHook{NewMIGRegistrationHook(env.Client)})
+	}
+	expectPending := func() {
+		GinkgoHelper()
+		nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+		condition := nodeClaim.StatusConditions().Get(karpv1.ConditionTypeRegistered)
+		Expect(condition.IsUnknown()).To(BeTrue())
+		Expect(condition.Reason).To(Equal("RegistrationHookPending"))
+		Expect(condition.Message).To(ContainSubstring("ManagedMIGReboot"))
+		Expect(nodeClaim.StatusConditions().Get(karpv1.ConditionTypeInitialized).IsTrue()).To(BeFalse())
+		node = ExpectExists(ctx, env.Client, node)
+		Expect(node.Spec.Taints).To(ContainElement(karpv1.UnregisteredNoExecuteTaint))
+		Expect(node.Labels).ToNot(HaveKey(karpv1.NodeRegisteredLabelKey))
+	}
+	reconcilePending := func() {
+		GinkgoHelper()
+		result := ExpectObjectReconciled(ctx, env.Client, controller, nodeClaim)
+		Expect(result.RequeueAfter).To(Equal(5 * time.Second))
+		expectPending()
+	}
+
+	BeforeEach(func() {
+		ctx = coreoptions.ToContext(ctx, coretest.Options())
+		env.Clock.SetTime(time.Now())
+		// Start from a launched claim so registration uses the real API server without
+		// depending on the NodeClass MIG schema or making another Azure create call.
+		provider = &CloudProvider{}
+		registrationCluster = state.NewCluster(env.Clock, env.Client, provider)
+		controller = newController()
+		nodeClaim.Annotations = map[string]string{v1beta1.AnnotationMIGRebootRequired: "true"}
+		nodeClaim.Spec.Resources.Requests = v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}
+		nodeClaim.Spec.StartupTaints = []v1.Taint{startupTaint}
+		nodeClaim.Status.ProviderID = "azure:///managed-mig/" + nodeClaim.Name
+		nodeClaim.Status.Capacity = v1.ResourceList{
+			v1.ResourceCPU:   resource.MustParse("4"),
+			"nvidia.com/gpu": resource.MustParse("7"),
+		}
+		nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+		node = coretest.Node(coretest.NodeOptions{
+			ProviderID:  nodeClaim.Status.ProviderID,
+			ReadyStatus: v1.ConditionFalse,
+			Taints:      []v1.Taint{karpv1.UnregisteredNoExecuteTaint, otherTaint},
+		})
+		node.Status.NodeInfo.BootID = "initial-boot"
+		ExpectApplied(ctx, env.Client, nodePool, nodeClaim, node)
+	})
+	AfterEach(func() {
+		env.Clock.SetTime(time.Now())
+		registrationCluster.Reset()
+	})
+
+	DescribeTable("should retain the unregistered taint until reboot, readiness, and exact GPU inventory", func(expected v1.ResourceList, gpuResource v1.ResourceName) {
+		nodeClaim.Status.Capacity = expected.DeepCopy()
+		Expect(env.Client.Status().Update(ctx, nodeClaim)).To(Succeed())
+		reconcilePending()
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationMIGInitialBootID, "initial-boot"))
+
+		// A new controller and hook must recover the baseline from the persisted claim.
+		controller = newController()
+		node.Status.Conditions = []v1.NodeCondition{{Type: v1.NodeReady, Status: v1.ConditionTrue}}
+		node.Status.Capacity = expected.DeepCopy()
+		node.Status.Allocatable = expected.DeepCopy()
+		Expect(env.Client.Status().Update(ctx, node)).To(Succeed())
+		reconcilePending()
+
+		node.Status.NodeInfo.BootID = "rebooted"
+		node.Status.Conditions[0].Status = v1.ConditionFalse
+		Expect(env.Client.Status().Update(ctx, node)).To(Succeed())
+		reconcilePending()
+		node.Status.Conditions[0].Status = v1.ConditionUnknown
+		Expect(env.Client.Status().Update(ctx, node)).To(Succeed())
+		reconcilePending()
+
+		node.Status.Conditions[0].Status = v1.ConditionTrue
+		for _, quantity := range []string{"0", "1", "8"} {
+			node.Status.Allocatable[gpuResource] = resource.MustParse(quantity)
+			Expect(env.Client.Status().Update(ctx, node)).To(Succeed())
+			reconcilePending()
+		}
+		delete(node.Status.Allocatable, gpuResource)
+		node.Status.Allocatable["nvidia.com/mig-7g.80gb"] = resource.MustParse("7")
+		Expect(env.Client.Status().Update(ctx, node)).To(Succeed())
+		reconcilePending()
+
+		node.Status.Allocatable = expected.DeepCopy()
+		Expect(env.Client.Status().Update(ctx, node)).To(Succeed())
+		ExpectObjectReconciled(ctx, env.Client, controller, nodeClaim)
+		nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+		Expect(nodeClaim.StatusConditions().Get(karpv1.ConditionTypeRegistered).IsTrue()).To(BeTrue())
+		Expect(nodeClaim.Status.NodeName).To(Equal(node.Name))
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationMIGInitialBootID, "initial-boot"))
+		node = ExpectExists(ctx, env.Client, node)
+		Expect(node.Labels).To(HaveKeyWithValue(karpv1.NodeRegisteredLabelKey, "true"))
+		Expect(node.Spec.Taints).ToNot(ContainElement(karpv1.UnregisteredNoExecuteTaint))
+		Expect(node.Spec.Taints).To(ContainElements(otherTaint, startupTaint))
+		Expect(nodeClaim.StatusConditions().Get(karpv1.ConditionTypeInitialized).IsTrue()).To(BeFalse())
+		// Envtest has no node controller to clear the initial NotReady taint.
+		node.Spec.Taints = lo.Reject(node.Spec.Taints, func(taint v1.Taint, _ int) bool {
+			return taint.MatchTaint(&startupTaint) || taint.Key == v1.TaintNodeNotReady
+		})
+		Expect(env.Client.Update(ctx, node)).To(Succeed())
+		ExpectObjectReconciled(ctx, env.Client, controller, nodeClaim)
+		nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+		Expect(nodeClaim.StatusConditions().Get(karpv1.ConditionTypeInitialized).IsTrue()).To(BeTrue(), "%v", nodeClaim.Status.Conditions)
+	},
+		Entry("Single with CPU-only requests", v1.ResourceList{
+			v1.ResourceCPU: resource.MustParse("4"), "nvidia.com/gpu": resource.MustParse("7"),
+		}, v1.ResourceName("nvidia.com/gpu")),
+		Entry("Mixed with CPU-only requests and multiple expected resources", v1.ResourceList{
+			v1.ResourceCPU: resource.MustParse("4"), "nvidia.com/mig-1g.10gb": resource.MustParse("4"), "nvidia.com/mig-3g.40gb": resource.MustParse("1"),
+		}, v1.ResourceName("nvidia.com/mig-1g.10gb")),
+	)
+
+	It("should leave an empty BootID pending without recording a baseline", func() {
+		node.Status.NodeInfo.BootID = ""
+		Expect(env.Client.Status().Update(ctx, node)).To(Succeed())
+		reconcilePending()
+		Expect(nodeClaim.Annotations).ToNot(HaveKey(v1beta1.AnnotationMIGInitialBootID))
+		node.Status.NodeInfo.BootID = "initial-boot"
+		Expect(env.Client.Status().Update(ctx, node)).To(Succeed())
+		reconcilePending()
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationMIGInitialBootID, "initial-boot"))
+		node.Status.NodeInfo.BootID = ""
+		Expect(env.Client.Status().Update(ctx, node)).To(Succeed())
+		reconcilePending()
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationMIGInitialBootID, "initial-boot"))
+	})
+
+	DescribeTable("should register claims without the true reboot marker", func(marker string) {
+		if marker == "" {
+			delete(nodeClaim.Annotations, v1beta1.AnnotationMIGRebootRequired)
+		} else {
+			nodeClaim.Annotations[v1beta1.AnnotationMIGRebootRequired] = marker
+		}
+		Expect(env.Client.Update(ctx, nodeClaim)).To(Succeed())
+		node.Status.NodeInfo.BootID = ""
+		Expect(env.Client.Status().Update(ctx, node)).To(Succeed())
+		ExpectObjectReconciled(ctx, env.Client, controller, nodeClaim)
+		nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+		Expect(nodeClaim.StatusConditions().Get(karpv1.ConditionTypeRegistered).IsTrue()).To(BeTrue())
+		Expect(nodeClaim.Annotations).ToNot(HaveKey(v1beta1.AnnotationMIGInitialBootID))
+		node = ExpectExists(ctx, env.Client, node)
+		Expect(node.Spec.Taints).ToNot(ContainElement(karpv1.UnregisteredNoExecuteTaint))
+		Expect(node.Spec.Taints).To(ContainElements(otherTaint, startupTaint))
+	}, Entry("absent", ""), Entry("false", "false"))
+
+	DescribeTable("should report missing expected GPU capacity after reboot without registering", func(capacity v1.ResourceList) {
+		nodeClaim.Status.Capacity = capacity
+		Expect(env.Client.Status().Update(ctx, nodeClaim)).To(Succeed())
+		reconcilePending()
+		node.Status.NodeInfo.BootID = "rebooted"
+		node.Status.Conditions = []v1.NodeCondition{{Type: v1.NodeReady, Status: v1.ConditionTrue}}
+		Expect(env.Client.Status().Update(ctx, node)).To(Succeed())
+		err := ExpectObjectReconcileFailed(ctx, env.Client, controller, nodeClaim)
+		Expect(err).To(MatchError(ContainSubstring("no expected GPU capacity")))
+		expectPending()
+	},
+		Entry("absent", v1.ResourceList{v1.ResourceCPU: resource.MustParse("4")}),
+		Entry("zero", v1.ResourceList{v1.ResourceCPU: resource.MustParse("4"), "nvidia.com/gpu": resource.MustParse("0")}),
+	)
+
+	It("should fail closed when the first boot was missed and delete the claim after the registration timeout", func() {
+		node.Status.NodeInfo.BootID = "already-rebooted"
+		node.Status.Conditions = []v1.NodeCondition{{Type: v1.NodeReady, Status: v1.ConditionTrue}}
+		node.Status.Capacity = nodeClaim.Status.Capacity.DeepCopy()
+		node.Status.Allocatable = nodeClaim.Status.Capacity.DeepCopy()
+		Expect(env.Client.Status().Update(ctx, node)).To(Succeed())
+		reconcilePending()
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationMIGInitialBootID, "already-rebooted"))
+		controller = newController()
+		env.Clock.Step(14 * time.Minute)
+		reconcilePending()
+		Expect(nodeClaim.DeletionTimestamp.IsZero()).To(BeTrue())
+		env.Clock.Step(time.Minute)
+		ExpectObjectReconciled(ctx, env.Client, controller, nodeClaim)
+		expectPending()
+		Expect(nodeClaim.DeletionTimestamp.IsZero()).To(BeFalse())
+	})
+})
 
 // runSharedAKSMachineAPITests contains the common test cases that should be run
 // for both ManageExistingAKSMachines = true and false configurations

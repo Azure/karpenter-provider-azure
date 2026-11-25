@@ -240,6 +240,10 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	if err != nil {
 		return nil, fmt.Errorf("failed to build NodeClaim from AKS machine template, %w", err)
 	}
+	if nodeClass.GetManagementMode() == v1beta1.ManagementModeManaged &&
+		(nodeClass.GetMigStrategy() == v1beta1.MigStrategySingle || nodeClass.GetMigStrategy() == v1beta1.MigStrategyMixed) {
+		newNodeClaim.Annotations[v1beta1.AnnotationMIGRebootRequired] = "true"
+	}
 
 	// Propagate single-value wellKnownLabels from the nodeClaim requirements to the labels.
 	// This is required for scheduling in core to work correctly. If this is not done, on subsequent scheduling passes before the Node is

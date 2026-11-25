@@ -62,13 +62,14 @@ var _ = Describe("GPU", func() {
 				Skip("managed MIG requires explicit opt-in: E2E_MANAGED_MIG=true; see test/README.md for quota and preview prerequisites")
 			}
 			Expect(os.Getenv("E2E_MANAGED_MIG")).To(Equal("true"), "E2E_MANAGED_MIG must be true or unset")
-			Expect(env.InClusterController).To(BeTrue(), "managed MIG E2E requires self-hosted Karpenter, not NAP")
 			Expect(env.IsAKSMachineAPIMode()).To(BeTrue(), "managed MIG E2E requires PROVISION_MODE=aksmachineapi or aksmachineapiheaderbatch")
-			controller := env.ExpectActiveKarpenterPod()
-			Expect(controller.Spec.Containers).To(HaveLen(1))
-			Expect(controller.Spec.Containers[0].Env).To(ContainElement(corev1.EnvVar{
-				Name: "PROVISION_MODE", Value: env.ProvisionMode,
-			}), "the running self-hosted controller must match the test's Machine API provision mode")
+			if env.InClusterController {
+				controller := env.ExpectActiveKarpenterPod()
+				Expect(controller.Spec.Containers).To(HaveLen(1))
+				Expect(controller.Spec.Containers[0].Env).To(ContainElement(corev1.EnvVar{
+					Name: "PROVISION_MODE", Value: env.ProvisionMode,
+				}), "the running self-hosted controller must match the test's Machine API provision mode")
+			}
 
 			const sku = "Standard_NC24ads_A100_v4"
 			const slicesPerNode = 7 // One A100 80GB, partitioned into homogeneous MIG1g instances.
@@ -129,6 +130,7 @@ var _ = Describe("GPU", func() {
 
 			By("creating unschedulable MIG workloads before making the NodePool available")
 			env.ExpectCreated(deployment)
+			var originalPods []*corev1.Pod
 			Eventually(func(g Gomega) {
 				pods := env.ExpectPodsMatchingSelector(selector)
 				g.Expect(pods).To(HaveLen(slicesPerNode))
@@ -140,6 +142,7 @@ var _ = Describe("GPU", func() {
 						HaveField("Reason", corev1.PodReasonUnschedulable),
 					)))
 				}
+				originalPods = pods
 			}).Should(Succeed())
 			// Do not install a device plugin: the Machine API managed GPU stack must provide it.
 			env.ExpectCreated(nodeClass, nodePool)
@@ -166,6 +169,13 @@ var _ = Describe("GPU", func() {
 						g.Expect(pod.Status.ContainerStatuses[0].Ready).To(BeTrue(), "CUDA workload must succeed in %s", pod.Name)
 						g.Expect(pod.Status.ContainerStatuses[0].RestartCount).To(BeZero())
 					}
+					for _, original := range originalPods {
+						g.Expect(pods).To(ContainElement(HaveField("UID", original.UID)), "original pending pod %s must not be replaced", original.Name)
+						if firstNodeName != "" {
+							g.Expect(pods).To(ContainElement(And(HaveField("UID", original.UID), HaveField("Spec.NodeName", firstNodeName))),
+								"original pod %s must remain on the first node during overflow", original.Name)
+						}
+					}
 				}).WithTimeout(20 * time.Minute).Should(Succeed())
 
 				createdNodes := env.ExpectCreatedNodeCount("==", nodeCount)
@@ -182,6 +192,12 @@ var _ = Describe("GPU", func() {
 				Expect(podsPerNode).To(HaveLen(nodeCount))
 				Expect(podsPerNode[firstNodeName]).To(Equal(slicesPerNode), "all seven original slices must remain occupied during overflow")
 				for _, node := range createdNodes {
+					env.ExpectExists(node)
+					Expect(node.Status.Conditions).To(ContainElement(And(
+						HaveField("Type", corev1.NodeReady), HaveField("Status", corev1.ConditionTrue),
+					)))
+					Expect(node.Spec.Taints).ToNot(ContainElement(HaveField("Key", karpv1.UnregisteredNoExecuteTaint.Key)),
+						"ready MIG node %s must have passed the registration gate", node.Name)
 					Expect(node.Labels).To(HaveKeyWithValue(karpv1.NodePoolLabelKey, nodePool.Name))
 					Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelInstanceTypeStable, sku))
 					Expect(node.Labels).To(HaveKeyWithValue("kubernetes.azure.com/dcgm-exporter", "enabled"))
@@ -202,7 +218,15 @@ var _ = Describe("GPU", func() {
 				env.EventuallyExpectNodeClaimsReady(nodeClaims...)
 				env.EventuallyExpectCreatedMachineCount("==", nodeCount)
 				for _, claim := range nodeClaims {
+					env.ExpectExists(claim)
 					Expect(podsPerNode).To(HaveKey(claim.Status.NodeName))
+					Expect(claim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationMIGRebootRequired, "true"))
+					initialBootID := claim.Annotations[v1beta1.AnnotationMIGInitialBootID]
+					Expect(initialBootID).ToNot(BeEmpty(), "NodeClaim %s must retain the first boot ID", claim.Name)
+					node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: claim.Status.NodeName}}
+					env.ExpectExists(node)
+					Expect(node.Status.NodeInfo.BootID).ToNot(BeEmpty())
+					Expect(node.Status.NodeInfo.BootID).ToNot(Equal(initialBootID), "ready node %s must have rebooted since its first registration attempt", node.Name)
 					machineID := claim.Annotations[v1beta1.AnnotationAKSMachineResourceID]
 					Expect(machineID).ToNot(BeEmpty(), "NodeClaim must have been launched via the Machine API")
 					machine := env.ExpectMachineByID(machineID)
