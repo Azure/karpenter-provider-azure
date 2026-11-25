@@ -68,7 +68,7 @@ For each finding:
 Do not comment on trivial issues, obviously safe changes, intentional behavior already explained by the PR, or anything enforced by `make verify` and CI.
 
 Explain concrete problems with a short walkthrough, comparison, table, or causal chain when that makes
-the issue easier to understand. Use ASD-STE100 Simplified Technical English and avoid walls of text.
+the issue easier to understand. If needed, you may use symbols to visualize/animate the problem. Use ASD-STE100 Simplified Technical English and avoid walls of text. You may also use bullet points or split the text into multiple paragraph, whenever applicable.
 
 ## Specifics
 
