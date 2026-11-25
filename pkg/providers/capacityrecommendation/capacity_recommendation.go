@@ -71,7 +71,7 @@ type Recommendation struct {
 	VMSize       string
 	Zone         string
 	CapacityType string
-	// Score of the recommendation. Higher is better.
+	// Score is the API placement score, not used for local choice ordering.
 	Score int32
 	// ID is the ID of the recommendation. This can/should be passed along to CRP.
 	ID string
@@ -282,14 +282,14 @@ func recommendationsFromChoices(responseID string, choices []*armrecommender.SKU
 		if choice.Score == nil || choice.SKUSplit == nil {
 			return nil, fmt.Errorf("SKU Mix Placement response ID: %s contained an invalid placement choice", responseID)
 		}
-		for _, split := range choice.SKUSplit {
-			recommendation, err := recommendationFromSplit(responseID, choice, split)
+		for _, splitItem := range choice.SKUSplit {
+			recommendation, err := recommendationFromSplitItem(responseID, choice, splitItem)
 			if err != nil {
 				return nil, err
 			}
 			key := recommendation.key()
 			// There may be multiple splits with the same VM size, zone, and capacity type in a single API response.
-			// We prefer the "best" split (highest score).
+			// Keep the first entry in locally ranked choice order.
 			if seen.Has(key) {
 				continue
 			}
@@ -303,7 +303,7 @@ func recommendationsFromChoices(responseID string, choices []*armrecommender.SKU
 	return result, nil
 }
 
-func recommendationFromSplit(responseID string, choice *armrecommender.SKUMixPlacementDeploymentChoice, split *armrecommender.SKUMixPlacementItem) (Recommendation, error) {
+func recommendationFromSplitItem(responseID string, choice *armrecommender.SKUMixPlacementDeploymentChoice, split *armrecommender.SKUMixPlacementItem) (Recommendation, error) {
 	if split == nil || split.Name == nil || split.Capacity == nil || split.Priority == nil {
 		return Recommendation{}, fmt.Errorf("SKU Mix Placement response ID: %s contained an invalid SKU split", responseID)
 	}
@@ -364,48 +364,34 @@ func skuMixPlacementResponseJSON(response armrecommender.SKUMixPlacementScoresCl
 // Split API suggested that the split: Standard_D2s_v3 (all 3 zones) was higher ranked than Standard_D8s_v5 (z1, z2) + Standard_D2s_v3 (z3).
 // This seems wrong to me as it's not following the prioritized list of skus we provided.
 // So for now, we do our own placement ordering on-top and log when we see a difference.
+// For now, we ignore score because it reflects allocation probability, not how well a choice matches user priority.
+// We also ignore total capacity because we do not use the recommended allocation quantities anyway.
 func placementChoiceIsBetter(
 	candidate *armrecommender.SKUMixPlacementDeploymentChoice,
 	current *armrecommender.SKUMixPlacementDeploymentChoice,
 	input *RankingInput,
 ) bool {
-	currentScore := lo.FromPtr(current.Score)
-	candidateScore := lo.FromPtr(candidate.Score)
-	// Only tiebreak among sizes that are equally scored in the API response
-	if candidateScore != currentScore {
-		return candidateScore > currentScore
-	}
-
 	requestedZones := sets.New(input.Zones...)
 
-	// Compare requested SKUs in input priority order. For
-	// each SKU, prefer more allocated capacity, then distribution across more
-	// requested zones. Only consider the next-ranked SKU when both are tied.
 	for _, vmSize := range input.VMSizes {
-		candidateCapacity, candidateZones := skuStats(candidate, vmSize, requestedZones)
-		currentCapacity, currentZones := skuStats(current, vmSize, requestedZones)
-		if candidateCapacity != currentCapacity {
-			return candidateCapacity > currentCapacity
-		}
+		candidateZones := skuZoneCoverage(candidate, vmSize, requestedZones)
+		currentZones := skuZoneCoverage(current, vmSize, requestedZones)
 		if candidateZones != currentZones {
 			return candidateZones > currentZones
 		}
 	}
 
-	// If the choices allocate the requested SKUs equally, prefer the one spanning more
-	// of the requested zones. Preserve API order when both are equal.
-	return requestedZoneCoverage(candidate, requestedZones) > requestedZoneCoverage(current, requestedZones)
+	// All requested SKUs have equal zone coverage, so neither choice is better.
+	// Returning false lets the stable sort preserve API order for these ties.
+	return false
 }
 
-func skuStats(choice *armrecommender.SKUMixPlacementDeploymentChoice, vmSize string, requestedZones sets.Set[string]) (int32, int) {
-	var capacity int32
+func skuZoneCoverage(choice *armrecommender.SKUMixPlacementDeploymentChoice, vmSize string, requestedZones sets.Set[string]) int {
 	zones := sets.New[string]()
 	for _, splitItem := range choice.SKUSplit {
 		if splitItem == nil || lo.FromPtr(splitItem.Name) != vmSize {
 			continue
 		}
-		// TODO: MaxCapacity when they have it?
-		capacity += lo.FromPtr(splitItem.Capacity)
 		if splitItem.Zone == nil {
 			continue
 		}
@@ -414,20 +400,7 @@ func skuStats(choice *armrecommender.SKUMixPlacementDeploymentChoice, vmSize str
 			zones.Insert(zone)
 		}
 	}
-	return capacity, zones.Len()
-}
-
-func requestedZoneCoverage(choice *armrecommender.SKUMixPlacementDeploymentChoice, requestedZones sets.Set[string]) int {
-	covered := sets.New[string]()
-	for _, split := range choice.SKUSplit {
-		if split == nil || split.Zone == nil {
-			continue
-		}
-		if requestedZones.Has(*split.Zone) {
-			covered.Insert(*split.Zone)
-		}
-	}
-	return covered.Len()
+	return zones.Len()
 }
 
 func validateInput(input *RankingInput) error {
