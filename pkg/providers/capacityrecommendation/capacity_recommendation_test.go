@@ -588,10 +588,10 @@ func TestGetRecommendations_DeduplicatesConcurrentRequests(t *testing.T) {
 	client.PostBehavior.Output.Set(recommendationResponse(time.Now().Add(time.Minute), 9, "Standard_D2s_v5", "1"))
 	started := make(chan struct{})
 	release := make(chan struct{})
-	client.PostBehavior.SetCustomTransformer(func(*fake.SKUMixPlacementScoresPostInput) error {
+	client.PostBehavior.SetCustomTransformer(func(input *fake.SKUMixPlacementScoresPostInput, next func(*fake.SKUMixPlacementScoresPostInput) (armrecommender.SKUMixPlacementScoresClientPostResponse, error)) (armrecommender.SKUMixPlacementScoresClientPostResponse, error) {
 		close(started)
 		<-release
-		return nil
+		return next(input)
 	})
 	provider := capacityrecommendation.NewProvider(client, newCache(), "eastus")
 
