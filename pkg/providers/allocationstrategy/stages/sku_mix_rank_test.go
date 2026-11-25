@@ -17,7 +17,6 @@ limitations under the License.
 package stages_test
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -55,7 +54,7 @@ func TestSKUMixRankStage_EnabledModeProjectsAndLocallyRanksRecommendedOfferings(
 			newTestOffering(0.2, karpv1.CapacityTypeOnDemand, "westus-2")),
 	}
 
-	output := stages.NewSKUMixRankStage(provider, consts.ComputeRecommendationModeEnabled).Process(context.Background(), input)
+	output := stages.NewSKUMixRankStage(provider, consts.ComputeRecommendationModeEnabled).Process(t.Context(), input)
 	g.Expect(instanceNames(output)).To(Equal([]string{"Standard_D2s_v5", "Standard_D4s_v5"}))
 	g.Expect(client.PostBehavior.Calls()).To(Equal(1))
 	g.Expect(output[1].Offerings).To(HaveLen(1))
@@ -117,7 +116,7 @@ func TestSKUMixRankStage_SplitsAndJoinsRecommendationGroupsPreservingSizeAndPrio
 			newTestOffering(0.07, karpv1.CapacityTypeOnDemand, azurezones.Regional)),
 	}
 
-	output := stages.NewSKUMixRankStage(provider, consts.ComputeRecommendationModeEnabled).Process(context.Background(), input)
+	output := stages.NewSKUMixRankStage(provider, consts.ComputeRecommendationModeEnabled).Process(t.Context(), input)
 	g.Expect(client.PostBehavior.Calls()).To(Equal(4))
 	// Confirm we sent 4 groups, spot and on-demand, each with and without zones.
 	requests := map[string]armrecommender.SKUMixPlacementRequest{}
@@ -179,7 +178,7 @@ func TestSKUMixRankStage_SplitsRecommendationGroupsByOS(t *testing.T) {
 			newTestOffering(0.2, karpv1.CapacityTypeOnDemand, "westus-1")),
 	}
 
-	stages.NewSKUMixRankStage(provider, consts.ComputeRecommendationModeEnabled).Process(context.Background(), input)
+	stages.NewSKUMixRankStage(provider, consts.ComputeRecommendationModeEnabled).Process(t.Context(), input)
 	g.Expect(client.PostBehavior.Calls()).To(Equal(2))
 
 	requests := map[armrecommender.SKUMixPlacementOSType][]string{}
@@ -204,7 +203,7 @@ func TestSKUMixRankStage_FailsOpenOnProviderError(t *testing.T) {
 			newTestOffering(0.2, karpv1.CapacityTypeOnDemand, "westus-1")),
 	}
 
-	output := stages.NewSKUMixRankStage(provider, consts.ComputeRecommendationModeEnabled).Process(context.Background(), input)
+	output := stages.NewSKUMixRankStage(provider, consts.ComputeRecommendationModeEnabled).Process(t.Context(), input)
 	g.Expect(instanceNames(output)).To(Equal([]string{"Standard_D2s_v5", "Standard_D4s_v5"}))
 }
 
