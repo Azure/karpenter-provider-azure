@@ -22,11 +22,23 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 )
 
+// parseKubernetesVersionForPolicy parses a Kubernetes version for capability and image policy comparisons.
+// AKS build suffixes identify released builds, while genuine prereleases retain normal semver ordering.
+func parseKubernetesVersionForPolicy(kubernetesVersion string) (semver.Version, error) {
+	version, err := semver.ParseTolerant(kubernetesVersion)
+	if err != nil {
+		return semver.Version{}, err
+	}
+	if len(version.Pre) > 0 && strings.HasPrefix(version.Pre[0].VersionStr, "aks") {
+		version.Pre = nil
+	}
+	return version, nil
+}
+
 // UseAzureLinux3 checks if the Kubernetes version is 1.32.0 or higher,
 // which is when Azure Linux 3 support starts
 func UseAzureLinux3(kubernetesVersion string) bool {
-	// Parse version, stripping any 'v' prefix if present
-	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	version, err := parseKubernetesVersionForPolicy(kubernetesVersion)
 	if err != nil {
 		// If we can't parse the version, default to AzureLinux (false)
 		return false
@@ -36,8 +48,7 @@ func UseAzureLinux3(kubernetesVersion string) bool {
 
 // UseUbuntu2404 is when AKS starts defaulting support for Ubuntu2404
 func UseUbuntu2404(kubernetesVersion string) bool {
-	// Parse version, stripping any 'v' prefix if present
-	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	version, err := parseKubernetesVersionForPolicy(kubernetesVersion)
 	if err != nil {
 		// If we can't parse the version, default to Ubuntu2204 (false)
 		return false
@@ -51,7 +62,7 @@ func UseUbuntu2204FIPS(kubernetesVersion string, trustedLaunch bool) bool {
 		return true
 	}
 
-	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	version, err := parseKubernetesVersionForPolicy(kubernetesVersion)
 	if err != nil {
 		return false
 	}
@@ -61,7 +72,7 @@ func UseUbuntu2204FIPS(kubernetesVersion string, trustedLaunch bool) bool {
 // SupportsWindows2025 reports whether the Kubernetes version supports the Windows2025 image family,
 // which AKS offers from 1.32.0 onwards.
 func SupportsWindows2025(kubernetesVersion string) bool {
-	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	version, err := parseKubernetesVersionForPolicy(kubernetesVersion)
 	if err != nil {
 		return false
 	}

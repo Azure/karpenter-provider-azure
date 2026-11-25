@@ -19,7 +19,6 @@ package imagefamily
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
@@ -148,15 +147,9 @@ func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass) error {
 		return fmt.Errorf("getting kubernetes version: %w", err)
 	}
 
-	version, err := semver.ParseTolerant(kubernetesVersion)
+	version, err := parseKubernetesVersionForPolicy(kubernetesVersion)
 	if err != nil {
 		return fmt.Errorf("malformed Kubernetes version %q: %w", kubernetesVersion, err)
-	}
-
-	// AKS build suffixes describe a released Kubernetes version, not a prerelease.
-	// Keep genuine prereleases (alpha, beta, rc) subject to normal semver ordering.
-	if len(version.Pre) > 0 && strings.HasPrefix(version.Pre[0].VersionStr, "aks") {
-		version.Pre = nil
 	}
 
 	if policy.permits(version) {
