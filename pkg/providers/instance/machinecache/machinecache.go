@@ -379,7 +379,8 @@ func isValid(properties *armcontainerservice.MachineProperties) bool {
 	if properties == nil || properties.Tags == nil {
 		return false
 	}
-	if _, hasTags := properties.Tags[launchtemplate.NodePoolTagKey]; !hasTags {
+
+	if _, hasTags := properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]; !hasTags {
 		return false
 	}
 

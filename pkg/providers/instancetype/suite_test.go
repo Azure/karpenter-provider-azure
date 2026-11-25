@@ -3098,8 +3098,20 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_DC8s_v3"))))
 			})
 
+			// Simulate these tests at a fixed time to avoid errors across day boundaries (when the test runs cross midnight UTC)
+			now := time.Date(2026, time.January, 15, 23, 59, 59, 0, time.UTC)
 			DescribeTable("filtering SKUs by retirement date",
-				func(retirementDate *string, expectedToBeAvailable bool) {
+				func(now time.Time, retirementDate *string, expectedToBeAvailable bool) {
+					retirementClock := clock.NewFakeClock(now)
+					provider := instancetype.NewDefaultProvider(
+						fake.Region,
+						azureEnv.InstanceTypeCache,
+						azureEnv.SKUsAPI,
+						azureEnv.PricingProvider,
+						azureEnv.UnavailableOfferingsCache,
+						azureEnv.QuotaProvider,
+						retirementClock,
+					)
 					capabilities := []compute.ResourceSkuCapabilities{
 						{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
 						{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("8")},
@@ -3122,20 +3134,27 @@ var _ = Describe("InstanceType Provider", func() {
 						Capabilities: &capabilities,
 					})
 
-					Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
-					_, err := azureEnv.InstanceTypesProvider.Get(ctx, "Standard_TestRetirement_v1")
+					Expect(provider.UpdateInstanceTypes(ctx)).To(Succeed())
+					_, err := provider.Get(ctx, "Standard_TestRetirement_v1")
 					if expectedToBeAvailable {
 						Expect(err).NotTo(HaveOccurred())
 					} else {
 						Expect(err).To(HaveOccurred())
 					}
 				},
-				Entry("retains a SKU without a retirement date", nil, true),
-				Entry("retains a SKU retiring in more than six months", lo.ToPtr(time.Now().UTC().AddDate(0, 7, 0).Format("01/02/2006")), true),
-				Entry("retains a SKU retiring in exactly six months", lo.ToPtr(time.Now().UTC().AddDate(0, 6, 0).Format("01/02/2006")), true),
-				Entry("filters a SKU retiring with less than six months", lo.ToPtr(time.Now().UTC().AddDate(0, 5, 0).Format("01/02/2006")), false),
-				Entry("filters an already retired SKU", lo.ToPtr(time.Now().UTC().AddDate(0, -1, 0).Format("01/02/2006")), false),
-				Entry("retains a SKU with an invalid retirement date", lo.ToPtr("not-a-date"), true),
+				Entry("retains a SKU without a retirement date", now, nil, true),
+				Entry("retains a SKU retiring in more than six months", now, lo.ToPtr("08/15/2026"), true),
+				Entry("retains a SKU retiring in exactly six months", now, lo.ToPtr("07/15/2026"), true),
+				Entry("filters a SKU retiring one day before the cutoff", now, lo.ToPtr("07/14/2026"), false),
+				Entry("retains a SKU retiring one day after the cutoff", now, lo.ToPtr("07/16/2026"), true),
+				Entry("filters a SKU retiring with less than six months", now, lo.ToPtr("06/15/2026"), false),
+				Entry("filters an already retired SKU", now, lo.ToPtr("12/15/2025"), false),
+				Entry("retains a SKU with an invalid retirement date", now, lo.ToPtr("not-a-date"), true),
+				Entry("filters a SKU exactly at UTC midnight", now.Add(time.Second), lo.ToPtr("07/15/2026"), false),
+				Entry("retains a SKU retiring on the cutoff across a leap year",
+					time.Date(2023, time.August, 31, 12, 0, 0, 0, time.UTC), lo.ToPtr("03/02/2024"), true),
+				Entry("filters a SKU retiring one day before the cutoff when adding six months rolls past a leap year",
+					time.Date(2023, time.August, 31, 12, 0, 0, 0, time.UTC), lo.ToPtr("03/01/2024"), false),
 			)
 		})
 		Context("Filtering GPU SKUs AzureContainerLinux", func() {
