@@ -128,6 +128,26 @@ var _ = Describe("CloudProvider", func() {
 			Expect(lo.FromPtr(profile.CapacityReservationGroup.ID)).To(Equal(groupID))
 		})
 
+		// On AKS LTS clusters, discovery reports a version such as "v1.31.101-akslts", and the NodeClass status keeps "1.31.101-akslts".
+		// AKS machine API accepts only the numeric version, and rejects the LTS suffix with BadRequest.
+		DescribeTable("should send OrchestratorVersion in the format that AKS machine API accepts",
+			func(nodeClassKubernetesVersion string, expectedOrchestratorVersion string) {
+				nodeClass.Status.KubernetesVersion = lo.ToPtr(nodeClassKubernetesVersion)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Properties.Kubernetes).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.OrchestratorVersion)).To(Equal(expectedOrchestratorVersion))
+			},
+			Entry("should remove the AKS LTS suffix", "1.31.101-akslts", "1.31.101"),
+			Entry("should keep an ordinary version", "1.31.13", "1.31.13"),
+		)
+
 		// Mostly ported from VM test: "ImageReference" and "ImageProvider + Image Family"
 		// Note: AKS Machine API does not support Community Image Gallery (CIG)
 		Context("Create - ImageReference and ImageProvider + Image Family", func() {
