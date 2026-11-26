@@ -21,7 +21,7 @@ SUPPORTED_CRDS = karpenter.azure.com_aksnodeclasses.yaml $(KARPENTER_CORE_CRDS)
 
 # TEST_SUITE enables you to select a specific test suite directory to run "make e2etests" or "make test" against
 TEST_SUITE ?= "..."
-TEST_TIMEOUT ?= "3h"
+TEST_TIMEOUT ?= "5h"
 # LABEL_FILTER enables filtering tests by Ginkgo labels (e.g., LABEL_FILTER="runner" or LABEL_FILTER="!runner")
 LABEL_FILTER ?=
 
