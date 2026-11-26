@@ -74,8 +74,13 @@ func (c *Controller) finalize(ctx context.Context, nodeClass *v1beta1.AKSNodeCla
 	if err := c.kubeClient.List(ctx, nodeClaimList, client.MatchingFields{"spec.nodeClassRef.name": nodeClass.Name}); err != nil {
 		return reconcile.Result{}, fmt.Errorf("listing nodeclaims that are using nodeclass, %w", err)
 	}
-	if len(nodeClaimList.Items) > 0 {
-		c.recorder.Publish(WaitingOnNodeClaimTerminationEvent(nodeClass, lo.Map(nodeClaimList.Items, func(nc karpv1.NodeClaim, _ int) string { return nc.Name })))
+	nodeClaims := lo.Filter(nodeClaimList.Items, func(nc karpv1.NodeClaim, _ int) bool {
+		return nc.Spec.NodeClassRef != nil &&
+			nc.Spec.NodeClassRef.Group == v1beta1.Group &&
+			nc.Spec.NodeClassRef.Kind == v1beta1.AKSNodeClassKind
+	})
+	if len(nodeClaims) > 0 {
+		c.recorder.Publish(WaitingOnNodeClaimTerminationEvent(nodeClass, lo.Map(nodeClaims, func(nc karpv1.NodeClaim, _ int) string { return nc.Name })))
 		return reconcile.Result{RequeueAfter: time.Minute * 10}, nil // periodically fire the event
 	}
 
