@@ -58,7 +58,7 @@ import (
 // the promise fields and functions like BuildNodeClaimFromAKSMachineTemplate, as well as reduce the number of loose arguments passed around.
 // More discussion: https://github.com/Azure/karpenter-provider-azure/pull/1197#discussion_r2482957255
 type AKSMachinePromise struct {
-	waitFunc    func() error
+	waitFunc    func(context.Context) error
 	providerRef *DefaultAKSMachineProvider
 
 	AKSMachineTemplate *armcontainerservice.Machine
@@ -81,7 +81,7 @@ type AKSMachinePromise struct {
 func NewAKSMachinePromise(
 	providerRef *DefaultAKSMachineProvider,
 	aksMachineTemplate *armcontainerservice.Machine,
-	waitFunc func() error,
+	waitFunc func(context.Context) error,
 	aksMachineName string,
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
@@ -116,8 +116,8 @@ func (p *AKSMachinePromise) Cleanup(ctx context.Context) error {
 	return err
 }
 
-func (p *AKSMachinePromise) Wait() error {
-	return p.waitFunc()
+func (p *AKSMachinePromise) Wait(ctx context.Context) error {
+	return p.waitFunc(ctx)
 }
 func (p *AKSMachinePromise) GetInstanceName() string {
 	return p.AKSMachineName
@@ -554,7 +554,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 	return NewAKSMachinePromise(
 		p,
 		aksMachineTemplate,
-		func() (pollingErr error) {
+		func(waitCtx context.Context) (pollingErr error) {
 			defer func() {
 				if r := recover(); r != nil {
 					err := fmt.Errorf("%v", r)
@@ -562,16 +562,16 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 				}
 			}()
 
-			provisioningErr, pollerErr := p.machineCache.PollUntilDone(ctx, aksMachineName)
+			provisioningErr, pollerErr := p.machineCache.PollUntilDone(waitCtx, aksMachineName)
 			if pollerErr != nil {
 				pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (GET poller), poller error: %w", aksMachineName, pollerErr)
 				return
 			}
 			if provisioningErr != nil {
-				pollingErr = p.handleMachineProvisioningError(ctx, "LRO (GET poller)", aksMachineName, instanceType, zone, capacityType, capacityReservationGroupID, provisioningErr)
+				pollingErr = p.handleMachineProvisioningError(waitCtx, "LRO (GET poller)", aksMachineName, instanceType, zone, capacityType, capacityReservationGroupID, provisioningErr)
 				return
 			}
-			log.FromContext(ctx).V(1).Info("successfully created AKS machine",
+			log.FromContext(waitCtx).V(1).Info("successfully created AKS machine",
 				"aksMachineName", aksMachineName,
 				"aksMachineID", gotAKSMachine.ID)
 			return
@@ -619,7 +619,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 	return NewAKSMachinePromise(
 		p,
 		aksMachineTemplate,
-		func() (pollingErr error) {
+		func(waitCtx context.Context) (pollingErr error) {
 			defer func() {
 				if r := recover(); r != nil {
 					err := fmt.Errorf("%v", r)
@@ -627,14 +627,14 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 				}
 			}()
 			// Use SDK poller (non-batch case)
-			_, err := poller.PollUntilDone(ctx, defaultPollerOptions()) // This may panic if it is deleted mid-way.
+			_, err := poller.PollUntilDone(waitCtx, defaultPollerOptions()) // This may panic if it is deleted mid-way.
 			if err != nil {
 				// Could be quota error; will be handled with custom logic below
 
 				// Get once after begin create to retrieve error details. This is because if the poller returns error, the sdk doesn't let us look at the real results.
-				failedAKSMachine, _ := p.machineCache.GetWithFallback(ctx, aksMachineName, false)
-				if failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
-					pollingErr = p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, instanceType, zone, capacityType, capacityReservationGroupID, failedAKSMachine.Properties.Status.ProvisioningError)
+				failedAKSMachine, _ := p.machineCache.GetWithFallback(waitCtx, aksMachineName, false)
+				if failedAKSMachine != nil && failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
+					pollingErr = p.handleMachineProvisioningError(waitCtx, "LRO", aksMachineName, instanceType, zone, capacityType, capacityReservationGroupID, failedAKSMachine.Properties.Status.ProvisioningError)
 					return
 				}
 				// This should not be expected.
@@ -642,7 +642,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 				return
 			}
 
-			log.FromContext(ctx).V(1).Info("successfully created AKS machine",
+			log.FromContext(waitCtx).V(1).Info("successfully created AKS machine",
 				"aksMachineName", aksMachineName,
 				"aksMachineID", gotAKSMachine.ID)
 			return
@@ -749,7 +749,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 	return NewAKSMachinePromise(
 		p,
 		existingAKSMachine,
-		func() error {
+		func(context.Context) error {
 			// We hope the AKS machine completed provisioning at this point. Otherwise, if fails, it would not be handled until registration TTL.
 			// Suggestion: create a new poller just to handle it the same way as new machines. That will improve performance for such cases.
 			return nil

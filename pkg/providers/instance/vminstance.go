@@ -130,7 +130,7 @@ type Resource = map[string]interface{}
 
 type VirtualMachinePromise struct {
 	VM       *armcompute.VirtualMachine
-	WaitFunc func() error
+	WaitFunc func(context.Context) error
 	// CreateIssued is false when an existing VM was reused.
 	CreateIssued bool
 
@@ -150,8 +150,8 @@ func (p *VirtualMachinePromise) Cleanup(ctx context.Context) error {
 	return err
 }
 
-func (p *VirtualMachinePromise) Wait() error {
-	return p.WaitFunc()
+func (p *VirtualMachinePromise) Wait(ctx context.Context) error {
+	return p.WaitFunc(ctx)
 }
 func (p *VirtualMachinePromise) GetInstanceName() string {
 	return lo.FromPtr(p.VM.Name)
@@ -885,7 +885,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		}
 		return &VirtualMachinePromise{
 			VM:           &existing.VirtualMachine,
-			WaitFunc:     func() error { return nil },
+			WaitFunc:     func(context.Context) error { return nil },
 			CreateIssued: false,
 			providerRef:  p,
 		}, nil
@@ -1010,7 +1010,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	return &VirtualMachinePromise{
 		providerRef:  p,
 		CreateIssued: result.Poller != nil, // Poller is nil means the VM existed already.
-		WaitFunc: func() error {
+		WaitFunc: func(waitCtx context.Context) error {
 			if result.Poller == nil {
 				// Poller is nil means the VM existed already and we're done.
 				// TODO: if the VM doesn't have extensions this will still happen and we will have to
@@ -1019,7 +1019,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				return nil
 			}
 
-			_, err = result.Poller.PollUntilDone(ctx, defaultPollerOptions())
+			_, err = result.Poller.PollUntilDone(waitCtx, defaultPollerOptions())
 			if err != nil {
 				VMCreateFailureMetric.With(map[string]string{
 					metrics.ImageLabel:        launchTemplate.ImageID,
@@ -1031,11 +1031,11 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 					metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
 				}).Inc()
 
-				sku, skuErr := p.instanceTypeProvider.Get(ctx, instanceType.Name)
+				sku, skuErr := p.instanceTypeProvider.Get(waitCtx, instanceType.Name)
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 				}
-				handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, nodeClass.GetCapacityReservationGroupID(), err)
+				handledError := p.errorHandling.Handle(waitCtx, sku, instanceType, zone, capacityType, nodeClass.GetCapacityReservationGroupID(), err)
 				if handledError != nil {
 					// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
 					// Thus the error needs to be returned.
@@ -1046,14 +1046,14 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 			}
 
 			if p.provisionMode == consts.ProvisionModeBootstrappingClient {
-				err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows, launchTemplate.Tags)
+				err = p.createCSExtension(waitCtx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows, launchTemplate.Tags)
 				if err != nil {
 					// An error here is handled by CloudProvider create and calls vmInstanceProvider.Delete (which cleans up the azure resources)
 					return err
 				}
 			}
 			if isAKSIdentifyingExtensionEnabled(p.env) {
-				err = p.createAKSIdentifyingExtension(ctx, resourceName, launchTemplate.Tags)
+				err = p.createAKSIdentifyingExtension(waitCtx, resourceName, launchTemplate.Tags)
 				if err != nil {
 					return err
 				}
