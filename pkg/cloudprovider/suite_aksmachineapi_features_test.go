@@ -118,7 +118,7 @@ var _ = Describe("CloudProvider", func() {
 
 			promise, err := azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(promise.Wait()).To(Succeed())
+			Expect(promise.Wait(ctx)).To(Succeed())
 
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()

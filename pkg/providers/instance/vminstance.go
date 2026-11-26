@@ -885,7 +885,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		}
 		return &VirtualMachinePromise{
 			VM:           &existing.VirtualMachine,
-			WaitFunc:     func() error { return nil },
+			WaitFunc:     func(context.Context) error { return nil },
 			CreateIssued: false,
 			providerRef:  p,
 		}, nil
