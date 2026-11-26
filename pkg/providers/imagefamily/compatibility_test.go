@@ -294,6 +294,27 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects multiple leading version prefixes", func(t *testing.T) {
+		t.Parallel()
+
+		g := NewWithT(t)
+		nodeClass := &v1beta1.AKSNodeClass{
+			Spec: v1beta1.AKSNodeClassSpec{
+				ImageFamily: lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
+			},
+			Status: v1beta1.AKSNodeClassStatus{
+				KubernetesVersion: lo.ToPtr("vv1.32.0"),
+			},
+		}
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+
+		err := ValidateImageFamilyCompatibility(nodeClass)
+		g.Expect(err).To(MatchError(And(
+			ContainSubstring("malformed Kubernetes version"),
+			ContainSubstring("vv1.32.0"),
+		)))
+	})
+
 	t.Run("returns an error for a nil node class", func(t *testing.T) {
 		t.Parallel()
 
@@ -302,4 +323,77 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err).To(MatchError(ContainSubstring("AKSNodeClass is required")))
 	})
+}
+
+func TestKubernetesVersionPolicyHelpers(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		kubernetesVersion string
+		isSupported       func(string) bool
+		want              bool
+	}{
+		"azure linux 3 treats an AKS build as released": {
+			kubernetesVersion: "1.32.0-aks.1",
+			isSupported:       UseAzureLinux3,
+			want:              true,
+		},
+		"ubuntu 2404 treats an AKS LTS build as released": {
+			kubernetesVersion: "1.34.0-akslts",
+			isSupported:       UseUbuntu2404,
+			want:              true,
+		},
+		"ubuntu 2204 FIPS treats an AKS LTS build as released": {
+			kubernetesVersion: "1.35.0-akslts",
+			isSupported: func(version string) bool {
+				return UseUbuntu2204FIPS(version, false)
+			},
+			want: true,
+		},
+		"windows 2025 treats an AKS build as released": {
+			kubernetesVersion: "1.32.0-aks.1",
+			isSupported:       SupportsWindows2025,
+			want:              true,
+		},
+		"future AKS build suffixes are treated as released": {
+			kubernetesVersion: "1.32.0-aksfuture.1",
+			isSupported:       UseAzureLinux3,
+			want:              true,
+		},
+		"prereleases containing aks retain prerelease ordering": {
+			kubernetesVersion: "1.32.0-previewaks",
+			isSupported:       UseAzureLinux3,
+		},
+		"multiple leading version prefixes remain malformed": {
+			kubernetesVersion: "vv1.32.0",
+			isSupported:       UseAzureLinux3,
+		},
+		"azure linux 3 preserves release candidate ordering": {
+			kubernetesVersion: "1.32.0-rc.1",
+			isSupported:       UseAzureLinux3,
+		},
+		"ubuntu 2404 preserves beta ordering": {
+			kubernetesVersion: "1.34.0-beta.1",
+			isSupported:       UseUbuntu2404,
+		},
+		"ubuntu 2204 FIPS preserves alpha ordering": {
+			kubernetesVersion: "1.35.0-alpha.1",
+			isSupported: func(version string) bool {
+				return UseUbuntu2204FIPS(version, false)
+			},
+		},
+		"windows 2025 preserves release candidate ordering": {
+			kubernetesVersion: "1.32.0-rc.1",
+			isSupported:       SupportsWindows2025,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			g := NewWithT(t)
+			g.Expect(tc.isSupported(tc.kubernetesVersion)).To(Equal(tc.want))
+		})
+	}
 }
