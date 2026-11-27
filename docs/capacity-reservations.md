@@ -209,7 +209,7 @@ spec:
   limits:
     nodes: "6"
   disruption:
-    consolidateAfter: 0s   # required whenever disruption is set explicitly
+    consolidateAfter: 0s   # optional; defaults to 0s
     budgets:
     - reasons: ["Underutilized"]
       nodes: "0"
